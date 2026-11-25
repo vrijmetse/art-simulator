@@ -3,6 +3,10 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { ClutterItemSpec, JobSpec, StainKind, StainSpotSpec } from '../core/types';
 import { CoverageGrid } from '../core/coverage';
 import {
+  CAMERA_FOV_DEG,
+  CAMERA_HEIGHT,
+  CAMERA_LOOK_Y,
+  CAMERA_RADIUS,
   clampRoomXZ,
   intersectRayPlane,
   isWithin3DSnapRadius,
@@ -269,7 +273,7 @@ export class Room3DView {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(job.palette.wall);
 
-    this.camera = new THREE.PerspectiveCamera(42, 450 / 800, 0.1, 30);
+    this.camera = new THREE.PerspectiveCamera(CAMERA_FOV_DEG, 450 / 800, 0.1, 30);
     this.updateCameraPosition();
 
     this.setupLights();
@@ -415,7 +419,7 @@ export class Room3DView {
       mesh.userData = { stainId: spec.id };
       this.scene.add(mesh);
 
-      const grid = new CoverageGrid(256, 256, 12, 0.85);
+      const grid = new CoverageGrid(256, 256, 12, 0.78);
       this.stains.push({
         spec,
         center,
@@ -653,14 +657,13 @@ export class Room3DView {
   }
 
   private updateCameraPosition(): void {
-    const radius = 5.8;
     const baseAngle = Math.PI / 4 + this.orbitAngle;
     this.camera.position.set(
-      Math.sin(baseAngle) * radius,
-      4.35,
-      Math.cos(baseAngle) * radius,
+      Math.sin(baseAngle) * CAMERA_RADIUS,
+      CAMERA_HEIGHT,
+      Math.cos(baseAngle) * CAMERA_RADIUS,
     );
-    this.camera.lookAt(0, 0.35, 0);
+    this.camera.lookAt(0, CAMERA_LOOK_Y, 0);
   }
 
   private tick = (): void => {

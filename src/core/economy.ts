@@ -80,7 +80,7 @@ export function getToolStats(upgrades: readonly UpgradeId[]): ToolStats {
 
   return {
     brushRadius: (hasWide ? 36 : 24) + (hasCitrus ? 6 : 0),
-    brushRadius3D: (hasWide ? 24 : 17) + (hasCitrus ? 5 : 0),
+    brushRadius3D: (hasWide ? 34 : 24) + (hasCitrus ? 6 : 0),
     scrubPower: hasCitrus ? 1.35 : 1.0,
     snapRadius: hasGloves ? 64 : 42,
     snapRadius3D: hasGloves ? 0.85 : 0.55,

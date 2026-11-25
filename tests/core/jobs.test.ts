@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { JOBS, getJobById } from '../../src/core/jobs';
+import { projectWorldToCanvas } from '../../src/core/math3d';
 
 function readGlbBounds(modelName: string): { w: number; h: number; d: number } {
   const buf = readFileSync(join(process.cwd(), 'public', 'models', modelName));
@@ -184,6 +185,32 @@ describe('jobs catalog', () => {
       }
       for (const cl of job.clutter) {
         if (cl.targetPos3D) checkElevated(`clutter:${cl.id}`, cl.targetPos3D);
+      }
+    }
+  });
+
+  it('frames every stain and clutter start/target inside the 450x800 portrait playfield at default camera angle', () => {
+    for (const job of JOBS) {
+      for (const st of job.stains) {
+        const pt = projectWorldToCanvas(st.pos3D!);
+        expect(pt, `${job.id} stain:${st.id} in front of camera`).not.toBeNull();
+        expect(pt!.x, `${job.id} stain:${st.id} x`).toBeGreaterThanOrEqual(16);
+        expect(pt!.x, `${job.id} stain:${st.id} x`).toBeLessThanOrEqual(434);
+        expect(pt!.y, `${job.id} stain:${st.id} y`).toBeGreaterThanOrEqual(106);
+        expect(pt!.y, `${job.id} stain:${st.id} y`).toBeLessThanOrEqual(666);
+      }
+      for (const cl of job.clutter) {
+        for (const [tag, p3] of [
+          ['start', cl.pos3D!],
+          ['target', cl.targetPos3D!],
+        ] as const) {
+          const pt = projectWorldToCanvas(p3);
+          expect(pt, `${job.id} ${cl.id} ${tag}`).not.toBeNull();
+          expect(pt!.x, `${job.id} ${cl.id} ${tag} x`).toBeGreaterThanOrEqual(16);
+          expect(pt!.x, `${job.id} ${cl.id} ${tag} x`).toBeLessThanOrEqual(434);
+          expect(pt!.y, `${job.id} ${cl.id} ${tag} y`).toBeGreaterThanOrEqual(106);
+          expect(pt!.y, `${job.id} ${cl.id} ${tag} y`).toBeLessThanOrEqual(666);
+        }
       }
     }
   });

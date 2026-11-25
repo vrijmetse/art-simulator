@@ -66,6 +66,58 @@ export function distance3D(a: Vec3, b: Vec3): number {
   return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 }
 
+export const CAMERA_FOV_DEG = 52;
+export const CAMERA_RADIUS = 8.2;
+export const CAMERA_HEIGHT = 6.1;
+export const CAMERA_LOOK_Y = 0.35;
+
+export function projectWorldToCanvas(
+  pos: Vec3,
+  orbitAngleRad = 0,
+  width = 450,
+  height = 800,
+): { x: number; y: number } | null {
+  const baseAngle = Math.PI / 4 + orbitAngleRad;
+  const ex = Math.sin(baseAngle) * CAMERA_RADIUS;
+  const ey = CAMERA_HEIGHT;
+  const ez = Math.cos(baseAngle) * CAMERA_RADIUS;
+
+  let fx = -ex;
+  let fy = CAMERA_LOOK_Y - ey;
+  let fz = -ez;
+  const fl = Math.hypot(fx, fy, fz);
+  if (fl < 1e-6) return null;
+  fx /= fl; fy /= fl; fz /= fl;
+
+  let rx = -fz;
+  let rz = fx;
+  const rl = Math.hypot(rx, rz);
+  if (rl < 1e-6) return null;
+  rx /= rl; rz /= rl;
+
+  const ux = -rz * fy;
+  const uy = rz * fx - rx * fz;
+  const uz = rx * fy;
+
+  const dx = pos[0] - ex;
+  const dy = pos[1] - ey;
+  const dz = pos[2] - ez;
+
+  const cx = dx * rx + dz * rz;
+  const cy = dx * ux + dy * uy + dz * uz;
+  const cz = -(dx * fx + dy * fy + dz * fz);
+  if (cz >= -0.1) return null;
+
+  const aspect = width / height;
+  const fTan = Math.tan((CAMERA_FOV_DEG * Math.PI) / 360);
+  const ndcX = cx / (-cz * fTan * aspect);
+  const ndcY = cy / (-cz * fTan);
+  return {
+    x: (ndcX + 1) * 0.5 * width,
+    y: (1 - ndcY) * 0.5 * height,
+  };
+}
+
 export function isWithin3DSnapRadius(posA: Vec3, posB: Vec3, radiusMeters: number): boolean {
   return distance3D(posA, posB) <= radiusMeters;
 }
