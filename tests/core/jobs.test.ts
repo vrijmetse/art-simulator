@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { JOBS, getJobById } from '../../src/core/jobs';
 
 interface Box {
@@ -20,6 +22,27 @@ describe('jobs catalog', () => {
     expect(JOBS[4].id).toBe('kastil-lord-arthur');
     expect(getJobById('kos-rina')?.level).toBe(1);
     expect(getJobById('missing-house')).toBeUndefined();
+  });
+
+  it('references existing CC0 .glb assets for every 3D furniture & clutter model', () => {
+    const modelsDir = join(process.cwd(), 'public', 'models');
+    for (const job of JOBS) {
+      expect(job.furnitureLayout?.length ?? 0).toBeGreaterThanOrEqual(5);
+      for (const prop of job.furnitureLayout ?? []) {
+        expect(existsSync(join(modelsDir, prop.modelName))).toBe(true);
+      }
+      for (const st of job.stains) {
+        expect(st.pos3D).toBeDefined();
+        expect(st.size3D).toBeDefined();
+      }
+      for (const cl of job.clutter) {
+        expect(cl.pos3D).toBeDefined();
+        expect(cl.targetPos3D).toBeDefined();
+        if (cl.modelName) {
+          expect(existsSync(join(modelsDir, cl.modelName))).toBe(true);
+        }
+      }
+    }
   });
 
   it('ensures every job has complete localized copy, stains, clutter, and non-overlapping playfield bounds', () => {

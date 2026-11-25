@@ -41,6 +41,8 @@ export interface StainSpotSpec {
   y: number; // Top-left Y in 450x800 playfield
   width: number;
   height: number;
+  pos3D?: [number, number, number];
+  size3D?: [number, number];
 }
 
 export interface ClutterItemSpec {
@@ -52,7 +54,19 @@ export interface ClutterItemSpec {
   targetX: number; // Target center X
   targetY: number; // Target center Y
   size: number; // Visual bounding box size (px)
+  modelName?: string; // CC0 GLB filename under /models/
+  pos3D?: [number, number, number];
+  targetPos3D?: [number, number, number];
+  rotY3D?: number;
+  scale3D?: number;
   note: LocalizedText;
+}
+
+export interface FurniturePropSpec {
+  modelName: string; // CC0 GLB filename under /models/
+  pos3D: [number, number, number];
+  rotY3D?: number;
+  scale3D?: number;
 }
 
 export interface RoomPalette {
@@ -72,6 +86,7 @@ export interface JobSpec {
   baseWageRp: number;
   parTimeSec: number;
   palette: RoomPalette;
+  furnitureLayout?: FurniturePropSpec[];
   stains: StainSpotSpec[];
   clutter: ClutterItemSpec[];
 }
@@ -85,8 +100,10 @@ export interface UpgradeSpec {
 
 export interface ToolStats {
   brushRadius: number;
+  brushRadius3D: number;
   scrubPower: number;
   snapRadius: number;
+  snapRadius3D: number;
   tipMultiplier: number;
   hasRadar: boolean;
 }

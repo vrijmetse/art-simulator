@@ -93,7 +93,9 @@ describe('economy & progression', () => {
 
     const stats = getToolStats(state.upgrades);
     expect(stats.brushRadius).toBeGreaterThan(24);
+    expect(stats.brushRadius3D).toBeGreaterThan(17);
     expect(stats.snapRadius).toBeGreaterThan(42);
+    expect(stats.snapRadius3D).toBeGreaterThan(0.55);
     expect(stats.hasRadar).toBe(true);
   });
 });

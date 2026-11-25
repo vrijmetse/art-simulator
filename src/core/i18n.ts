@@ -37,6 +37,7 @@ export const DICTIONARIES = {
     soundOff: 'Suara: Mati',
     langSwitch: 'EN',
     storyHeader: 'Catatan Tuan Rumah',
+    rotateBtn: 'Putar 3D',
   },
   en: {
     appTitle: 'Cozy Homekeeper',
@@ -74,6 +75,7 @@ export const DICTIONARIES = {
     soundOff: 'Sound: Off',
     langSwitch: 'ID',
     storyHeader: 'Homeowner Note',
+    rotateBtn: 'Rotate 3D',
   },
 } as const;
 
