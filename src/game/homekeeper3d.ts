@@ -149,6 +149,7 @@ export function createRiggedActor(
     if (initialClip && actor.actions[initialClip]) {
       actor.actions[initialClip].play();
       actor.currentClip = initialClip;
+      mixer.update(0.02);
     }
 
     actor.modelRoot = cloned;

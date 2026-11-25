@@ -726,6 +726,8 @@ export class Room3DView {
       this.resident?.readyPromise ?? Promise.resolve(),
     ]);
     if (this.destroyed) return;
+    applyHomekeeperPose(this.homekeeper, this.characterState, this.toolMode, 0.02);
+    if (this.resident) playActorAnimation(this.resident, ['idle', 'static'], 0.02);
     this.assetsLoaded = true;
     this.renderer.shadowMap.needsUpdate = true;
     this.markDirty();
