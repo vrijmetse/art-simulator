@@ -6,7 +6,7 @@ import { RoomScene } from './game/RoomScene';
 registerSW({ immediate: true });
 
 const config: Phaser.Types.Core.GameConfig = {
-  type: Phaser.AUTO,
+  type: Phaser.CANVAS,
   parent: 'app',
   width: 450,
   height: 800,

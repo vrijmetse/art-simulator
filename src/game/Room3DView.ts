@@ -230,6 +230,7 @@ export class Room3DView {
     e.preventDefault();
   };
   private readonly onContextRestoredBound = () => {
+    this.renderer.shadowMap.needsUpdate = true;
     this.markDirty();
   };
 
@@ -258,7 +259,9 @@ export class Room3DView {
     });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    this.renderer.shadowMap.autoUpdate = false;
+    this.renderer.shadowMap.needsUpdate = true;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
     this.scene = new THREE.Scene();
@@ -277,7 +280,7 @@ export class Room3DView {
     this.threeCanvas.addEventListener('webglcontextlost', this.onContextLostBound);
     this.threeCanvas.addEventListener('webglcontextrestored', this.onContextRestoredBound);
 
-    this.tick();
+    this.rafId = requestAnimationFrame(this.tick);
   }
 
   updateToolStats(brushRadiusPx: number, snapRadiusMeters: number): void {
@@ -326,7 +329,7 @@ export class Room3DView {
     const dir = new THREE.DirectionalLight(0xfff5e4, 1.35);
     dir.position.set(4.5, 6.8, 3.8);
     dir.castShadow = true;
-    dir.shadow.mapSize.set(1024, 1024);
+    dir.shadow.mapSize.set(512, 512);
     dir.shadow.camera.near = 1;
     dir.shadow.camera.far = 18;
     const d = 3.5;
@@ -483,6 +486,7 @@ export class Room3DView {
     });
 
     await Promise.all([...furniturePromises, ...clutterPromises]);
+    this.renderer.shadowMap.needsUpdate = true;
     this.markDirty();
   }
 
@@ -508,6 +512,7 @@ export class Room3DView {
         this.dragged = found;
         found.group.position.y = found.startPos[1] + 0.16;
         (found.targetRing.material as THREE.MeshBasicMaterial).color.setHex(0xf2cc8f);
+        this.renderer.shadowMap.needsUpdate = true;
         this.markDirty();
         return;
       }
@@ -534,6 +539,7 @@ export class Room3DView {
       if (hit) {
         const [cx, cz] = clampRoomXZ(hit[0], hit[2], 2.05);
         this.dragged.group.position.set(cx, dragY + 0.15, cz);
+        this.renderer.shadowMap.needsUpdate = true;
         this.markDirty();
       }
       return;
@@ -560,6 +566,7 @@ export class Room3DView {
       item.group.position.set(item.startPos[0], item.startPos[1], item.startPos[2]);
       (item.targetRing.material as THREE.MeshBasicMaterial).color.setHex(0x2a9d8f);
     }
+    this.renderer.shadowMap.needsUpdate = true;
     this.markDirty();
   }
 
@@ -651,9 +658,13 @@ export class Room3DView {
     if (this.destroyed) return;
     this.rafId = requestAnimationFrame(this.tick);
 
-    // Smooth camera orbit interpolation
-    if (Math.abs(this.orbitTargetAngle - this.orbitAngle) > 0.002) {
-      this.orbitAngle += (this.orbitTargetAngle - this.orbitAngle) * 0.16;
+    // Smooth camera orbit interpolation (snappy & mobile-friendly)
+    if (Math.abs(this.orbitTargetAngle - this.orbitAngle) > 0.008) {
+      this.orbitAngle += (this.orbitTargetAngle - this.orbitAngle) * 0.28;
+      this.updateCameraPosition();
+      this.dirty = true;
+    } else if (this.orbitAngle !== this.orbitTargetAngle) {
+      this.orbitAngle = this.orbitTargetAngle;
       this.updateCameraPosition();
       this.dirty = true;
     }
