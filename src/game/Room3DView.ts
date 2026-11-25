@@ -30,6 +30,20 @@ import {
   createWallPaperTexture,
   createWindowSkyTexture,
 } from './roomMaterials';
+import {
+  computeSafeStandPoint,
+  createCharacterState,
+  getPropAabb,
+  stepCharacterMotion,
+  type CharacterMotionState,
+  type PropAabb,
+} from '../core/character';
+import {
+  applyHomekeeperPose,
+  createHomekeeperRig,
+  disposeHomekeeperRig,
+  type HomekeeperRig,
+} from './homekeeper3d';
 
 const gltfLoader = new GLTFLoader();
 
@@ -226,6 +240,10 @@ export class Room3DView {
 
   private furnitureGroup = new THREE.Group();
   private contactShadowTex: THREE.CanvasTexture;
+  private homekeeper: HomekeeperRig;
+  private characterState: CharacterMotionState;
+  private propAabbs: PropAabb[] = [];
+  private lastTickMs = 0;
   private stains: Stain3DState[] = [];
   private clutter: Clutter3DState[] = [];
   private dragged: Clutter3DState | null = null;
@@ -307,6 +325,13 @@ export class Room3DView {
     this.scene.add(this.furnitureGroup);
 
     this.contactShadowTex = createContactShadowTexture();
+    const layout = this.job.furnitureLayout ?? [];
+    this.propAabbs = layout.map((p) => getPropAabb(p, 0.22));
+    const [startCharX, startCharZ] = computeSafeStandPoint(0.2, 0.85, layout);
+    this.characterState = createCharacterState(startCharX, startCharZ);
+    this.homekeeper = createHomekeeperRig(this.contactShadowTex);
+    applyHomekeeperPose(this.homekeeper, this.characterState, this.toolMode);
+    this.scene.add(this.homekeeper.group);
 
     this.camera = new THREE.PerspectiveCamera(CAMERA_FOV_DEG, 450 / 800, 0.1, 30);
     this.updateCameraPosition();
@@ -345,6 +370,35 @@ export class Room3DView {
 
   setToolMode(mode: ToolMode): void {
     this.toolMode = mode;
+    applyHomekeeperPose(this.homekeeper, this.characterState, this.toolMode);
+    this.markDirty();
+  }
+
+  onFloorTap(clientX: number, clientY: number): void {
+    if (!this.readonlyMode || this.destroyed) return;
+    if (!this.pointerToRay(clientX, clientY)) return;
+    const o = this.raycaster.ray.origin;
+    const d = this.raycaster.ray.direction;
+    const hit = intersectRayPlane([o.x, o.y, o.z], [d.x, d.y, d.z], [0, 0, 0], [0, 1, 0]);
+    if (!hit) return;
+    const [cx, cz] = clampRoomXZ(hit[0], hit[2], 2.02);
+    this.commandCharacter(cx, cz, false);
+  }
+
+  private commandCharacter(actionX: number, actionZ: number, withScrub: boolean): void {
+    const [tx, tz] = computeSafeStandPoint(actionX, actionZ, this.job.furnitureLayout ?? []);
+    const dist = Math.hypot(tx - this.characterState.x, tz - this.characterState.z);
+    this.characterState = {
+      ...this.characterState,
+      targetX: tx,
+      targetZ: tz,
+      lookX: actionX,
+      lookZ: actionZ,
+      pose: dist > 0.14 ? 'walk' : withScrub ? 'scrub' : 'idle',
+      scrubTimer: withScrub ? 0.45 : 0,
+      walkTimer: 0,
+    };
+    this.markDirty();
   }
 
   getToolMode(): ToolMode {
@@ -792,6 +846,7 @@ export class Room3DView {
     if (this.selectedClutter === item) this.selectedClutter = null;
     item.group.position.set(item.targetPos[0], item.targetPos[1], item.targetPos[2]);
     item.targetRing.visible = false;
+    this.commandCharacter(item.targetPos[0], item.targetPos[2], true);
     this.emitParticles(item.targetPos[0], item.targetPos[1] + 0.15, item.targetPos[2], 8);
     this.callbacks.onClutterSnapped(item.spec);
     this.emitProgressAndCheckWin();
@@ -844,6 +899,7 @@ export class Room3DView {
     st.ctx.restore();
     st.texDirty = true;
 
+    this.commandCharacter(hit.point.x, hit.point.z, true);
     this.emitParticles(hit.point.x, hit.point.y + 0.05, hit.point.z, 2);
     this.callbacks.onScrubStroke();
 
@@ -868,11 +924,19 @@ export class Room3DView {
 
     if (!this.finished && this.stains.every((s) => s.done) && this.clutter.every((c) => c.done)) {
       this.finished = true;
+      this.characterState = {
+        ...this.characterState,
+        pose: 'celebrate',
+        celebrateTimer: 1.8,
+        animTime: 0.25,
+      };
+      applyHomekeeperPose(this.homekeeper, this.characterState, this.toolMode);
       // Flush final clean render & capture After snapshot synchronously
       this.flushDirtyStainTextures();
       this.renderer.render(this.scene, this.camera);
       this.afterSnapshot = this.captureThumbnailDataUrl();
       this.callbacks.onComplete();
+      this.markDirty();
     }
   }
 
@@ -912,9 +976,18 @@ export class Room3DView {
     this.camera.lookAt(0, CAMERA_LOOK_Y, 0);
   }
 
-  private tick = (): void => {
+  private tick = (nowMs: number): void => {
     if (this.destroyed) return;
     this.rafId = requestAnimationFrame(this.tick);
+    const dtSec = this.lastTickMs > 0 ? (nowMs - this.lastTickMs) / 1000 : 0.016;
+    this.lastTickMs = nowMs;
+
+    const charStep = stepCharacterMotion(this.characterState, dtSec, this.propAabbs);
+    this.characterState = charStep.state;
+    if (charStep.needsFrame) {
+      applyHomekeeperPose(this.homekeeper, this.characterState, this.toolMode);
+      this.dirty = true;
+    }
 
     if (Math.abs(this.orbitTargetAngle - this.orbitAngle) > 0.008) {
       this.orbitAngle += (this.orbitTargetAngle - this.orbitAngle) * 0.28;
@@ -976,10 +1049,13 @@ export class Room3DView {
         this.particlePoints.geometry.attributes.position.needsUpdate = true;
       }
       this.dirty = false;
-      this.renderer.render(this.scene, this.camera);
       if (this.assetsLoaded && !this.beforeSnapshot && !this.readonlyMode) {
+        this.homekeeper.group.visible = false;
+        this.renderer.render(this.scene, this.camera);
         this.beforeSnapshot = this.captureThumbnailDataUrl();
+        this.homekeeper.group.visible = true;
       }
+      this.renderer.render(this.scene, this.camera);
     }
   };
 
@@ -992,6 +1068,7 @@ export class Room3DView {
     this.threeCanvas.removeEventListener('webglcontextlost', this.onContextLostBound);
     this.threeCanvas.removeEventListener('webglcontextrestored', this.onContextRestoredBound);
 
+    this.scene.remove(this.homekeeper.group);
     this.scene.traverse((obj) => {
       if ((obj as THREE.Mesh).isMesh || (obj as THREE.Points).isPoints) {
         const renderable = obj as THREE.Mesh | THREE.Points;
@@ -1002,12 +1079,13 @@ export class Room3DView {
         for (const m of mats) {
           if (!m) continue;
           const std = m as THREE.MeshStandardMaterial;
-          std.map?.dispose();
+          if (std.map && std.map !== this.contactShadowTex) std.map.dispose();
           m.dispose();
         }
       }
     });
 
+    disposeHomekeeperRig(this.homekeeper);
     this.contactShadowTex.dispose();
     this.renderer.dispose();
     this.threeCanvas.remove();

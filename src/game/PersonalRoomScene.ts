@@ -150,6 +150,26 @@ export class PersonalRoomScene extends Phaser.Scene {
       this.view3d?.rotateStep(0.28);
     });
 
+    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      asmrSynth.unlock();
+      if (pointer.y < 72 || pointer.y > 708) return;
+      const ev = pointer.event as MouseEvent | TouchEvent | undefined;
+      let cx = 0;
+      let cy = 0;
+      if (ev && 'clientX' in ev && typeof ev.clientX === 'number') {
+        cx = ev.clientX;
+        cy = ev.clientY;
+      } else if (ev && 'changedTouches' in ev && ev.changedTouches && ev.changedTouches.length > 0) {
+        cx = ev.changedTouches[0].clientX;
+        cy = ev.changedTouches[0].clientY;
+      } else {
+        const rect = canvas.getBoundingClientRect();
+        cx = rect.left + (pointer.x / 450) * rect.width;
+        cy = rect.top + (pointer.y / 800) * rect.height;
+      }
+      this.view3d?.onFloorTap(cx, cy);
+    });
+
     const onResize = () => this.view3d?.syncCanvasBounds();
     this.scale.on('resize', onResize);
 
