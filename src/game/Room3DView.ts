@@ -187,6 +187,8 @@ interface Stain3DState {
   canvas: HTMLCanvasElement;
   ctx: CanvasRenderingContext2D;
   tex: THREE.CanvasTexture;
+  texDirty: boolean;
+  pulseWeight: number;
   grid: CoverageGrid;
   done: boolean;
 }
@@ -294,6 +296,11 @@ export class Room3DView {
   }
 
   pulseRemaining(): void {
+    for (const st of this.stains) {
+      if (!st.done) {
+        st.pulseWeight = 1.0;
+      }
+    }
     for (const c of this.clutter) {
       if (!c.done) {
         c.targetRing.scale.setScalar(1.35);
@@ -417,6 +424,8 @@ export class Room3DView {
         canvas,
         ctx,
         tex,
+        texDirty: false,
+        pulseWeight: 0,
         grid,
         done: false,
       });
@@ -529,7 +538,7 @@ export class Room3DView {
     if (this.dragged) {
       const o = this.raycaster.ray.origin;
       const d = this.raycaster.ray.direction;
-      const dragY = this.dragged.targetPos[1] > 0.15 ? 0.55 : this.dragged.startPos[1];
+      const dragY = Math.max(this.dragged.startPos[1], this.dragged.targetPos[1]);
       const hit = intersectRayPlane(
         [o.x, o.y, o.z],
         [d.x, d.y, d.z],
@@ -615,7 +624,7 @@ export class Room3DView {
       st.grid.scrubCircle(ix, iy, r);
     }
     st.ctx.restore();
-    st.tex.needsUpdate = true;
+    st.texDirty = true;
 
     this.callbacks.onScrubStroke();
 
@@ -673,6 +682,27 @@ export class Room3DView {
     for (const c of this.clutter) {
       if (!c.done && c.targetRing.scale.x > 1.01) {
         c.targetRing.scale.lerp(new THREE.Vector3(1, 1, 1), 0.08);
+        this.dirty = true;
+      }
+    }
+
+    // Batch stain canvas texture uploads & Dust Radar emissive pulse once per frame
+    for (const st of this.stains) {
+      if (st.texDirty) {
+        st.tex.needsUpdate = true;
+        st.texDirty = false;
+        this.dirty = true;
+      }
+      if (!st.done && st.pulseWeight > 0.01) {
+        const mat = st.mesh.material as THREE.MeshStandardMaterial;
+        mat.emissive.setHex(0xf2cc8f);
+        mat.emissiveIntensity = st.pulseWeight * 0.9;
+        st.pulseWeight *= 0.9;
+        this.dirty = true;
+      } else if (st.pulseWeight !== 0) {
+        st.pulseWeight = 0;
+        const mat = st.mesh.material as THREE.MeshStandardMaterial;
+        mat.emissiveIntensity = 0;
         this.dirty = true;
       }
     }

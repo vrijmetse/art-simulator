@@ -1,7 +1,29 @@
 import { describe, it, expect } from 'vitest';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { JOBS, getJobById } from '../../src/core/jobs';
+
+function readGlbBounds(modelName: string): { w: number; h: number; d: number } {
+  const buf = readFileSync(join(process.cwd(), 'public', 'models', modelName));
+  const jsonLen = buf.readUInt32LE(12);
+  const gltf = JSON.parse(buf.subarray(20, 20 + jsonLen).toString('utf8'));
+  const accessors = gltf.accessors ?? [];
+  let minX = Infinity, maxX = -Infinity;
+  let minY = Infinity, maxY = -Infinity;
+  let minZ = Infinity, maxZ = -Infinity;
+  for (const mesh of gltf.meshes ?? []) {
+    for (const prim of mesh.primitives ?? []) {
+      const idx = prim.attributes?.POSITION;
+      if (typeof idx !== 'number') continue;
+      const acc = accessors[idx];
+      if (!acc?.min || !acc?.max) continue;
+      minX = Math.min(minX, acc.min[0]); maxX = Math.max(maxX, acc.max[0]);
+      minY = Math.min(minY, acc.min[1]); maxY = Math.max(maxY, acc.max[1]);
+      minZ = Math.min(minZ, acc.min[2]); maxZ = Math.max(maxZ, acc.max[2]);
+    }
+  }
+  return { w: maxX - minX, h: maxY - minY, d: maxZ - minZ };
+}
 
 interface Box {
   label: string;
@@ -111,6 +133,57 @@ describe('jobs catalog', () => {
           expect(overlaps(clutterStartBoxes[i], sb)).toBe(false);
           expect(overlaps(clutterTargetBoxes[i], sb)).toBe(false);
         }
+      }
+    }
+  });
+
+  it('places elevated tabletop stains and clutter cleanly on top of real GLB furniture heights without clipping', () => {
+    const surfaceProps = new Set([
+      'desk.glb',
+      'bookcaseOpenLow.glb',
+      'tableCoffeeSquare.glb',
+      'cabinetTelevision.glb',
+      'tableRound.glb',
+      'kitchenCabinet.glb',
+      'tableCoffeeGlass.glb',
+      'tableCrossCloth.glb',
+      'bookcaseClosedWide.glb',
+    ]);
+
+    for (const job of JOBS) {
+      const surfaces = (job.furnitureLayout ?? [])
+        .filter((f) => surfaceProps.has(f.modelName))
+        .map((f) => {
+          const b = readGlbBounds(f.modelName);
+          const sc = f.scale3D ?? 1;
+          return {
+            modelName: f.modelName,
+            x: f.pos3D[0],
+            z: f.pos3D[2],
+            topY: b.h * sc,
+            radius: Math.max(b.w, b.d) * sc * 0.55,
+          };
+        });
+
+      const checkElevated = (label: string, pos: [number, number, number]) => {
+        if (pos[1] <= 0.15) return;
+        const match = surfaces.find(
+          (s) => Math.hypot(pos[0] - s.x, pos[2] - s.z) <= s.radius,
+        );
+        if (!match) return;
+        expect(pos[1], `${job.id} ${label} clips inside ${match.modelName}`).toBeGreaterThanOrEqual(
+          match.topY - 0.015,
+        );
+        expect(pos[1], `${job.id} ${label} floats above ${match.modelName}`).toBeLessThanOrEqual(
+          match.topY + 0.06,
+        );
+      };
+
+      for (const st of job.stains) {
+        if (st.pos3D) checkElevated(`stain:${st.id}`, st.pos3D);
+      }
+      for (const cl of job.clutter) {
+        if (cl.targetPos3D) checkElevated(`clutter:${cl.id}`, cl.targetPos3D);
       }
     }
   });
