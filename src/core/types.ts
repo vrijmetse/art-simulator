@@ -7,6 +7,18 @@ export type UpgradeId =
   | 'neat_uniform'
   | 'sparkle_radar';
 
+export type DecorId =
+  | 'plant_monstera'
+  | 'table_lamp'
+  | 'cozy_rug'
+  | 'plush_bear'
+  | 'lounge_chair'
+  | 'retro_tv'
+  | 'vintage_radio'
+  | 'book_shelf';
+
+export type ToolMode = 'lap' | 'pel';
+
 export type StainKind = 'dust' | 'spill' | 'grease' | 'crayon' | 'mud';
 
 export type ClutterKind =
@@ -37,8 +49,8 @@ export interface LocalizedText {
 export interface StainSpotSpec {
   id: string;
   kind: StainKind;
-  x: number; // Top-left X in 450x800 playfield
-  y: number; // Top-left Y in 450x800 playfield
+  x: number;
+  y: number;
   width: number;
   height: number;
   pos3D?: [number, number, number];
@@ -49,12 +61,12 @@ export interface ClutterItemSpec {
   id: string;
   kind: ClutterKind;
   label: LocalizedText;
-  startX: number; // Center X in 450x800
-  startY: number; // Center Y in 450x800
-  targetX: number; // Target center X
-  targetY: number; // Target center Y
-  size: number; // Visual bounding box size (px)
-  modelName?: string; // CC0 GLB filename under /models/
+  startX: number;
+  startY: number;
+  targetX: number;
+  targetY: number;
+  size: number;
+  modelName?: string;
   pos3D?: [number, number, number];
   targetPos3D?: [number, number, number];
   rotY3D?: number;
@@ -63,7 +75,7 @@ export interface ClutterItemSpec {
 }
 
 export interface FurniturePropSpec {
-  modelName: string; // CC0 GLB filename under /models/
+  modelName: string;
   pos3D: [number, number, number];
   rotY3D?: number;
   scale3D?: number;
@@ -89,6 +101,8 @@ export interface JobSpec {
   furnitureLayout?: FurniturePropSpec[];
   stains: StainSpotSpec[];
   clutter: ClutterItemSpec[];
+  isDaily?: boolean;
+  dailyDateKey?: string;
 }
 
 export interface UpgradeSpec {
@@ -96,6 +110,24 @@ export interface UpgradeSpec {
   costRp: number;
   name: LocalizedText;
   description: LocalizedText;
+}
+
+export interface DecorSpec {
+  id: DecorId;
+  costRp: number;
+  name: LocalizedText;
+  description: LocalizedText;
+  modelName: string;
+  pos3D: [number, number, number];
+  rotY3D?: number;
+  scale3D?: number;
+}
+
+export interface CareerRank {
+  id: string;
+  minXp: number;
+  title: LocalizedText;
+  wageBonusPct: number;
 }
 
 export interface ToolStats {
@@ -122,6 +154,7 @@ export interface CashbookEntry {
 export interface JobCompletionInput {
   jobId: string;
   elapsedSec: number;
+  jobOverride?: JobSpec;
 }
 
 export interface GameState {
@@ -134,4 +167,12 @@ export interface GameState {
   bestStars: Record<string, 1 | 2 | 3>;
   upgrades: UpgradeId[];
   cashbook: CashbookEntry[];
+  xp: number;
+  dailyCompletedDates: string[];
+  dailyStreak: number;
+  lastAttendanceDate: string | null;
+  attendanceDay: number;
+  ownedDecor: DecorId[];
+  placedDecor: DecorId[];
+  adFree: boolean;
 }

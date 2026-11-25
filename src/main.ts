@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { registerSW } from 'virtual:pwa-register';
 import { MenuScene } from './game/MenuScene';
 import { RoomScene } from './game/RoomScene';
+import { PersonalRoomScene } from './game/PersonalRoomScene';
 
 registerSW({ immediate: true });
 
@@ -18,7 +19,7 @@ const config: Phaser.Types.Core.GameConfig = {
   input: {
     activePointers: 2,
   },
-  scene: [MenuScene, RoomScene],
+  scene: [MenuScene, RoomScene, PersonalRoomScene],
 };
 
 new Phaser.Game(config);

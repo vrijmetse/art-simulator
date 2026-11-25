@@ -3,11 +3,14 @@ import type {
   GameState,
   JobCompletionInput,
   JobSpec,
+  StainKind,
+  ToolMode,
   ToolStats,
   UpgradeId,
   UpgradeSpec,
 } from './types';
 import { getJobById, JOBS } from './jobs';
+import { getCareerWageMultiplier } from './career';
 
 export const UPGRADES: UpgradeSpec[] = [
   {
@@ -59,7 +62,7 @@ export const UPGRADES: UpgradeSpec[] = [
 
 export function createInitialState(): GameState {
   return {
-    version: 1,
+    version: 2,
     locale: 'id',
     muted: false,
     day: 1,
@@ -68,6 +71,14 @@ export function createInitialState(): GameState {
     bestStars: {},
     upgrades: [],
     cashbook: [],
+    xp: 0,
+    dailyCompletedDates: [],
+    dailyStreak: 0,
+    lastAttendanceDate: null,
+    attendanceDay: 0,
+    ownedDecor: [],
+    placedDecor: [],
+    adFree: false,
   };
 }
 
@@ -89,10 +100,19 @@ export function getToolStats(upgrades: readonly UpgradeId[]): ToolStats {
   };
 }
 
+export function getToolMatchMultiplier(toolMode: ToolMode, stainKind: StainKind): number {
+  if (toolMode === 'lap' && (stainKind === 'dust' || stainKind === 'crayon')) return 1.5;
+  if (toolMode === 'pel' && (stainKind === 'spill' || stainKind === 'mud' || stainKind === 'grease')) {
+    return 1.5;
+  }
+  return 1.0;
+}
+
 export function calculateJobPayout(
   job: JobSpec,
   elapsedSec: number,
   upgrades: readonly UpgradeId[],
+  xp = 0,
 ): {
   stars: 1 | 2 | 3;
   baseWageRp: number;
@@ -108,7 +128,8 @@ export function calculateJobPayout(
     stars = 2;
   }
 
-  const baseWageRp = job.baseWageRp;
+  const careerMult = getCareerWageMultiplier(xp);
+  const baseWageRp = Math.round(job.baseWageRp * careerMult);
   const speedBonusRp =
     stars === 3
       ? Math.round(baseWageRp * 0.35)
@@ -146,41 +167,73 @@ export function purchaseUpgrade(
 export function applyJobResult(
   state: GameState,
   input: JobCompletionInput,
-): { entry: CashbookEntry; state: GameState } {
-  const job = getJobById(input.jobId);
+): { entry: CashbookEntry; state: GameState; xpGained: number; streakBonusRp: number } {
+  const job = input.jobOverride ?? getJobById(input.jobId);
   if (!job) {
     throw new Error(`Unknown job id: ${input.jobId}`);
   }
 
-  const payout = calculateJobPayout(job, input.elapsedSec, state.upgrades);
+  const isDaily = Boolean(job.isDaily && job.dailyDateKey);
+  const alreadyCompletedToday =
+    isDaily && job.dailyDateKey ? state.dailyCompletedDates.includes(job.dailyDateKey) : false;
+
+  const effectiveJob: JobSpec = alreadyCompletedToday
+    ? { ...job, baseWageRp: Math.round(job.baseWageRp / 1.5) }
+    : job;
+
+  const payout = calculateJobPayout(effectiveJob, input.elapsedSec, state.upgrades, state.xp);
+  let streakBonusRp = 0;
+  let nextDailyDates = state.dailyCompletedDates;
+  let nextStreak = state.dailyStreak;
+
+  if (isDaily && job.dailyDateKey && !alreadyCompletedToday) {
+    nextDailyDates = [...state.dailyCompletedDates, job.dailyDateKey].slice(-60);
+    nextStreak = state.dailyStreak + 1;
+    if (nextStreak % 7 === 0) {
+      streakBonusRp = 50000;
+    }
+  }
+
+  const totalWithStreak = payout.totalRp + streakBonusRp;
+  const xpGained = 50 + payout.stars * 25 + (isDaily && !alreadyCompletedToday ? 40 : 0);
+
   const entry: CashbookEntry = {
     jobId: job.id,
     day: state.day,
     stars: payout.stars,
     baseWageRp: payout.baseWageRp,
     speedBonusRp: payout.speedBonusRp,
-    tipRp: payout.tipRp,
-    totalRp: payout.totalRp,
+    tipRp: payout.tipRp + streakBonusRp,
+    totalRp: totalWithStreak,
     elapsedSec: Math.max(1, Math.round(input.elapsedSec)),
   };
 
   const prevBest = state.bestStars[job.id] ?? 0;
   const nextBest = Math.max(prevBest, payout.stars) as 1 | 2 | 3;
   const maxLevel = JOBS.length;
-  const nextUnlocked = Math.min(maxLevel, Math.max(state.unlockedLevel, job.level + 1));
+  const nextUnlocked = isDaily
+    ? state.unlockedLevel
+    : Math.min(maxLevel, Math.max(state.unlockedLevel, job.level + 1));
 
   return {
     entry,
+    xpGained,
+    streakBonusRp,
     state: {
       ...state,
       day: state.day + 1,
-      balanceRp: state.balanceRp + payout.totalRp,
+      balanceRp: state.balanceRp + totalWithStreak,
       unlockedLevel: nextUnlocked,
-      bestStars: {
-        ...state.bestStars,
-        [job.id]: nextBest,
-      },
+      bestStars: isDaily
+        ? state.bestStars
+        : {
+            ...state.bestStars,
+            [job.id]: nextBest,
+          },
       cashbook: [entry, ...state.cashbook].slice(0, 50),
+      xp: state.xp + xpGained,
+      dailyCompletedDates: nextDailyDates,
+      dailyStreak: nextStreak,
     },
   };
 }

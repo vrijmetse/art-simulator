@@ -62,6 +62,28 @@ describe('save persistence', () => {
     expect(migrated.bestStars).toEqual({ 'kos-rina': 3 });
   });
 
+  it('migrates legacy v1 payloads cleanly and preserves daily cashbook entries', () => {
+    const migrated = migrateSave({
+      version: 1,
+      locale: 'id',
+      balanceRp: 75000,
+      unlockedLevel: 2,
+      upgrades: ['wide_sponge'],
+      bestStars: { 'kos-rina': 3 },
+      cashbook: [
+        { jobId: 'kos-rina', day: 1, stars: 3, baseWageRp: 35000, speedBonusRp: 12250, tipRp: 7000, totalRp: 54250, elapsedSec: 20 },
+        { jobId: 'daily-2026-11-25', day: 2, stars: 3, baseWageRp: 52500, speedBonusRp: 18375, tipRp: 10500, totalRp: 81375, elapsedSec: 25 },
+      ],
+    });
+
+    expect(migrated.version).toBe(SAVE_VERSION);
+    expect(migrated.balanceRp).toBe(75000);
+    expect(migrated.cashbook.length).toBe(2);
+    expect(migrated.xp).toBe(0);
+    expect(migrated.dailyStreak).toBe(0);
+    expect(migrated.ownedDecor).toEqual([]);
+  });
+
   it('resets state and clears storage cleanly', () => {
     const storage = createMemoryStorage();
     saveState({ ...createInitialState(), balanceRp: 50000 }, storage);

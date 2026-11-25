@@ -1,7 +1,15 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import type { ClutterItemSpec, JobSpec, StainKind, StainSpotSpec } from '../core/types';
+import type {
+  ClutterItemSpec,
+  FurniturePropSpec,
+  JobSpec,
+  StainKind,
+  StainSpotSpec,
+  ToolMode,
+} from '../core/types';
 import { CoverageGrid } from '../core/coverage';
+import { getToolMatchMultiplier } from '../core/economy';
 import {
   CAMERA_FOV_DEG,
   CAMERA_HEIGHT,
@@ -9,11 +17,19 @@ import {
   CAMERA_RADIUS,
   clampRoomXZ,
   intersectRayPlane,
+  isTapGesture,
   isWithin3DSnapRadius,
   screenToNDC,
   worldHitToDecalUV,
   type Vec3,
 } from '../core/math3d';
+import {
+  createContactShadowTexture,
+  createRichFloorTexture,
+  createWallArtTexture,
+  createWallPaperTexture,
+  createWindowSkyTexture,
+} from './roomMaterials';
 
 const gltfLoader = new GLTFLoader();
 
@@ -38,17 +54,22 @@ function loadGltfInstance(modelName: string): Promise<THREE.Group | null> {
   });
 }
 
-function centerAndGroundGroup(raw: THREE.Object3D, scale = 1): THREE.Group {
+function centerAndGroundGroup(
+  raw: THREE.Object3D,
+  scale = 1,
+): { wrapper: THREE.Group; size: THREE.Vector3 } {
   const wrapper = new THREE.Group();
   const clone = raw.clone(true);
   clone.scale.setScalar(scale);
   clone.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(clone);
   const center = new THREE.Vector3();
+  const size = new THREE.Vector3();
   box.getCenter(center);
+  box.getSize(size);
   clone.position.set(-center.x, -box.min.y, -center.z);
   wrapper.add(clone);
-  return wrapper;
+  return { wrapper, size };
 }
 
 function buildHeroOrFallbackProp(kind: ClutterItemSpec['kind']): THREE.Group {
@@ -146,40 +167,12 @@ function paintStainCanvas(kind: StainKind, size = 256): { canvas: HTMLCanvasElem
   return { canvas, ctx };
 }
 
-function createWoodFloorTexture(hexColor: string): THREE.CanvasTexture {
-  const c = document.createElement('canvas');
-  c.width = 256;
-  c.height = 256;
-  const ctx = c.getContext('2d')!;
-  ctx.fillStyle = hexColor;
-  ctx.fillRect(0, 0, 256, 256);
-
-  ctx.strokeStyle = 'rgba(61, 64, 91, 0.14)';
-  ctx.lineWidth = 2;
-  for (let y = 0; y < 256; y += 32) {
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(256, y);
-    ctx.stroke();
-    const offset = (y / 32) % 2 === 0 ? 64 : 160;
-    ctx.beginPath();
-    ctx.moveTo(offset, y);
-    ctx.lineTo(offset, y + 32);
-    ctx.stroke();
-  }
-  const tex = new THREE.CanvasTexture(c);
-  tex.wrapS = THREE.RepeatWrapping;
-  tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(4, 4);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
-}
-
 export interface Room3DCallbacks {
   onProgress: (pct: number) => void;
   onStainCleared: () => void;
   onScrubStroke: () => void;
   onClutterSnapped: (item: ClutterItemSpec) => void;
+  onClutterSelected?: (item: ClutterItemSpec) => void;
   onComplete: () => void;
 }
 
@@ -207,6 +200,19 @@ interface Clutter3DState {
   done: boolean;
 }
 
+interface ParticleSlot {
+  active: boolean;
+  x: number;
+  y: number;
+  z: number;
+  vx: number;
+  vy: number;
+  vz: number;
+  life: number;
+}
+
+const MAX_PARTICLES = 28;
+
 export class Room3DView {
   private readonly phaserCanvas: HTMLCanvasElement;
   private readonly threeCanvas: HTMLCanvasElement;
@@ -216,20 +222,44 @@ export class Room3DView {
   private readonly raycaster = new THREE.Raycaster();
   private readonly callbacks: Room3DCallbacks;
   private readonly job: JobSpec;
+  private readonly readonlyMode: boolean;
 
+  private furnitureGroup = new THREE.Group();
+  private contactShadowTex: THREE.CanvasTexture;
   private stains: Stain3DState[] = [];
   private clutter: Clutter3DState[] = [];
   private dragged: Clutter3DState | null = null;
+  private selectedClutter: Clutter3DState | null = null;
+  private pointerDownClient: { x: number; y: number } | null = null;
+  private pointerMovedDist = 0;
   private lastScrubUV: { stainId: string; px: number; py: number } | null = null;
 
+  private toolMode: ToolMode = 'lap';
   private orbitAngle = 0;
   private orbitTargetAngle = 0;
   private dirty = true;
   private destroyed = false;
   private finished = false;
+  private assetsLoaded = false;
+  private beforeSnapshot: string | null = null;
+  private afterSnapshot: string | null = null;
   private rafId = 0;
-  private brushRadiusPx = 18;
+  private brushRadiusPx = 24;
   private snapRadiusMeters = 0.55;
+
+  // Pooled 3D burst particles
+  private particlePoints: THREE.Points;
+  private particlePositions = new Float32Array(MAX_PARTICLES * 3);
+  private particleSlots: ParticleSlot[] = Array.from({ length: MAX_PARTICLES }, () => ({
+    active: false,
+    x: 0,
+    y: -10,
+    z: 0,
+    vx: 0,
+    vy: 0,
+    vz: 0,
+    life: 0,
+  }));
 
   private readonly onResizeBound = () => this.syncCanvasBounds();
   private readonly onContextLostBound = (e: Event) => {
@@ -246,12 +276,14 @@ export class Room3DView {
     brushRadiusPx: number,
     snapRadiusMeters: number,
     callbacks: Room3DCallbacks,
+    readonlyMode = false,
   ) {
     this.phaserCanvas = phaserCanvas;
     this.job = job;
     this.brushRadiusPx = brushRadiusPx;
     this.snapRadiusMeters = snapRadiusMeters;
     this.callbacks = callbacks;
+    this.readonlyMode = readonlyMode;
 
     this.threeCanvas = document.createElement('canvas');
     this.threeCanvas.id = 'three-layer';
@@ -272,14 +304,36 @@ export class Room3DView {
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(job.palette.wall);
+    this.scene.add(this.furnitureGroup);
+
+    this.contactShadowTex = createContactShadowTexture();
 
     this.camera = new THREE.PerspectiveCamera(CAMERA_FOV_DEG, 450 / 800, 0.1, 30);
     this.updateCameraPosition();
 
+    // Initialize pooled particles
+    for (let i = 0; i < MAX_PARTICLES; i++) {
+      this.particlePositions[i * 3 + 1] = -20;
+    }
+    const pGeo = new THREE.BufferGeometry();
+    pGeo.setAttribute('position', new THREE.BufferAttribute(this.particlePositions, 3));
+    const pMat = new THREE.PointsMaterial({
+      color: 0xfff8e7,
+      size: 0.14,
+      transparent: true,
+      opacity: 0.9,
+      depthWrite: false,
+    });
+    this.particlePoints = new THREE.Points(pGeo, pMat);
+    this.particlePoints.frustumCulled = false;
+    this.scene.add(this.particlePoints);
+
     this.setupLights();
     this.buildRoomShell();
-    this.buildStains();
-    void this.buildFurnitureAndClutter();
+    if (!readonlyMode) {
+      this.buildStains();
+    }
+    void this.buildFurnitureAndClutter(this.job.furnitureLayout ?? []);
 
     this.syncCanvasBounds();
     window.addEventListener('resize', this.onResizeBound);
@@ -287,6 +341,18 @@ export class Room3DView {
     this.threeCanvas.addEventListener('webglcontextrestored', this.onContextRestoredBound);
 
     this.rafId = requestAnimationFrame(this.tick);
+  }
+
+  setToolMode(mode: ToolMode): void {
+    this.toolMode = mode;
+  }
+
+  getToolMode(): ToolMode {
+    return this.toolMode;
+  }
+
+  getSnapshots(): { before: string | null; after: string | null } {
+    return { before: this.beforeSnapshot, after: this.afterSnapshot };
   }
 
   updateToolStats(brushRadiusPx: number, snapRadiusMeters: number): void {
@@ -307,7 +373,7 @@ export class Room3DView {
     }
     for (const c of this.clutter) {
       if (!c.done) {
-        c.targetRing.scale.setScalar(1.35);
+        c.targetRing.scale.setScalar(1.38);
       }
     }
     this.markDirty();
@@ -315,6 +381,31 @@ export class Room3DView {
 
   markDirty(): void {
     this.dirty = true;
+  }
+
+  async reloadFurnitureLayout(layout: FurniturePropSpec[]): Promise<void> {
+    if (this.destroyed) return;
+    while (this.furnitureGroup.children.length > 0) {
+      const child = this.furnitureGroup.children[this.furnitureGroup.children.length - 1];
+      this.furnitureGroup.remove(child);
+      child.traverse((obj) => {
+        if ((obj as THREE.Mesh).isMesh) {
+          const m = obj as THREE.Mesh;
+          m.geometry?.dispose();
+          const mats = Array.isArray(m.material) ? m.material : [m.material];
+          for (const mat of mats) {
+            if (!mat) continue;
+            const std = mat as THREE.MeshStandardMaterial;
+            if (std.map && std.map !== this.contactShadowTex) std.map.dispose();
+            mat.dispose();
+          }
+        }
+      });
+    }
+    await this.buildFurnitureOnly(layout);
+    if (this.destroyed) return;
+    this.renderer.shadowMap.needsUpdate = true;
+    this.markDirty();
   }
 
   syncCanvasBounds(): void {
@@ -353,46 +444,63 @@ export class Room3DView {
   }
 
   private buildRoomShell(): void {
-    const floorTex = createWoodFloorTexture(this.job.palette.floor);
+    const floorStyle =
+      this.job.id === 'dapur-sari' || this.job.id === 'villa-senja' ? 'tile' : 'wood';
+    const floorTex = createRichFloorTexture(this.job.palette.floor, floorStyle);
     const floor = new THREE.Mesh(
       new THREE.BoxGeometry(4.8, 0.14, 4.8),
-      new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.85 }),
+      new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.82 }),
     );
     floor.position.set(0, -0.07, 0);
     floor.receiveShadow = true;
     this.scene.add(floor);
 
-    const wallMat = new THREE.MeshStandardMaterial({ color: this.job.palette.wall, roughness: 0.9 });
+    const wallTex = createWallPaperTexture(this.job.palette.wall, this.job.palette.accent);
+    const wallMat = new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.9 });
     const trimMat = new THREE.MeshStandardMaterial({ color: this.job.palette.trim, roughness: 0.7 });
 
-    // Back wall
     const backWall = new THREE.Mesh(new THREE.BoxGeometry(4.8, 2.7, 0.12), wallMat);
     backWall.position.set(0, 1.35, -2.38);
     backWall.receiveShadow = true;
     this.scene.add(backWall);
 
-    // Left wall
     const leftWall = new THREE.Mesh(new THREE.BoxGeometry(0.12, 2.7, 4.8), wallMat);
     leftWall.position.set(-2.38, 1.35, 0);
     leftWall.receiveShadow = true;
     this.scene.add(leftWall);
 
-    // Baseboards
-    const baseBack = new THREE.Mesh(new THREE.BoxGeometry(4.8, 0.12, 0.15), trimMat);
-    baseBack.position.set(0, 0.06, -2.35);
-    const baseLeft = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.12, 4.8), trimMat);
-    baseLeft.position.set(-2.35, 0.06, 0);
+    const baseBack = new THREE.Mesh(new THREE.BoxGeometry(4.8, 0.14, 0.15), trimMat);
+    baseBack.position.set(0, 0.07, -2.35);
+    const baseLeft = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.14, 4.8), trimMat);
+    baseLeft.position.set(-2.35, 0.07, 0);
     this.scene.add(baseBack, baseLeft);
 
-    // Cozy sunny window on back wall
-    const frame = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.92, 0.05), trimMat);
-    frame.position.set(0.35, 1.55, -2.31);
+    // Sky gradient window with mullion bars
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(1.18, 0.94, 0.05), trimMat);
+    frame.position.set(0.45, 1.58, -2.31);
+    const skyTex = createWindowSkyTexture();
     const glass = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.98, 0.76),
-      new THREE.MeshBasicMaterial({ color: 0xffe8b6 }),
+      new THREE.PlaneGeometry(1.0, 0.78),
+      new THREE.MeshBasicMaterial({ map: skyTex }),
     );
-    glass.position.set(0.35, 1.55, -2.28);
-    this.scene.add(frame, glass);
+    glass.position.set(0.45, 1.58, -2.28);
+    const barV = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.78, 0.02), trimMat);
+    barV.position.set(0.45, 1.58, -2.27);
+    const barH = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.03, 0.02), trimMat);
+    barH.position.set(0.45, 1.58, -2.27);
+    this.scene.add(frame, glass, barV, barH);
+
+    // Framed decorative wall poster on left wall
+    const artFrame = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.68, 0.56), trimMat);
+    artFrame.position.set(-2.31, 1.58, -0.35);
+    const artTex = createWallArtTexture(this.job.palette.accent);
+    const artPlane = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.46, 0.58),
+      new THREE.MeshBasicMaterial({ map: artTex }),
+    );
+    artPlane.rotation.y = Math.PI / 2;
+    artPlane.position.set(-2.285, 1.58, -0.35);
+    this.scene.add(artFrame, artPlane);
   }
 
   private buildStains(): void {
@@ -436,70 +544,116 @@ export class Room3DView {
     }
   }
 
-  private async buildFurnitureAndClutter(): Promise<void> {
-    const furniturePromises = (this.job.furnitureLayout ?? []).map(async (prop) => {
-      const tpl = await loadGltfInstance(prop.modelName);
-      if (this.destroyed || !tpl) return;
-      const g = centerAndGroundGroup(tpl, prop.scale3D ?? 1);
-      g.position.set(prop.pos3D[0], prop.pos3D[1], prop.pos3D[2]);
-      g.rotation.y = prop.rotY3D ?? 0;
-      this.scene.add(g);
-    });
+  private async buildFurnitureOnly(layout: FurniturePropSpec[]): Promise<void> {
+    await Promise.all(
+      layout.map(async (prop) => {
+        const tpl = await loadGltfInstance(prop.modelName);
+        if (this.destroyed || !tpl) return;
+        const { wrapper, size } = centerAndGroundGroup(tpl, prop.scale3D ?? 1);
+        wrapper.position.set(prop.pos3D[0], prop.pos3D[1], prop.pos3D[2]);
+        wrapper.rotation.y = prop.rotY3D ?? 0;
+        this.furnitureGroup.add(wrapper);
 
-    const clutterPromises = this.job.clutter.map(async (item) => {
-      const startPos: Vec3 = item.pos3D ?? [0, 0, 1.2];
-      const targetPos: Vec3 = item.targetPos3D ?? [0, 0.5, -1.2];
+        // Soft contact shadow decal for grounded props
+        if (prop.pos3D[1] <= 0.02 && !prop.modelName.startsWith('rug')) {
+          const shadow = new THREE.Mesh(
+            new THREE.PlaneGeometry(Math.max(0.35, size.x * 1.18), Math.max(0.35, size.z * 1.18)),
+            new THREE.MeshBasicMaterial({
+              map: this.contactShadowTex,
+              transparent: true,
+              depthWrite: false,
+              opacity: 0.75,
+            }),
+          );
+          shadow.rotation.x = -Math.PI / 2;
+          shadow.position.set(prop.pos3D[0], 0.004, prop.pos3D[2]);
+          shadow.rotation.z = prop.rotY3D ?? 0;
+          this.furnitureGroup.add(shadow);
+        }
+      }),
+    );
+  }
 
-      let visual: THREE.Group;
-      if (item.modelName) {
-        const tpl = await loadGltfInstance(item.modelName);
-        if (this.destroyed) return;
-        visual = tpl
-          ? centerAndGroundGroup(tpl, item.scale3D ?? 1)
-          : buildHeroOrFallbackProp(item.kind);
-      } else {
-        visual = buildHeroOrFallbackProp(item.kind);
-      }
-      if (this.destroyed) return;
+  private async buildFurnitureAndClutter(layout: FurniturePropSpec[]): Promise<void> {
+    const fPromise = this.buildFurnitureOnly(layout);
 
-      visual.position.set(startPos[0], startPos[1], startPos[2]);
-      if (item.rotY3D) visual.rotation.y = item.rotY3D;
+    const clutterPromises = this.readonlyMode
+      ? []
+      : this.job.clutter.map(async (item) => {
+          const startPos: Vec3 = item.pos3D ?? [0, 0, 1.2];
+          const targetPos: Vec3 = item.targetPos3D ?? [0, 0.5, -1.2];
 
-      // Generous invisible touch proxy for easy mobile grabbing
-      const hitProxy = new THREE.Mesh(
-        new THREE.SphereGeometry(0.32, 10, 10),
-        new THREE.MeshBasicMaterial({ visible: false }),
-      );
-      hitProxy.position.y = 0.16;
-      hitProxy.userData = { clutterId: item.id };
-      visual.add(hitProxy);
-      this.scene.add(visual);
+          let visual: THREE.Group;
+          if (item.modelName) {
+            const tpl = await loadGltfInstance(item.modelName);
+            if (this.destroyed) return;
+            visual = tpl
+              ? centerAndGroundGroup(tpl, item.scale3D ?? 1).wrapper
+              : buildHeroOrFallbackProp(item.kind);
+          } else {
+            visual = buildHeroOrFallbackProp(item.kind);
+          }
+          if (this.destroyed) return;
 
-      // Glowing green 3D target ring at targetPos
-      const ringMat = new THREE.MeshBasicMaterial({
-        color: 0x2a9d8f,
-        side: THREE.DoubleSide,
-        transparent: true,
-        opacity: 0.78,
-      });
-      const targetRing = new THREE.Mesh(new THREE.RingGeometry(0.16, 0.24, 28), ringMat);
-      targetRing.rotation.x = -Math.PI / 2;
-      targetRing.position.set(targetPos[0], targetPos[1] + 0.015, targetPos[2]);
-      this.scene.add(targetRing);
+          visual.position.set(startPos[0], startPos[1], startPos[2]);
+          if (item.rotY3D) visual.rotation.y = item.rotY3D;
 
-      this.clutter.push({
-        spec: item,
-        group: visual,
-        hitProxy,
-        targetRing,
-        startPos,
-        targetPos,
-        done: false,
-      });
-    });
+          const hitProxy = new THREE.Mesh(
+            new THREE.SphereGeometry(0.34, 10, 10),
+            new THREE.MeshBasicMaterial({ visible: false }),
+          );
+          hitProxy.position.y = 0.16;
+          hitProxy.userData = { clutterId: item.id };
+          visual.add(hitProxy);
+          this.scene.add(visual);
 
-    await Promise.all([...furniturePromises, ...clutterPromises]);
+          const ringMat = new THREE.MeshBasicMaterial({
+            color: 0x2a9d8f,
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.85,
+            depthTest: false,
+          });
+          const targetRing = new THREE.Mesh(new THREE.RingGeometry(0.16, 0.25, 28), ringMat);
+          targetRing.rotation.x = -Math.PI / 2;
+          targetRing.renderOrder = 10;
+          targetRing.position.set(targetPos[0], targetPos[1] + 0.015, targetPos[2]);
+          this.scene.add(targetRing);
+
+          this.clutter.push({
+            spec: item,
+            group: visual,
+            hitProxy,
+            targetRing,
+            startPos,
+            targetPos,
+            done: false,
+          });
+        });
+
+    await Promise.all([fPromise, ...clutterPromises]);
+    if (this.destroyed) return;
+    this.assetsLoaded = true;
     this.renderer.shadowMap.needsUpdate = true;
+    this.markDirty();
+  }
+
+  private emitParticles(x: number, y: number, z: number, count: number): void {
+    let spawned = 0;
+    for (let i = 0; i < MAX_PARTICLES && spawned < count; i++) {
+      const slot = this.particleSlots[i];
+      if (!slot.active) {
+        slot.active = true;
+        slot.x = x + (Math.random() - 0.5) * 0.22;
+        slot.y = y + 0.08 + Math.random() * 0.08;
+        slot.z = z + (Math.random() - 0.5) * 0.22;
+        slot.vx = (Math.random() - 0.5) * 0.03;
+        slot.vy = 0.025 + Math.random() * 0.025;
+        slot.vz = (Math.random() - 0.5) * 0.03;
+        slot.life = 1.0;
+        spawned++;
+      }
+    }
     this.markDirty();
   }
 
@@ -512,10 +666,12 @@ export class Room3DView {
   }
 
   onPointerDown(clientX: number, clientY: number): void {
-    if (this.finished || this.destroyed) return;
+    if (this.finished || this.destroyed || this.readonlyMode) return;
+    this.pointerDownClient = { x: clientX, y: clientY };
+    this.pointerMovedDist = 0;
     if (!this.pointerToRay(clientX, clientY)) return;
 
-    // 1. Check clutter proxies first
+    // 1. Check unplaced clutter hit proxies
     const proxies = this.clutter.filter((c) => !c.done).map((c) => c.hitProxy);
     const hits = this.raycaster.intersectObjects(proxies, false);
     if (hits.length > 0) {
@@ -531,12 +687,22 @@ export class Room3DView {
       }
     }
 
-    // 2. Otherwise try scrubbing stain decals
+    // 2. If a clutter item was already selected by tap, defer scrubbing until drag >= 8px
+    if (this.selectedClutter && !this.selectedClutter.done) {
+      return;
+    }
+
     this.scrubAt(clientX, clientY);
   }
 
   onPointerMove(clientX: number, clientY: number): void {
-    if (this.finished || this.destroyed) return;
+    if (this.finished || this.destroyed || this.readonlyMode) return;
+    if (this.pointerDownClient) {
+      this.pointerMovedDist = Math.max(
+        this.pointerMovedDist,
+        Math.hypot(clientX - this.pointerDownClient.x, clientY - this.pointerDownClient.y),
+      );
+    }
     if (!this.pointerToRay(clientX, clientY)) return;
 
     if (this.dragged) {
@@ -558,29 +724,77 @@ export class Room3DView {
       return;
     }
 
+    if (this.selectedClutter && this.pointerMovedDist < 8) return;
     this.scrubAt(clientX, clientY);
   }
 
-  onPointerUp(): void {
+  onPointerUp(clientX?: number, clientY?: number): void {
     this.lastScrubUV = null;
-    const item = this.dragged;
-    if (!item) return;
-    this.dragged = null;
+    const down = this.pointerDownClient;
+    this.pointerDownClient = null;
+    const isTap =
+      down && typeof clientX === 'number' && typeof clientY === 'number'
+        ? isTapGesture(down.x, down.y, clientX, clientY, 10)
+        : false;
 
-    const currentPos: Vec3 = [item.group.position.x, item.targetPos[1], item.group.position.z];
-    const snapped = isWithin3DSnapRadius(currentPos, item.targetPos, this.snapRadiusMeters);
-    if (snapped) {
-      item.done = true;
-      item.group.position.set(item.targetPos[0], item.targetPos[1], item.targetPos[2]);
-      item.targetRing.visible = false;
-      this.callbacks.onClutterSnapped(item.spec);
-      this.emitProgressAndCheckWin();
-    } else {
-      item.group.position.set(item.startPos[0], item.startPos[1], item.startPos[2]);
-      (item.targetRing.material as THREE.MeshBasicMaterial).color.setHex(0x2a9d8f);
+    const item = this.dragged;
+    if (item) {
+      this.dragged = null;
+      const currentPos: Vec3 = [item.group.position.x, item.targetPos[1], item.group.position.z];
+      const snapped = isWithin3DSnapRadius(currentPos, item.targetPos, this.snapRadiusMeters);
+      if (snapped) {
+        this.snapClutterItem(item);
+      } else if (isTap) {
+        // Select clutter for easy tap-target placement
+        if (this.selectedClutter && this.selectedClutter !== item) {
+          (this.selectedClutter.targetRing.material as THREE.MeshBasicMaterial).color.setHex(0x2a9d8f);
+          this.selectedClutter.group.position.set(
+            this.selectedClutter.startPos[0],
+            this.selectedClutter.startPos[1],
+            this.selectedClutter.startPos[2],
+          );
+        }
+        this.selectedClutter = item;
+        item.group.position.set(item.startPos[0], item.startPos[1] + 0.12, item.startPos[2]);
+        (item.targetRing.material as THREE.MeshBasicMaterial).color.setHex(0xf2cc8f);
+        this.callbacks.onClutterSelected?.(item.spec);
+      } else {
+        if (this.selectedClutter === item) this.selectedClutter = null;
+        item.group.position.set(item.startPos[0], item.startPos[1], item.startPos[2]);
+        (item.targetRing.material as THREE.MeshBasicMaterial).color.setHex(0x2a9d8f);
+      }
+      this.renderer.shadowMap.needsUpdate = true;
+      this.markDirty();
+      return;
     }
-    this.renderer.shadowMap.needsUpdate = true;
-    this.markDirty();
+
+    // Handle tap-to-place onto glowing target ring
+    if (isTap && this.selectedClutter && !this.selectedClutter.done && typeof clientX === 'number' && typeof clientY === 'number') {
+      if (this.pointerToRay(clientX, clientY)) {
+        const sel = this.selectedClutter;
+        const o = this.raycaster.ray.origin;
+        const d = this.raycaster.ray.direction;
+        const hit = intersectRayPlane([o.x, o.y, o.z], [d.x, d.y, d.z], [0, sel.targetPos[1], 0], [0, 1, 0]);
+        if (hit && isWithin3DSnapRadius(hit, sel.targetPos, this.snapRadiusMeters * 1.45)) {
+          this.snapClutterItem(sel);
+          this.renderer.shadowMap.needsUpdate = true;
+          this.markDirty();
+          return;
+        }
+      }
+      // Fallback: if tapped elsewhere on a stain, scrub
+      this.scrubAt(clientX, clientY);
+    }
+  }
+
+  private snapClutterItem(item: Clutter3DState): void {
+    item.done = true;
+    if (this.selectedClutter === item) this.selectedClutter = null;
+    item.group.position.set(item.targetPos[0], item.targetPos[1], item.targetPos[2]);
+    item.targetRing.visible = false;
+    this.emitParticles(item.targetPos[0], item.targetPos[1] + 0.15, item.targetPos[2], 8);
+    this.callbacks.onClutterSnapped(item.spec);
+    this.emitProgressAndCheckWin();
   }
 
   private scrubAt(clientX: number, clientY: number): void {
@@ -610,8 +824,8 @@ export class Room3DView {
         : { px, py };
     this.lastScrubUV = { stainId, px, py };
 
-    // Interpolate 2D canvas erase & CoverageGrid identically
-    const r = this.brushRadiusPx;
+    const matchMult = getToolMatchMultiplier(this.toolMode, st.spec.kind);
+    const r = Math.round(this.brushRadiusPx * matchMult);
     const dist = Math.hypot(px - prev.px, py - prev.py);
     const step = Math.max(4, r * 0.4);
     const steps = Math.max(1, Math.ceil(dist / step));
@@ -630,12 +844,14 @@ export class Room3DView {
     st.ctx.restore();
     st.texDirty = true;
 
+    this.emitParticles(hit.point.x, hit.point.y + 0.05, hit.point.z, 2);
     this.callbacks.onScrubStroke();
 
     if (st.grid.isComplete) {
       st.done = true;
       st.grid.markComplete();
       st.mesh.visible = false;
+      this.emitParticles(st.center[0], st.center[1] + 0.15, st.center[2], 10);
       this.callbacks.onStainCleared();
     }
     this.emitProgressAndCheckWin();
@@ -652,8 +868,38 @@ export class Room3DView {
 
     if (!this.finished && this.stains.every((s) => s.done) && this.clutter.every((c) => c.done)) {
       this.finished = true;
+      // Flush final clean render & capture After snapshot synchronously
+      this.flushDirtyStainTextures();
+      this.renderer.render(this.scene, this.camera);
+      this.afterSnapshot = this.captureThumbnailDataUrl();
       this.callbacks.onComplete();
     }
+  }
+
+  private captureThumbnailDataUrl(): string | null {
+    try {
+      const c = document.createElement('canvas');
+      c.width = 180;
+      c.height = 320;
+      const ctx = c.getContext('2d');
+      if (!ctx) return null;
+      ctx.drawImage(this.threeCanvas, 0, 0, c.width, c.height);
+      return c.toDataURL('image/jpeg', 0.72);
+    } catch {
+      return null;
+    }
+  }
+
+  private flushDirtyStainTextures(): boolean {
+    let any = false;
+    for (const st of this.stains) {
+      if (st.texDirty) {
+        st.tex.needsUpdate = true;
+        st.texDirty = false;
+        any = true;
+      }
+    }
+    return any;
   }
 
   private updateCameraPosition(): void {
@@ -670,7 +916,6 @@ export class Room3DView {
     if (this.destroyed) return;
     this.rafId = requestAnimationFrame(this.tick);
 
-    // Smooth camera orbit interpolation (snappy & mobile-friendly)
     if (Math.abs(this.orbitTargetAngle - this.orbitAngle) > 0.008) {
       this.orbitAngle += (this.orbitTargetAngle - this.orbitAngle) * 0.28;
       this.updateCameraPosition();
@@ -681,7 +926,6 @@ export class Room3DView {
       this.dirty = true;
     }
 
-    // Gentle decay if pulseRemaining scaled rings up
     for (const c of this.clutter) {
       if (!c.done && c.targetRing.scale.x > 1.01) {
         c.targetRing.scale.lerp(new THREE.Vector3(1, 1, 1), 0.08);
@@ -689,13 +933,11 @@ export class Room3DView {
       }
     }
 
-    // Batch stain canvas texture uploads & Dust Radar emissive pulse once per frame
+    if (this.flushDirtyStainTextures()) {
+      this.dirty = true;
+    }
+
     for (const st of this.stains) {
-      if (st.texDirty) {
-        st.tex.needsUpdate = true;
-        st.texDirty = false;
-        this.dirty = true;
-      }
       if (!st.done && st.pulseWeight > 0.01) {
         const mat = st.mesh.material as THREE.MeshStandardMaterial;
         mat.emissive.setHex(0xf2cc8f);
@@ -710,9 +952,34 @@ export class Room3DView {
       }
     }
 
-    if (this.dirty) {
+    // Update active 3D particles & gate dirty flag
+    let activeParticles = 0;
+    for (let i = 0; i < MAX_PARTICLES; i++) {
+      const slot = this.particleSlots[i];
+      if (!slot.active) continue;
+      slot.x += slot.vx;
+      slot.y += slot.vy;
+      slot.z += slot.vz;
+      slot.life -= 0.045;
+      if (slot.life <= 0) {
+        slot.active = false;
+        this.particlePositions[i * 3 + 1] = -20;
+      } else {
+        activeParticles++;
+        this.particlePositions[i * 3] = slot.x;
+        this.particlePositions[i * 3 + 1] = slot.y;
+        this.particlePositions[i * 3 + 2] = slot.z;
+      }
+    }
+    if (activeParticles > 0 || this.dirty) {
+      if (activeParticles > 0) {
+        this.particlePoints.geometry.attributes.position.needsUpdate = true;
+      }
       this.dirty = false;
       this.renderer.render(this.scene, this.camera);
+      if (this.assetsLoaded && !this.beforeSnapshot && !this.readonlyMode) {
+        this.beforeSnapshot = this.captureThumbnailDataUrl();
+      }
     }
   };
 
@@ -726,10 +993,12 @@ export class Room3DView {
     this.threeCanvas.removeEventListener('webglcontextrestored', this.onContextRestoredBound);
 
     this.scene.traverse((obj) => {
-      if ((obj as THREE.Mesh).isMesh) {
-        const mesh = obj as THREE.Mesh;
-        mesh.geometry?.dispose();
-        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      if ((obj as THREE.Mesh).isMesh || (obj as THREE.Points).isPoints) {
+        const renderable = obj as THREE.Mesh | THREE.Points;
+        renderable.geometry?.dispose();
+        const mats = Array.isArray(renderable.material)
+          ? renderable.material
+          : [renderable.material];
         for (const m of mats) {
           if (!m) continue;
           const std = m as THREE.MeshStandardMaterial;
@@ -739,6 +1008,7 @@ export class Room3DView {
       }
     });
 
+    this.contactShadowTex.dispose();
     this.renderer.dispose();
     this.threeCanvas.remove();
   }

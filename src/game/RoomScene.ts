@@ -1,7 +1,9 @@
 import Phaser from 'phaser';
-import type { ClutterItemSpec, JobSpec } from '../core/types';
+import type { ClutterItemSpec, JobSpec, ToolMode } from '../core/types';
 import { getJobById, JOBS } from '../core/jobs';
+import { generateDailyJob } from '../core/daily';
 import { applyJobResult, getToolStats } from '../core/economy';
+import { getCareerRank } from '../core/career';
 import { formatMoney, pickText, t } from '../core/i18n';
 import { asmrSynth } from '../audio/asmrSynth';
 import { getState, updateState } from './stateStore';
@@ -32,6 +34,8 @@ export class RoomScene extends Phaser.Scene {
   private activePointerId: number | null = null;
   private startMs = 0;
   private finished = false;
+  private sceneShutdown = false;
+  private toolMode: ToolMode = 'lap';
 
   private progressText!: Phaser.GameObjects.Text;
   private timerText!: Phaser.GameObjects.Text;
@@ -41,11 +45,17 @@ export class RoomScene extends Phaser.Scene {
     super('RoomScene');
   }
 
-  init(data: { jobId?: string }): void {
-    this.job = getJobById(data.jobId || '') ?? JOBS[0];
+  init(data: { jobId?: string; dailyDateKey?: string }): void {
+    if (data.dailyDateKey) {
+      this.job = generateDailyJob(data.dailyDateKey, getState().unlockedLevel);
+    } else {
+      this.job = getJobById(data.jobId || '') ?? JOBS[0];
+    }
     this.activePointerId = null;
     this.finished = false;
+    this.sceneShutdown = false;
     this.view3d = null;
+    this.toolMode = 'lap';
   }
 
   create(): void {
@@ -54,7 +64,6 @@ export class RoomScene extends Phaser.Scene {
     const stats = getToolStats(state.upgrades);
     const canvas = this.sys.game.canvas;
 
-    // Mount Three.js 3D Room behind transparent Phaser UI layer
     this.view3d = new Room3DView(
       canvas,
       this.job,
@@ -74,25 +83,25 @@ export class RoomScene extends Phaser.Scene {
           asmrSynth.playSnap();
           this.toastText?.setText(pickText(item.note, getState().locale));
         },
+        onClutterSelected: (item: ClutterItemSpec) => {
+          asmrSynth.playPop();
+          this.toastText?.setText(`${pickText(item.label, getState().locale)} → ${t(getState().locale, 'toolDrag')}`);
+        },
         onComplete: () => {
           this.handleWin();
         },
       },
     );
 
-    // Top HUD
-    this.add.rectangle(225, 48, 450, 96, 0x3d405b, 0.94).setDepth(10);
+    // Sleek Compact Top HUD (72px)
+    this.add.rectangle(225, 36, 450, 72, 0x3d405b, 0.92).setDepth(10);
 
     const backRect = this.add
-      .rectangle(46, 34, 72, 32, 0xf2cc8f)
+      .rectangle(42, 36, 66, 36, 0xf2cc8f)
       .setDepth(11)
       .setInteractive({ useHandCursor: true });
     this.add
-      .text(46, 34, `← ${t(loc, 'backBtn')}`, {
-        fontSize: '12px',
-        fontStyle: 'bold',
-        color: '#3D405B',
-      })
+      .text(42, 36, '←', { fontSize: '18px', fontStyle: 'bold', color: '#3D405B' })
       .setOrigin(0.5)
       .setDepth(12);
     backRect.on('pointerdown', () => {
@@ -102,8 +111,8 @@ export class RoomScene extends Phaser.Scene {
     });
 
     this.add
-      .text(225, 26, pickText(this.job.title, loc), {
-        fontSize: '16px',
+      .text(225, 22, pickText(this.job.title, loc), {
+        fontSize: '14px',
         fontStyle: 'bold',
         color: '#FDF6EC',
       })
@@ -111,7 +120,7 @@ export class RoomScene extends Phaser.Scene {
       .setDepth(12);
 
     this.progressText = this.add
-      .text(120, 68, `${t(loc, 'tidyProgress')}: 0%`, {
+      .text(148, 50, `${t(loc, 'tidyProgress')}: 0%`, {
         fontSize: '13px',
         fontStyle: 'bold',
         color: '#81B29A',
@@ -120,20 +129,19 @@ export class RoomScene extends Phaser.Scene {
       .setDepth(12);
 
     this.timerText = this.add
-      .text(335, 68, `0s / ${this.job.parTimeSec}s`, {
-        fontSize: '13px',
+      .text(308, 50, `0s / ${this.job.parTimeSec}s`, {
+        fontSize: '12px',
         color: '#F2CC8F',
       })
       .setOrigin(0.5)
       .setDepth(12);
 
-    // Mute button top right
     const muteRect = this.add
-      .rectangle(410, 34, 52, 32, state.muted ? 0x9ca3af : 0x81b29a)
+      .rectangle(412, 36, 50, 36, state.muted ? 0x9ca3af : 0x81b29a)
       .setDepth(11)
       .setInteractive({ useHandCursor: true });
     const muteLabel = this.add
-      .text(410, 34, state.muted ? '🔇' : '🔊', { fontSize: '14px' })
+      .text(412, 36, state.muted ? '🔇' : '🔊', { fontSize: '15px' })
       .setOrigin(0.5)
       .setDepth(12);
     muteRect.on('pointerdown', () => {
@@ -145,28 +153,24 @@ export class RoomScene extends Phaser.Scene {
       muteLabel.setText(next ? '🔇' : '🔊');
     });
 
-    // Bottom HUD bar with 3D orbit controls + hint + optional Dust Radar
-    this.add.rectangle(225, 738, 450, 124, 0x3d405b, 0.94).setDepth(10);
+    // Sleek Compact Bottom HUD (92px)
+    this.add.rectangle(225, 754, 450, 92, 0x3d405b, 0.92).setDepth(10);
     this.toastText = this.add
-      .text(225, 702, t(loc, 'scrubHint'), {
-        fontSize: '12px',
+      .text(225, 722, t(loc, 'scrubHint'), {
+        fontSize: '11px',
         color: '#FDF6EC',
         align: 'center',
-        wordWrap: { width: 410 },
+        wordWrap: { width: 420 },
       })
       .setOrigin(0.5)
       .setDepth(12);
 
     const rotLeft = this.add
-      .rectangle(68, 756, 98, 34, 0x81b29a)
+      .rectangle(42, 766, 56, 36, 0x81b29a)
       .setDepth(11)
       .setInteractive({ useHandCursor: true });
     this.add
-      .text(68, 756, `↺ ${t(loc, 'rotateBtn')}`, {
-        fontSize: '11px',
-        fontStyle: 'bold',
-        color: '#FFFFFF',
-      })
+      .text(42, 766, '↺', { fontSize: '18px', fontStyle: 'bold', color: '#FFFFFF' })
       .setOrigin(0.5)
       .setDepth(12);
     rotLeft.on('pointerdown', () => {
@@ -175,32 +179,51 @@ export class RoomScene extends Phaser.Scene {
       this.view3d?.rotateStep(-0.28);
     });
 
-    const rotRight = this.add
-      .rectangle(382, 756, 98, 34, 0x81b29a)
+    const lapBtn = this.add
+      .rectangle(136, 766, 76, 36, 0xe07a5f)
       .setDepth(11)
       .setInteractive({ useHandCursor: true });
     this.add
-      .text(382, 756, `${t(loc, 'rotateBtn')} ↻`, {
-        fontSize: '11px',
-        fontStyle: 'bold',
-        color: '#FFFFFF',
-      })
+      .text(136, 766, t(loc, 'toolLap'), { fontSize: '12px', fontStyle: 'bold', color: '#FFFFFF' })
       .setOrigin(0.5)
       .setDepth(12);
-    rotRight.on('pointerdown', () => {
+
+    const pelBtn = this.add
+      .rectangle(220, 766, 76, 36, 0x5c6b73)
+      .setDepth(11)
+      .setInteractive({ useHandCursor: true });
+    this.add
+      .text(220, 766, t(loc, 'toolPel'), { fontSize: '12px', fontStyle: 'bold', color: '#FFFFFF' })
+      .setOrigin(0.5)
+      .setDepth(12);
+
+    const updateToolVisual = () => {
+      lapBtn.setFillStyle(this.toolMode === 'lap' ? 0xe07a5f : 0x5c6b73);
+      pelBtn.setFillStyle(this.toolMode === 'pel' ? 0xe07a5f : 0x5c6b73);
+    };
+    lapBtn.on('pointerdown', () => {
       asmrSynth.unlock();
       asmrSynth.playPop();
-      this.view3d?.rotateStep(0.28);
+      this.toolMode = 'lap';
+      this.view3d?.setToolMode('lap');
+      updateToolVisual();
+    });
+    pelBtn.on('pointerdown', () => {
+      asmrSynth.unlock();
+      asmrSynth.playPop();
+      this.toolMode = 'pel';
+      this.view3d?.setToolMode('pel');
+      updateToolVisual();
     });
 
     if (stats.hasRadar) {
       const radarRect = this.add
-        .rectangle(225, 756, 174, 34, 0xf2cc8f)
+        .rectangle(318, 766, 94, 36, 0xf2cc8f)
         .setDepth(11)
         .setInteractive({ useHandCursor: true });
       this.add
-        .text(225, 756, `✨ ${t(loc, 'radarBtn')}`, {
-          fontSize: '12px',
+        .text(318, 766, `✨ ${t(loc, 'radarBtn')}`, {
+          fontSize: '11px',
           fontStyle: 'bold',
           color: '#3D405B',
         })
@@ -213,11 +236,24 @@ export class RoomScene extends Phaser.Scene {
       });
     }
 
-    // Forward 3D playfield pointer interaction
+    const rotRight = this.add
+      .rectangle(408, 766, 56, 36, 0x81b29a)
+      .setDepth(11)
+      .setInteractive({ useHandCursor: true });
+    this.add
+      .text(408, 766, '↻', { fontSize: '18px', fontStyle: 'bold', color: '#FFFFFF' })
+      .setOrigin(0.5)
+      .setDepth(12);
+    rotRight.on('pointerdown', () => {
+      asmrSynth.unlock();
+      asmrSynth.playPop();
+      this.view3d?.rotateStep(0.28);
+    });
+
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       asmrSynth.unlock();
       if (this.finished) return;
-      if (pointer.y < 96 || pointer.y > 676) return;
+      if (pointer.y < 72 || pointer.y > 708) return;
       if (this.activePointerId !== null) return;
       this.activePointerId = pointer.id;
       const pt = getClientCoords(pointer, canvas);
@@ -234,7 +270,12 @@ export class RoomScene extends Phaser.Scene {
     const releasePointer = (pointer?: Phaser.Input.Pointer) => {
       if (pointer && this.activePointerId !== null && pointer.id !== this.activePointerId) return;
       this.activePointerId = null;
-      this.view3d?.onPointerUp();
+      if (pointer) {
+        const pt = getClientCoords(pointer, canvas);
+        this.view3d?.onPointerUp(pt.x, pt.y);
+      } else {
+        this.view3d?.onPointerUp();
+      }
     };
 
     this.input.on('pointerup', releasePointer);
@@ -246,6 +287,7 @@ export class RoomScene extends Phaser.Scene {
     this.scale.on('resize', onResize);
 
     this.events.once('shutdown', () => {
+      this.sceneShutdown = true;
       this.game.events.off('blur', onBlur);
       this.scale.off('resize', onResize);
       this.view3d?.destroy();
@@ -265,26 +307,52 @@ export class RoomScene extends Phaser.Scene {
     if (this.finished) return;
     this.finished = true;
     const elapsedSec = Math.max(1, Math.round((Date.now() - this.startMs) / 1000));
-    const res = applyJobResult(getState(), { jobId: this.job.id, elapsedSec });
+    const res = applyJobResult(getState(), {
+      jobId: this.job.id,
+      elapsedSec,
+      jobOverride: this.job.isDaily ? this.job : undefined,
+    });
     updateState(res.state);
     asmrSynth.playCash();
-    this.showCompletionModal(res.entry);
+    this.showCompletionModal(res.entry, res.xpGained, res.state.xp);
   }
 
-  private showCompletionModal(entry: {
-    stars: 1 | 2 | 3;
-    baseWageRp: number;
-    speedBonusRp: number;
-    tipRp: number;
-    totalRp: number;
-  }): void {
+  private loadSnapshotAsync(key: string, dataUrl: string | null, x: number, y: number): void {
+    if (!dataUrl) return;
+    if (this.textures.exists(key)) {
+      this.textures.remove(key);
+    }
+    const img = new Image();
+    img.onload = () => {
+      if (this.sceneShutdown || !this.scene.isActive('RoomScene')) return;
+      if (this.textures.exists(key)) this.textures.remove(key);
+      this.textures.addImage(key, img);
+      this.add.image(x, y, key).setDisplaySize(90, 144).setDepth(24);
+    };
+    img.src = dataUrl;
+  }
+
+  private showCompletionModal(
+    entry: {
+      stars: 1 | 2 | 3;
+      baseWageRp: number;
+      speedBonusRp: number;
+      tipRp: number;
+      totalRp: number;
+    },
+    xpGained: number,
+    totalXp: number,
+  ): void {
     const loc = getState().locale;
-    this.add.rectangle(225, 400, 450, 800, 0x000000, 0.55).setDepth(20);
-    this.add.rectangle(225, 400, 396, 470, 0xfdf6ec).setStrokeStyle(3, 0x81b29a).setDepth(21);
+    const snaps = this.view3d?.getSnapshots() ?? { before: null, after: null };
+    const rank = getCareerRank(totalXp);
+
+    this.add.rectangle(225, 400, 450, 800, 0x000000, 0.58).setDepth(20);
+    this.add.rectangle(225, 400, 404, 620, 0xfdf6ec).setStrokeStyle(3, 0x81b29a).setDepth(21);
 
     this.add
-      .text(225, 200, t(loc, 'completeTitle'), {
-        fontSize: '24px',
+      .text(225, 118, t(loc, 'completeTitle'), {
+        fontSize: '22px',
         fontStyle: 'bold',
         color: '#3D405B',
       })
@@ -292,40 +360,54 @@ export class RoomScene extends Phaser.Scene {
       .setDepth(22);
 
     this.add
-      .text(225, 238, '★'.repeat(entry.stars) + '☆'.repeat(3 - entry.stars), {
-        fontSize: '28px',
+      .text(225, 152, '★'.repeat(entry.stars) + '☆'.repeat(3 - entry.stars), {
+        fontSize: '26px',
         color: '#E07A5F',
       })
       .setOrigin(0.5)
       .setDepth(22);
 
-    this.add.rectangle(225, 318, 352, 108, 0xffffff).setStrokeStyle(1, 0xe5d9c8).setDepth(22);
+    if (snaps.before || snaps.after) {
+      this.add.rectangle(160, 260, 96, 152, 0xe5d9c8).setDepth(22);
+      this.add.rectangle(290, 260, 96, 152, 0xe5d9c8).setDepth(22);
+      this.add
+        .text(160, 192, t(loc, 'beforeLabel'), { fontSize: '10px', fontStyle: 'bold', color: '#5C6B73' })
+        .setOrigin(0.5)
+        .setDepth(25);
+      this.add
+        .text(290, 192, t(loc, 'afterLabel'), { fontSize: '10px', fontStyle: 'bold', color: '#2A9D8F' })
+        .setOrigin(0.5)
+        .setDepth(25);
+      this.loadSnapshotAsync('snap_before', snaps.before, 160, 266);
+      this.loadSnapshotAsync('snap_after', snaps.after, 290, 266);
+    }
+
+    this.add.rectangle(225, 392, 360, 86, 0xffffff).setStrokeStyle(1, 0xe5d9c8).setDepth(22);
     this.add
-      .text(225, 276, `💌 ${t(loc, 'storyHeader')}`, {
-        fontSize: '12px',
+      .text(225, 360, `💌 ${t(loc, 'storyHeader')}`, {
+        fontSize: '11px',
         fontStyle: 'bold',
         color: '#81B29A',
       })
       .setOrigin(0.5)
       .setDepth(23);
     this.add
-      .text(225, 326, pickText(this.job.storyNote, loc), {
-        fontSize: '12px',
+      .text(225, 398, pickText(this.job.storyNote, loc), {
+        fontSize: '11px',
         color: '#3D405B',
         align: 'center',
-        wordWrap: { width: 325 },
+        wordWrap: { width: 335 },
       })
       .setOrigin(0.5)
       .setDepth(23);
 
     const lines = [
-      `${t(loc, 'baseWage')}: ${formatMoney(entry.baseWageRp, loc)}`,
-      `${t(loc, 'speedBonus')}: ${formatMoney(entry.speedBonusRp, loc)}`,
-      `${t(loc, 'tipBonus')}: ${formatMoney(entry.tipRp, loc)}`,
+      `${t(loc, 'baseWage')}: ${formatMoney(entry.baseWageRp, loc)}  •  ${t(loc, 'speedBonus')}: ${formatMoney(entry.speedBonusRp, loc)}`,
+      `${t(loc, 'tipBonus')}: ${formatMoney(entry.tipRp, loc)}  •  +${xpGained} ${t(loc, 'xpLabel')} (${pickText(rank.title, loc)})`,
     ];
     this.add
-      .text(225, 424, lines.join('\n'), {
-        fontSize: '13px',
+      .text(225, 466, lines.join('\n'), {
+        fontSize: '11px',
         color: '#5C6B73',
         align: 'center',
         lineSpacing: 6,
@@ -334,7 +416,7 @@ export class RoomScene extends Phaser.Scene {
       .setDepth(22);
 
     this.add
-      .text(225, 482, `${t(loc, 'totalEarned')}: +${formatMoney(entry.totalRp, loc)}`, {
+      .text(225, 514, `${t(loc, 'totalEarned')}: +${formatMoney(entry.totalRp, loc)}`, {
         fontSize: '16px',
         fontStyle: 'bold',
         color: '#2A9D8F',
@@ -342,14 +424,14 @@ export class RoomScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(22);
 
-    const nextJob = JOBS.find((j) => j.level === this.job.level + 1);
+    const nextJob = !this.job.isDaily ? JOBS.find((j) => j.level === this.job.level + 1) : undefined;
     if (nextJob) {
       const nextBtn = this.add
-        .rectangle(225, 540, 240, 42, 0x81b29a)
+        .rectangle(225, 568, 240, 40, 0x81b29a)
         .setDepth(22)
         .setInteractive({ useHandCursor: true });
       this.add
-        .text(225, 540, t(loc, 'nextHouse'), {
+        .text(225, 568, t(loc, 'nextHouse'), {
           fontSize: '14px',
           fontStyle: 'bold',
           color: '#FFFFFF',
@@ -363,11 +445,11 @@ export class RoomScene extends Phaser.Scene {
     }
 
     const mapBtn = this.add
-      .rectangle(225, nextJob ? 595 : 550, 240, 38, 0xe07a5f)
+      .rectangle(225, nextJob ? 620 : 576, 240, 38, 0xe07a5f)
       .setDepth(22)
       .setInteractive({ useHandCursor: true });
     this.add
-      .text(225, nextJob ? 595 : 550, t(loc, 'backToMap'), {
+      .text(225, nextJob ? 620 : 576, t(loc, 'backToMap'), {
         fontSize: '13px',
         fontStyle: 'bold',
         color: '#FFFFFF',

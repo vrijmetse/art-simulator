@@ -6,6 +6,7 @@ import {
   clampRoomXZ,
   distance3D,
   isWithin3DSnapRadius,
+  isTapGesture,
 } from '../../src/core/math3d';
 
 describe('math3d', () => {
@@ -46,5 +47,7 @@ describe('math3d', () => {
     expect(distance3D([0, 0, 0], [0.3, 0.4, 0])).toBeCloseTo(0.5, 5);
     expect(isWithin3DSnapRadius([1, 0.5, 1], [1.2, 0.5, 1.2], 0.45)).toBe(true);
     expect(isWithin3DSnapRadius([1, 0.5, 1], [2.0, 0.5, 1.0], 0.45)).toBe(false);
+    expect(isTapGesture(100, 100, 104, 103)).toBe(true);
+    expect(isTapGesture(100, 100, 115, 100)).toBe(false);
   });
 });

@@ -121,3 +121,13 @@ export function projectWorldToCanvas(
 export function isWithin3DSnapRadius(posA: Vec3, posB: Vec3, radiusMeters: number): boolean {
   return distance3D(posA, posB) <= radiusMeters;
 }
+
+export function isTapGesture(
+  downX: number,
+  downY: number,
+  upX: number,
+  upY: number,
+  maxDistPx = 10,
+): boolean {
+  return Math.hypot(upX - downX, upY - downY) <= maxDistPx;
+}

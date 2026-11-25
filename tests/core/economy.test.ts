@@ -3,11 +3,13 @@ import {
   UPGRADES,
   createInitialState,
   getToolStats,
+  getToolMatchMultiplier,
   calculateJobPayout,
   purchaseUpgrade,
   applyJobResult,
 } from '../../src/core/economy';
 import { JOBS } from '../../src/core/jobs';
+import { generateDailyJob } from '../../src/core/daily';
 import { formatMoney } from '../../src/core/i18n';
 
 describe('economy & progression', () => {
@@ -97,5 +99,24 @@ describe('economy & progression', () => {
     expect(stats.snapRadius).toBeGreaterThan(42);
     expect(stats.snapRadius3D).toBeGreaterThan(0.55);
     expect(stats.hasRadar).toBe(true);
+  });
+
+  it('awards XP, prevents same-day Daily Shift double-bonus farming, and computes tool match bonus', () => {
+    expect(getToolMatchMultiplier('lap', 'dust')).toBe(1.5);
+    expect(getToolMatchMultiplier('lap', 'spill')).toBe(1.0);
+    expect(getToolMatchMultiplier('pel', 'mud')).toBe(1.5);
+    expect(getToolMatchMultiplier('pel', 'dust')).toBe(1.0);
+
+    const dailyJob = generateDailyJob('2026-11-25', 2);
+    const s0 = createInitialState();
+    const first = applyJobResult(s0, { jobId: dailyJob.id, elapsedSec: 30, jobOverride: dailyJob });
+    expect(first.state.xp).toBeGreaterThan(0);
+    expect(first.state.dailyStreak).toBe(1);
+    expect(first.state.dailyCompletedDates).toContain('2026-11-25');
+
+    // Replaying same-day daily job must NOT re-increment streak or re-award daily bonus
+    const replay = applyJobResult(first.state, { jobId: dailyJob.id, elapsedSec: 30, jobOverride: dailyJob });
+    expect(replay.state.dailyStreak).toBe(1);
+    expect(replay.entry.totalRp).toBeLessThan(first.entry.totalRp);
   });
 });
