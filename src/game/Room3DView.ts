@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import type {
   AvatarId,
   ClutterItemSpec,
@@ -270,6 +271,7 @@ export class Room3DView {
   private assetsLoaded = false;
   private beforeSnapshot: string | null = null;
   private afterSnapshot: string | null = null;
+  public readyPromise: Promise<void> = Promise.resolve();
   private rafId = 0;
   private brushRadiusPx = 24;
   private snapRadiusMeters = 0.55;
@@ -329,6 +331,8 @@ export class Room3DView {
     this.renderer.shadowMap.autoUpdate = false;
     this.renderer.shadowMap.needsUpdate = true;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.06;
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(job.palette.wall);
@@ -340,7 +344,11 @@ export class Room3DView {
     const [startCharX, startCharZ] = computeSafeStandPoint(0.2, 0.85, layout);
     this.characterState = createCharacterState(startCharX, startCharZ);
     const avatarSpec = getAvatarSpec(avatarId);
-    this.homekeeper = createHomekeeperRig(`characters/${avatarSpec.modelName}`, this.contactShadowTex);
+    this.homekeeper = createHomekeeperRig(
+      `characters/${avatarSpec.modelName}`,
+      this.contactShadowTex,
+      avatarSpec.scale3D,
+    );
     applyHomekeeperPose(this.homekeeper, this.characterState, this.toolMode);
     this.scene.add(this.homekeeper.group);
 
@@ -382,7 +390,7 @@ export class Room3DView {
     if (!readonlyMode) {
       this.buildStains();
     }
-    void this.buildFurnitureAndClutter(this.job.furnitureLayout ?? []);
+    this.readyPromise = this.buildFurnitureAndClutter(this.job.furnitureLayout ?? []);
 
     this.syncCanvasBounds();
     window.addEventListener('resize', this.onResizeBound);
@@ -557,29 +565,29 @@ export class Room3DView {
     leftWall.receiveShadow = true;
     this.scene.add(leftWall);
 
-    const baseBack = new THREE.Mesh(new THREE.BoxGeometry(4.8, 0.14, 0.15), trimMat);
+    const baseBack = new THREE.Mesh(new RoundedBoxGeometry(4.8, 0.14, 0.15, 2, 0.025), trimMat);
     baseBack.position.set(0, 0.07, -2.35);
-    const baseLeft = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.14, 4.8), trimMat);
+    const baseLeft = new THREE.Mesh(new RoundedBoxGeometry(0.15, 0.14, 4.8, 2, 0.025), trimMat);
     baseLeft.position.set(-2.35, 0.07, 0);
     this.scene.add(baseBack, baseLeft);
 
-    // Sky gradient window with mullion bars
-    const frame = new THREE.Mesh(new THREE.BoxGeometry(1.18, 0.94, 0.05), trimMat);
+    // Sky gradient window with beveled frame & mullion bars
+    const frame = new THREE.Mesh(new RoundedBoxGeometry(1.18, 0.94, 0.06, 2, 0.02), trimMat);
     frame.position.set(0.45, 1.58, -2.31);
     const skyTex = createWindowSkyTexture();
     const glass = new THREE.Mesh(
       new THREE.PlaneGeometry(1.0, 0.78),
       new THREE.MeshBasicMaterial({ map: skyTex }),
     );
-    glass.position.set(0.45, 1.58, -2.28);
+    glass.position.set(0.45, 1.58, -2.275);
     const barV = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.78, 0.02), trimMat);
-    barV.position.set(0.45, 1.58, -2.27);
+    barV.position.set(0.45, 1.58, -2.265);
     const barH = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.03, 0.02), trimMat);
-    barH.position.set(0.45, 1.58, -2.27);
+    barH.position.set(0.45, 1.58, -2.265);
     this.scene.add(frame, glass, barV, barH);
 
     // Framed decorative wall poster on left wall
-    const artFrame = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.68, 0.56), trimMat);
+    const artFrame = new THREE.Mesh(new RoundedBoxGeometry(0.05, 0.68, 0.56, 2, 0.015), trimMat);
     artFrame.position.set(-2.31, 1.58, -0.35);
     const artTex = createWallArtTexture(this.job.palette.accent);
     const artPlane = new THREE.Mesh(

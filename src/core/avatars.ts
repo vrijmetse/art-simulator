@@ -4,28 +4,33 @@ export interface AvatarSpec {
   id: AvatarId;
   name: LocalizedText;
   modelName: string;
+  scale3D: number;
 }
 
 export const AVATARS: AvatarSpec[] = [
   {
     id: 'sari',
     name: { id: 'Sari', en: 'Sari' },
-    modelName: 'character-female-a.glb',
+    modelName: 'casual-female.glb',
+    scale3D: 0.56,
   },
   {
     id: 'maya',
     name: { id: 'Maya', en: 'Maya' },
-    modelName: 'character-female-b.glb',
+    modelName: 'casual-2-female.glb',
+    scale3D: 0.56,
   },
   {
     id: 'budi',
     name: { id: 'Budi', en: 'Budi' },
-    modelName: 'character-male-a.glb',
+    modelName: 'casual-male.glb',
+    scale3D: 0.56,
   },
   {
     id: 'eko',
     name: { id: 'Pak Eko', en: 'Pak Eko' },
-    modelName: 'character-worker.glb',
+    modelName: 'casual-2-male.glb',
+    scale3D: 0.56,
   },
 ];
 

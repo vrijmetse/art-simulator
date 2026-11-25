@@ -4,6 +4,7 @@ import { canClaimNpcChat, claimNpcChatReward, type NeighborSpec } from '../core/
 import { formatBalance, formatMoney, pickText, t } from '../core/i18n';
 import { asmrSynth } from '../audio/asmrSynth';
 import { getState, updateState } from './stateStore';
+import { renderNeighborPortraitCanvas } from './portraits';
 import { Street3DView } from './Street3DView';
 
 export class StreetScene extends Phaser.Scene {
@@ -186,6 +187,11 @@ export class StreetScene extends Phaser.Scene {
 
     this.events.once('shutdown', () => {
       this.scale.off('resize', onResize);
+      for (const key of this.textures.getTextureKeys()) {
+        if (key.startsWith('portrait_')) {
+          this.textures.remove(key);
+        }
+      }
       this.view3d?.destroy();
       this.view3d = null;
     });
@@ -217,8 +223,15 @@ export class StreetScene extends Phaser.Scene {
       .setStrokeStyle(2, 0xf2cc8f)
       .setDepth(21);
 
+    // 2D Bust Portrait at (58, 612), 68x68 -> y=578..646 strictly above greetBtn (y=655..689)
+    const pKey = `portrait_${spec.id}`;
+    if (!this.textures.exists(pKey)) {
+      this.textures.addCanvas(pKey, renderNeighborPortraitCanvas(spec));
+    }
+    const portraitImg = this.add.image(58, 612, pKey).setDisplaySize(68, 68).setDepth(22);
+
     const nameTxt = this.add
-      .text(24, 586, `${pickText(spec.name, loc)} • ${pickText(spec.role, loc)}`, {
+      .text(104, 582, `${pickText(spec.name, loc)} • ${pickText(spec.role, loc)}`, {
         fontSize: '12px',
         fontStyle: 'bold',
         color: '#F2CC8F',
@@ -226,14 +239,14 @@ export class StreetScene extends Phaser.Scene {
       .setDepth(22);
 
     const msgTxt = this.add
-      .text(24, 608, `"${pickText(spec.greeting, loc)}"`, {
+      .text(104, 604, `"${pickText(spec.greeting, loc)}"`, {
         fontSize: '11px',
         color: '#FDF6EC',
-        wordWrap: { width: 400 },
+        wordWrap: { width: 318 },
       })
       .setDepth(22);
 
-    this.modalObjects.push(bar, nameTxt, msgTxt);
+    this.modalObjects.push(bar, portraitImg, nameTxt, msgTxt);
 
     const greetBtn = this.add
       .rectangle(154, 672, 240, 34, canClaim ? 0x2a9d8f : 0x475569)

@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createInitialState } from '../../src/core/economy';
 import {
@@ -9,14 +11,23 @@ import {
 } from '../../src/core/neighborhood';
 
 describe('neighborhood & family/pet NPCs (TDD)', () => {
-  it('includes kids, spouses, and pets with valid model paths and job links', () => {
+  it('includes kids, spouses, and pets with smooth CC0 GLBs on disk, portrait palette, and job links', () => {
     const kinds = new Set(NEIGHBORS.map((n) => n.kind));
     expect(kinds.has('kid')).toBe(true);
     expect(kinds.has('spouse')).toBe(true);
     expect(kinds.has('pet')).toBe(true);
     for (const n of NEIGHBORS) {
       expect(n.modelPath.endsWith('.glb')).toBe(true);
+      expect(n.modelPath.includes('character-')).toBe(false);
+      expect(n.modelPath.includes('animal-dog')).toBe(false);
+      expect(n.portrait.skin).toMatch(/^#[0-9a-fA-F]{6}$/);
+      expect(n.portrait.accent).toMatch(/^#[0-9a-fA-F]{6}$/);
+      const fullPath = path.resolve(__dirname, '../../public/models', n.modelPath);
+      expect(fs.existsSync(fullPath)).toBe(true);
     }
+    const kid = NEIGHBORS.find((n) => n.kind === 'kid')!;
+    const spouse = NEIGHBORS.find((n) => n.kind === 'spouse')!;
+    expect(kid.scale3D).toBeLessThan(spouse.scale3D);
     expect(getNeighborForJob('kos-rina').kind).toBe('pet');
     expect(getNeighborForJob('dapur-sari').kind).toBe('spouse');
   });

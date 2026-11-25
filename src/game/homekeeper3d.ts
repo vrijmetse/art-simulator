@@ -1,23 +1,39 @@
 import * as THREE from 'three';
 import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
-import type { ToolMode } from '../core/types';
+import { resolveClipName } from '../core/animationMatch';
 import type { CharacterMotionState } from '../core/character';
+import type { ToolMode } from '../core/types';
 
-const charLoader = new GLTFLoader();
+const sharedLoader = new GLTFLoader();
+let decoderReady: Promise<void> | null = null;
 const gltfCache = new Map<string, Promise<GLTF | null>>();
 
-function loadCachedCharacterGltf(modelPath: string): Promise<GLTF | null> {
+function ensureMeshopt(): Promise<void> {
+  if (!decoderReady) {
+    decoderReady = MeshoptDecoder.ready.then(() => {
+      sharedLoader.setMeshoptDecoder(MeshoptDecoder);
+    });
+  }
+  return decoderReady;
+}
+
+export function loadCachedGltf(modelPath: string): Promise<GLTF | null> {
   const cached = gltfCache.get(modelPath);
   if (cached) return cached;
-  const p = new Promise<GLTF | null>((resolve) => {
-    charLoader.load(
-      `/models/${modelPath}`,
-      (gltf) => resolve(gltf),
-      undefined,
-      () => resolve(null),
-    );
-  });
+  const p = ensureMeshopt().then(
+    () =>
+      new Promise<GLTF | null>((resolve) => {
+        sharedLoader.load(
+          `/models/${modelPath}`,
+          (gltf) => resolve(gltf),
+          undefined,
+          () => resolve(null),
+        );
+      }),
+  );
   gltfCache.set(modelPath, p);
   return p;
 }
@@ -27,6 +43,7 @@ export interface RiggedActor {
   modelRoot: THREE.Object3D | null;
   mixer: THREE.AnimationMixer | null;
   actions: Record<string, THREE.AnimationAction>;
+  clipNames: string[];
   currentClip: string;
   lapMesh: THREE.Group | null;
   pelMesh: THREE.Group | null;
@@ -39,27 +56,27 @@ export type HomekeeperRig = RiggedActor;
 function buildHandheldTools(invScale: number): { lapMesh: THREE.Group; pelMesh: THREE.Group } {
   const lapMesh = new THREE.Group();
   lapMesh.scale.setScalar(invScale);
-  lapMesh.position.set(0, -0.14, 0.04);
+  lapMesh.position.set(0, 0.04, 0.04);
   const cloth = new THREE.Mesh(
-    new THREE.BoxGeometry(0.15, 0.05, 0.15),
-    new THREE.MeshStandardMaterial({ color: 0x48cae4, roughness: 0.7 }),
+    new RoundedBoxGeometry(0.16, 0.045, 0.16, 2, 0.015),
+    new THREE.MeshStandardMaterial({ color: 0x48cae4, roughness: 0.72 }),
   );
   lapMesh.add(cloth);
 
   const pelMesh = new THREE.Group();
   pelMesh.scale.setScalar(invScale);
-  pelMesh.position.set(0, -0.12, 0.05);
+  pelMesh.position.set(0, 0.02, 0.05);
   const stick = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.018, 0.018, 0.66, 8),
-    new THREE.MeshStandardMaterial({ color: 0xd4a373, roughness: 0.7 }),
+    new THREE.CylinderGeometry(0.016, 0.018, 0.68, 10),
+    new THREE.MeshStandardMaterial({ color: 0xd4a373, roughness: 0.72 }),
   );
   stick.rotation.x = Math.PI * 0.28;
   stick.position.set(0, -0.04, 0.18);
   const mopHead = new THREE.Mesh(
-    new THREE.BoxGeometry(0.24, 0.06, 0.12),
+    new RoundedBoxGeometry(0.24, 0.06, 0.12, 2, 0.02),
     new THREE.MeshStandardMaterial({ color: 0xfaf3e0, roughness: 0.85 }),
   );
-  mopHead.position.set(0, -0.26, 0.40);
+  mopHead.position.set(0, -0.27, 0.40);
   pelMesh.add(stick, mopHead);
   pelMesh.visible = false;
 
@@ -75,7 +92,7 @@ export function createRiggedActor(
   const group = new THREE.Group();
 
   const shadowDisc = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.56, 0.56),
+    new THREE.PlaneGeometry(0.58, 0.58),
     new THREE.MeshBasicMaterial({
       map: contactShadowTex,
       transparent: true,
@@ -93,6 +110,7 @@ export function createRiggedActor(
     modelRoot: null,
     mixer: null,
     actions: {},
+    clipNames: [],
     currentClip: '',
     lapMesh: null,
     pelMesh: null,
@@ -100,7 +118,7 @@ export function createRiggedActor(
     destroyed: false,
   };
 
-  actor.readyPromise = loadCachedCharacterGltf(modelPath).then((gltf) => {
+  actor.readyPromise = loadCachedGltf(modelPath).then((gltf) => {
     if (actor.destroyed || !gltf) return;
     const cloned = SkeletonUtils.clone(gltf.scene);
     cloned.scale.setScalar(scale3D);
@@ -125,13 +143,19 @@ export function createRiggedActor(
     });
 
     if (withTools) {
-      const rightArm = cloned.getObjectByName('arm-right');
-      const tools = buildHandheldTools(1 / scale3D);
+      const rightHand =
+        cloned.getObjectByName('FistR') ??
+        cloned.getObjectByName('LowerArmR') ??
+        cloned.getObjectByName('arm-right');
+      const ws = new THREE.Vector3();
+      if (rightHand) rightHand.getWorldScale(ws);
+      const invScale = rightHand && ws.x > 0.01 ? 1 / ws.x : 1 / scale3D;
+      const tools = buildHandheldTools(invScale);
       actor.lapMesh = tools.lapMesh;
       actor.pelMesh = tools.pelMesh;
-      if (rightArm) {
-        rightArm.add(tools.lapMesh);
-        rightArm.add(tools.pelMesh);
+      if (rightHand) {
+        rightHand.add(tools.lapMesh);
+        rightHand.add(tools.pelMesh);
       } else {
         tools.lapMesh.position.set(0.22, 0.45, 0.2);
         tools.pelMesh.position.set(0.22, 0.45, 0.2);
@@ -142,10 +166,10 @@ export function createRiggedActor(
     const mixer = new THREE.AnimationMixer(cloned);
     for (const clip of gltf.animations) {
       actor.actions[clip.name] = mixer.clipAction(clip);
+      actor.clipNames.push(clip.name);
     }
-    const initialClip = actor.actions.idle
-      ? 'idle'
-      : Object.keys(actor.actions)[0] || '';
+    const initialClip =
+      resolveClipName(actor.clipNames, ['Idle', 'idle']) ?? actor.clipNames[0] ?? '';
     if (initialClip && actor.actions[initialClip]) {
       actor.actions[initialClip].play();
       actor.currentClip = initialClip;
@@ -162,14 +186,14 @@ export function createRiggedActor(
 
 export function playActorAnimation(
   actor: RiggedActor,
-  preferredNames: string[],
+  preferredTokens: string[],
   dtSec = 0,
 ): void {
   if (actor.destroyed) return;
   if (actor.mixer && dtSec > 0) {
     actor.mixer.update(dtSec);
   }
-  const target = preferredNames.find((name) => Boolean(actor.actions[name]));
+  const target = resolveClipName(actor.clipNames, preferredTokens);
   if (!target || target === actor.currentClip) return;
 
   const next = actor.actions[target];
@@ -184,8 +208,9 @@ export function playActorAnimation(
 export function createHomekeeperRig(
   modelPath: string,
   contactShadowTex: THREE.Texture,
+  scale3D = 0.56,
 ): HomekeeperRig {
-  return createRiggedActor(modelPath, 1.28, contactShadowTex, true);
+  return createRiggedActor(modelPath, scale3D, contactShadowTex, true);
 }
 
 export function applyHomekeeperPose(
@@ -201,13 +226,13 @@ export function applyHomekeeperPose(
   if (rig.pelMesh) rig.pelMesh.visible = toolMode === 'pel';
 
   if (state.pose === 'walk') {
-    playActorAnimation(rig, ['walk', 'run', 'idle'], dtSec);
+    playActorAnimation(rig, ['Walk', 'Run', 'Idle'], dtSec);
   } else if (state.pose === 'scrub') {
-    playActorAnimation(rig, ['interact-right', 'attack-melee-right', 'idle'], dtSec);
+    playActorAnimation(rig, ['Punch', 'PickUp', 'Interact', 'Idle'], dtSec);
   } else if (state.pose === 'celebrate') {
-    playActorAnimation(rig, ['jump', 'emote-yes', 'dance', 'idle'], dtSec);
+    playActorAnimation(rig, ['Victory', 'Jump', 'EmoteYes', 'Idle'], dtSec);
   } else {
-    playActorAnimation(rig, ['idle', 'static'], dtSec);
+    playActorAnimation(rig, ['Idle', 'idle', 'static'], dtSec);
   }
 }
 

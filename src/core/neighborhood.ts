@@ -2,6 +2,13 @@ import type { GameState, LocalizedText } from './types';
 
 export type NeighborKind = 'kid' | 'spouse' | 'pet';
 
+export interface PortraitPalette {
+  bg: string;
+  skin: string;
+  hair: string;
+  accent: string;
+}
+
 export interface NeighborSpec {
   id: string;
   kind: NeighborKind;
@@ -16,6 +23,7 @@ export interface NeighborSpec {
   laneZ: number;
   startX: number;
   speed: number;
+  portrait: PortraitPalette;
 }
 
 export interface NpcPatrolState {
@@ -44,14 +52,15 @@ export const NEIGHBORS: NeighborSpec[] = [
     laneZ: 0.55,
     startX: -2.2,
     speed: 0.52,
+    portrait: { bg: '#E9EDC9', skin: '#B8B8C7', hair: '#4A4E69', accent: '#E07A5F' },
   },
   {
     id: 'adik_bima',
     kind: 'kid',
     name: { id: 'Adik Bima', en: 'Little Bima' },
     role: { id: 'Anak Pemilik Rumah', en: 'Homeowner’s Kid' },
-    modelPath: 'characters/character-male-a.glb',
-    scale3D: 0.88,
+    modelPath: 'characters/casual-male.glb',
+    scale3D: 0.42,
     jobId: 'rumah-pak-budi',
     greeting: {
       id: 'Kakak ART! Makasih udah rapihin mainanku ya! Ini tabungan koin buat Kakak!',
@@ -61,14 +70,15 @@ export const NEIGHBORS: NeighborSpec[] = [
     laneZ: 0.9,
     startX: -1.1,
     speed: 0.58,
+    portrait: { bg: '#D8F3DC', skin: '#E6B89C', hair: '#2B2D42', accent: '#4EA8DE' },
   },
   {
     id: 'ibu_sari',
     kind: 'spouse',
     name: { id: 'Ibu Sari', en: 'Mrs. Sari' },
     role: { id: 'Istri / Pemilik Rumah', en: 'Wife / Homemaker' },
-    modelPath: 'characters/character-female-b.glb',
-    scale3D: 1.28,
+    modelPath: 'characters/casual-3-female.glb',
+    scale3D: 0.56,
     jobId: 'dapur-sari',
     greeting: {
       id: 'Alhamdulillah dapur dan ruang tamu selalu kinclong. Ini uang makan siang ya!',
@@ -78,14 +88,15 @@ export const NEIGHBORS: NeighborSpec[] = [
     laneZ: 1.28,
     startX: 0.0,
     speed: 0.42,
+    portrait: { bg: '#FFE8D6', skin: '#DFAC8E', hair: '#3D2C2E', accent: '#E07A5F' },
   },
   {
     id: 'pak_budi',
     kind: 'spouse',
     name: { id: 'Pak Budi', en: 'Mr. Budi' },
     role: { id: 'Suami / Kepala Keluarga', en: 'Husband / Dad' },
-    modelPath: 'characters/character-worker.glb',
-    scale3D: 1.28,
+    modelPath: 'characters/casual-2-male.glb',
+    scale3D: 0.56,
     jobId: 'rumah-pak-budi',
     greeting: {
       id: 'Istriku senang sekali rumah rapi sebelum kami pulang kerja. Ini bonus kopi!',
@@ -95,14 +106,15 @@ export const NEIGHBORS: NeighborSpec[] = [
     laneZ: 0.72,
     startX: 1.1,
     speed: 0.46,
+    portrait: { bg: '#E0FBFC', skin: '#D49E7D', hair: '#2B2D42', accent: '#2A9D8F' },
   },
   {
     id: 'bruno_dog',
     kind: 'pet',
     name: { id: 'Bruno (Anjing)', en: 'Bruno (Dog)' },
     role: { id: 'Anjing Penjaga Villa', en: 'Villa Pet Dog' },
-    modelPath: 'pets/animal-dog.glb',
-    scale3D: 0.36,
+    modelPath: 'pets/pug.glb',
+    scale3D: 0.16,
     jobId: 'villa-senja',
     greeting: {
       id: 'Guk-guk! 🦴 Bruno senang diajak main di teras yang bersih!',
@@ -112,6 +124,7 @@ export const NEIGHBORS: NeighborSpec[] = [
     laneZ: 1.45,
     startX: 2.2,
     speed: 0.50,
+    portrait: { bg: '#FDE4CF', skin: '#D4A373', hair: '#4A3728', accent: '#F4A261' },
   },
 ];
 
