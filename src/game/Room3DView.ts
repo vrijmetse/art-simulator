@@ -360,6 +360,13 @@ export class Room3DView {
       residentSpec.scale3D,
       this.contactShadowTex,
       false,
+      residentSpec.kind === 'pet'
+        ? {}
+        : {
+            skinHex: residentSpec.portrait.skin,
+            shirtHex: residentSpec.portrait.accent,
+            hairHex: residentSpec.portrait.hair,
+          },
     );
     this.resident.group.position.set(resX, 0, resZ);
     this.resident.group.rotation.y = Math.atan2(0 - resX, 0 - resZ);

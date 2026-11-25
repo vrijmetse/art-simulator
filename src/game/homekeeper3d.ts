@@ -4,6 +4,7 @@ import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.j
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { resolveClipName } from '../core/animationMatch';
+import { resolveActorMaterialColor, type ActorTintOptions } from '../core/materialTint';
 import type { CharacterMotionState } from '../core/character';
 import type { ToolMode } from '../core/types';
 
@@ -88,6 +89,7 @@ export function createRiggedActor(
   scale3D: number,
   contactShadowTex: THREE.Texture,
   withTools = false,
+  tint: ActorTintOptions = {},
 ): RiggedActor {
   const group = new THREE.Group();
 
@@ -137,17 +139,36 @@ export function createRiggedActor(
         m.frustumCulled = false;
         m.userData.sharedAsset = true;
         const mats = Array.isArray(m.material) ? m.material : [m.material];
-        for (const mat of mats) {
-          if (!mat) continue;
-          mat.userData.sharedAsset = true;
+        const nextMats = mats.map((mat) => {
+          if (!mat) return mat;
           const std = mat as THREE.MeshStandardMaterial;
+          const overrideHex = resolveActorMaterialColor(
+            std.name || '',
+            tint.shirtHex,
+            tint.skinHex,
+            tint.hairHex,
+          );
+          if (overrideHex) {
+            const inst = std.clone();
+            inst.color.set(overrideHex);
+            inst.opacity = 1;
+            inst.alphaTest = 0;
+            inst.transparent = false;
+            inst.roughness = Math.max(0.75, inst.roughness ?? 0.8);
+            inst.userData.sharedAsset = false;
+            inst.needsUpdate = true;
+            return inst;
+          }
+          mat.userData.sharedAsset = true;
           if (typeof std.opacity === 'number' && std.opacity <= 0.05) {
             std.opacity = 1;
             std.alphaTest = 0;
             std.transparent = false;
             std.needsUpdate = true;
           }
-        }
+          return mat;
+        });
+        m.material = Array.isArray(m.material) ? nextMats : nextMats[0];
       }
     });
 
@@ -218,8 +239,9 @@ export function createHomekeeperRig(
   modelPath: string,
   contactShadowTex: THREE.Texture,
   scale3D = 0.56,
+  tint: ActorTintOptions = { skinHex: '#E6B494', shirtHex: '#E07A5F', hairHex: '#3D2C2E' },
 ): HomekeeperRig {
-  return createRiggedActor(modelPath, scale3D, contactShadowTex, true);
+  return createRiggedActor(modelPath, scale3D, contactShadowTex, true, tint);
 }
 
 export function applyHomekeeperPose(
@@ -257,8 +279,9 @@ export function disposeRiggedActor(actor: RiggedActor): void {
   actor.group.traverse((obj) => {
     if ((obj as THREE.Mesh).isMesh) {
       const m = obj as THREE.Mesh;
-      if (m.userData.sharedAsset) return;
-      m.geometry?.dispose();
+      if (!m.userData.sharedAsset) {
+        m.geometry?.dispose();
+      }
       const mats = Array.isArray(m.material) ? m.material : [m.material];
       for (const mat of mats) {
         if (!mat || mat.userData.sharedAsset) continue;

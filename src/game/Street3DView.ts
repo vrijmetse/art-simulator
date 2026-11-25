@@ -129,6 +129,13 @@ export class Street3DView {
         patrol.spec.scale3D,
         this.contactShadowTex,
         false,
+        patrol.spec.kind === 'pet'
+          ? {}
+          : {
+              skinHex: patrol.spec.portrait.skin,
+              shirtHex: patrol.spec.portrait.accent,
+              hairHex: patrol.spec.portrait.hair,
+            },
       );
       actor.group.position.set(patrol.x, 0, patrol.z);
       actor.group.rotation.y = patrol.rotY;
