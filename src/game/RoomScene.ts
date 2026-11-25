@@ -87,10 +87,22 @@ export class RoomScene extends Phaser.Scene {
           asmrSynth.playPop();
           this.toastText?.setText(`${pickText(item.label, getState().locale)} → ${t(getState().locale, 'toolDrag')}`);
         },
+        onToolFeedback: (kind, expectedTool) => {
+          const curLoc = getState().locale;
+          if (kind === 'match') {
+            this.toastText?.setText(t(curLoc, 'matchBonusToast'));
+          } else {
+            this.toastText?.setText(
+              t(curLoc, expectedTool === 'pel' ? 'mismatchHintPel' : 'mismatchHintLap'),
+            );
+          }
+        },
         onComplete: () => {
           this.handleWin();
         },
       },
+      false,
+      state.avatarId,
     );
 
     // Sleek Compact Top HUD (72px)

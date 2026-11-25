@@ -7,6 +7,8 @@ export type UpgradeId =
   | 'neat_uniform'
   | 'sparkle_radar';
 
+export type AvatarId = 'sari' | 'maya' | 'budi' | 'eko';
+
 export type DecorId =
   | 'plant_monstera'
   | 'table_lamp'
@@ -174,5 +176,7 @@ export interface GameState {
   attendanceDay: number;
   ownedDecor: DecorId[];
   placedDecor: DecorId[];
+  avatarId: AvatarId;
+  npcChattedDates: Record<string, string>;
   adFree: boolean;
 }

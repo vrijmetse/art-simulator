@@ -1,33 +1,79 @@
 import * as THREE from 'three';
+import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type { ToolMode } from '../core/types';
 import type { CharacterMotionState } from '../core/character';
 
-export interface HomekeeperRig {
-  group: THREE.Group;
-  bodyGroup: THREE.Group;
-  head: THREE.Group;
-  leftArm: THREE.Group;
-  rightArm: THREE.Group;
-  leftLeg: THREE.Group;
-  rightLeg: THREE.Group;
-  lapMesh: THREE.Group;
-  pelMesh: THREE.Group;
+const charLoader = new GLTFLoader();
+const gltfCache = new Map<string, Promise<GLTF | null>>();
+
+function loadCachedCharacterGltf(modelPath: string): Promise<GLTF | null> {
+  const cached = gltfCache.get(modelPath);
+  if (cached) return cached;
+  const p = new Promise<GLTF | null>((resolve) => {
+    charLoader.load(
+      `/models/${modelPath}`,
+      (gltf) => resolve(gltf),
+      undefined,
+      () => resolve(null),
+    );
+  });
+  gltfCache.set(modelPath, p);
+  return p;
 }
 
-export function createHomekeeperRig(contactShadowTex: THREE.Texture): HomekeeperRig {
+export interface RiggedActor {
+  group: THREE.Group;
+  modelRoot: THREE.Object3D | null;
+  mixer: THREE.AnimationMixer | null;
+  actions: Record<string, THREE.AnimationAction>;
+  currentClip: string;
+  lapMesh: THREE.Group | null;
+  pelMesh: THREE.Group | null;
+  readyPromise: Promise<void>;
+  destroyed: boolean;
+}
+
+export type HomekeeperRig = RiggedActor;
+
+function buildHandheldTools(invScale: number): { lapMesh: THREE.Group; pelMesh: THREE.Group } {
+  const lapMesh = new THREE.Group();
+  lapMesh.scale.setScalar(invScale);
+  lapMesh.position.set(0, -0.14, 0.04);
+  const cloth = new THREE.Mesh(
+    new THREE.BoxGeometry(0.15, 0.05, 0.15),
+    new THREE.MeshStandardMaterial({ color: 0x48cae4, roughness: 0.7 }),
+  );
+  lapMesh.add(cloth);
+
+  const pelMesh = new THREE.Group();
+  pelMesh.scale.setScalar(invScale);
+  pelMesh.position.set(0, -0.12, 0.05);
+  const stick = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.018, 0.018, 0.66, 8),
+    new THREE.MeshStandardMaterial({ color: 0xd4a373, roughness: 0.7 }),
+  );
+  stick.rotation.x = Math.PI * 0.28;
+  stick.position.set(0, -0.04, 0.18);
+  const mopHead = new THREE.Mesh(
+    new THREE.BoxGeometry(0.24, 0.06, 0.12),
+    new THREE.MeshStandardMaterial({ color: 0xfaf3e0, roughness: 0.85 }),
+  );
+  mopHead.position.set(0, -0.26, 0.40);
+  pelMesh.add(stick, mopHead);
+  pelMesh.visible = false;
+
+  return { lapMesh, pelMesh };
+}
+
+export function createRiggedActor(
+  modelPath: string,
+  scale3D: number,
+  contactShadowTex: THREE.Texture,
+  withTools = false,
+): RiggedActor {
   const group = new THREE.Group();
-  const bodyGroup = new THREE.Group();
-  group.add(bodyGroup);
 
-  const skinMat = new THREE.MeshStandardMaterial({ color: 0xf1c27d, roughness: 0.72 });
-  const scarfMat = new THREE.MeshStandardMaterial({ color: 0x81b29a, roughness: 0.8 });
-  const tunicMat = new THREE.MeshStandardMaterial({ color: 0xfdf6ec, roughness: 0.85 });
-  const apronMat = new THREE.MeshStandardMaterial({ color: 0xe07a5f, roughness: 0.78 });
-  const pantsMat = new THREE.MeshStandardMaterial({ color: 0x3d405b, roughness: 0.85 });
-  const eyeMat = new THREE.MeshBasicMaterial({ color: 0x22223b });
-  const cheekMat = new THREE.MeshBasicMaterial({ color: 0xf4978e });
-
-  // Grounded contact shadow disc (reuses shared texture; zero shadowMap updates)
   const shadowDisc = new THREE.Mesh(
     new THREE.PlaneGeometry(0.56, 0.56),
     new THREE.MeshBasicMaterial({
@@ -39,172 +85,149 @@ export function createHomekeeperRig(contactShadowTex: THREE.Texture): Homekeeper
   );
   shadowDisc.rotation.x = -Math.PI / 2;
   shadowDisc.position.y = 0.005;
+  shadowDisc.userData.sharedAsset = false;
   group.add(shadowDisc);
 
-  // Legs
-  const leftLeg = new THREE.Group();
-  leftLeg.position.set(-0.085, 0.28, 0);
-  const legGeo = new THREE.CapsuleGeometry(0.055, 0.16, 4, 8);
-  const lLegMesh = new THREE.Mesh(legGeo, pantsMat);
-  lLegMesh.position.y = -0.12;
-  leftLeg.add(lLegMesh);
+  const actor: RiggedActor = {
+    group,
+    modelRoot: null,
+    mixer: null,
+    actions: {},
+    currentClip: '',
+    lapMesh: null,
+    pelMesh: null,
+    readyPromise: Promise.resolve(),
+    destroyed: false,
+  };
 
-  const rightLeg = new THREE.Group();
-  rightLeg.position.set(0.085, 0.28, 0);
-  const rLegMesh = new THREE.Mesh(legGeo, pantsMat);
-  rLegMesh.position.y = -0.12;
-  rightLeg.add(rLegMesh);
-  bodyGroup.add(leftLeg, rightLeg);
+  actor.readyPromise = loadCachedCharacterGltf(modelPath).then((gltf) => {
+    if (actor.destroyed || !gltf) return;
+    const cloned = SkeletonUtils.clone(gltf.scene);
+    cloned.scale.setScalar(scale3D);
+    cloned.updateMatrixWorld(true);
 
-  // Torso + Apron
-  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.17, 0.34, 12), tunicMat);
-  torso.position.y = 0.45;
-  const apron = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.30, 0.06), apronMat);
-  apron.position.set(0, 0.42, 0.13);
-  const pocket = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.10, 0.02), tunicMat);
-  pocket.position.set(0, 0.36, 0.165);
-  bodyGroup.add(torso, apron, pocket);
-
-  // Head + Cozy Bandana + Friendly Face
-  const head = new THREE.Group();
-  head.position.set(0, 0.77, 0);
-  const headSphere = new THREE.Mesh(new THREE.SphereGeometry(0.165, 16, 14), skinMat);
-  const cap = new THREE.Mesh(
-    new THREE.SphereGeometry(0.172, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.58),
-    scarfMat,
-  );
-  cap.position.y = 0.02;
-  cap.rotation.x = -0.18;
-
-  const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.021, 8, 8), eyeMat);
-  eyeL.position.set(-0.055, 0.01, 0.148);
-  const eyeR = new THREE.Mesh(new THREE.SphereGeometry(0.021, 8, 8), eyeMat);
-  eyeR.position.set(0.055, 0.01, 0.148);
-  const cheekL = new THREE.Mesh(new THREE.SphereGeometry(0.024, 8, 8), cheekMat);
-  cheekL.scale.set(1.2, 0.7, 0.5);
-  cheekL.position.set(-0.088, -0.025, 0.138);
-  const cheekR = new THREE.Mesh(new THREE.SphereGeometry(0.024, 8, 8), cheekMat);
-  cheekR.scale.set(1.2, 0.7, 0.5);
-  cheekR.position.set(0.088, -0.025, 0.138);
-  head.add(headSphere, cap, eyeL, eyeR, cheekL, cheekR);
-  bodyGroup.add(head);
-
-  // Arms
-  const armGeo = new THREE.CapsuleGeometry(0.042, 0.16, 4, 8);
-  const leftArm = new THREE.Group();
-  leftArm.position.set(-0.19, 0.56, 0);
-  const lArmMesh = new THREE.Mesh(armGeo, tunicMat);
-  lArmMesh.position.y = -0.1;
-  leftArm.add(lArmMesh);
-
-  const rightArm = new THREE.Group();
-  rightArm.position.set(0.19, 0.56, 0);
-  const rArmMesh = new THREE.Mesh(armGeo, tunicMat);
-  rArmMesh.position.y = -0.1;
-  rightArm.add(rArmMesh);
-
-  // Handheld Tool 1: Lap (folded microfiber cloth)
-  const lapMesh = new THREE.Group();
-  lapMesh.position.set(0, -0.22, 0.06);
-  const cloth = new THREE.Mesh(
-    new THREE.BoxGeometry(0.14, 0.045, 0.14),
-    new THREE.MeshStandardMaterial({ color: 0x48cae4, roughness: 0.7 }),
-  );
-  lapMesh.add(cloth);
-  rightArm.add(lapMesh);
-
-  // Handheld Tool 2: Pel (wooden handle + mop fringe head)
-  const pelMesh = new THREE.Group();
-  pelMesh.position.set(0, -0.21, 0.06);
-  const stick = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.018, 0.018, 0.68, 8),
-    new THREE.MeshStandardMaterial({ color: 0xd4a373, roughness: 0.7 }),
-  );
-  stick.rotation.x = Math.PI * 0.25;
-  stick.position.set(0, -0.06, 0.16);
-  const mopHead = new THREE.Mesh(
-    new THREE.BoxGeometry(0.24, 0.06, 0.12),
-    new THREE.MeshStandardMaterial({ color: 0xfaf3e0, roughness: 0.85 }),
-  );
-  mopHead.position.set(0, -0.30, 0.36);
-  pelMesh.add(stick, mopHead);
-  pelMesh.visible = false;
-  rightArm.add(pelMesh);
-
-  bodyGroup.add(leftArm, rightArm);
-
-  group.traverse((obj) => {
-    if ((obj as THREE.Mesh).isMesh) {
-      obj.castShadow = false;
-      obj.receiveShadow = false;
+    const box = new THREE.Box3().setFromObject(cloned);
+    if (Number.isFinite(box.min.y)) {
+      cloned.position.y -= box.min.y;
     }
+
+    cloned.traverse((obj) => {
+      if ((obj as THREE.Mesh).isMesh) {
+        const m = obj as THREE.Mesh;
+        m.castShadow = false;
+        m.receiveShadow = false;
+        m.userData.sharedAsset = true;
+        const mats = Array.isArray(m.material) ? m.material : [m.material];
+        for (const mat of mats) {
+          if (mat) mat.userData.sharedAsset = true;
+        }
+      }
+    });
+
+    if (withTools) {
+      const rightArm = cloned.getObjectByName('arm-right');
+      const tools = buildHandheldTools(1 / scale3D);
+      actor.lapMesh = tools.lapMesh;
+      actor.pelMesh = tools.pelMesh;
+      if (rightArm) {
+        rightArm.add(tools.lapMesh);
+        rightArm.add(tools.pelMesh);
+      } else {
+        tools.lapMesh.position.set(0.22, 0.45, 0.2);
+        tools.pelMesh.position.set(0.22, 0.45, 0.2);
+        cloned.add(tools.lapMesh, tools.pelMesh);
+      }
+    }
+
+    const mixer = new THREE.AnimationMixer(cloned);
+    for (const clip of gltf.animations) {
+      actor.actions[clip.name] = mixer.clipAction(clip);
+    }
+    const initialClip = actor.actions.idle
+      ? 'idle'
+      : Object.keys(actor.actions)[0] || '';
+    if (initialClip && actor.actions[initialClip]) {
+      actor.actions[initialClip].play();
+      actor.currentClip = initialClip;
+    }
+
+    actor.modelRoot = cloned;
+    actor.mixer = mixer;
+    group.add(cloned);
   });
 
-  return {
-    group,
-    bodyGroup,
-    head,
-    leftArm,
-    rightArm,
-    leftLeg,
-    rightLeg,
-    lapMesh,
-    pelMesh,
-  };
+  return actor;
+}
+
+export function playActorAnimation(
+  actor: RiggedActor,
+  preferredNames: string[],
+  dtSec = 0,
+): void {
+  if (actor.destroyed) return;
+  if (actor.mixer && dtSec > 0) {
+    actor.mixer.update(dtSec);
+  }
+  const target = preferredNames.find((name) => Boolean(actor.actions[name]));
+  if (!target || target === actor.currentClip) return;
+
+  const next = actor.actions[target];
+  const prev = actor.actions[actor.currentClip];
+  next.reset().fadeIn(0.15).play();
+  if (prev) {
+    prev.fadeOut(0.15);
+  }
+  actor.currentClip = target;
+}
+
+export function createHomekeeperRig(
+  modelPath: string,
+  contactShadowTex: THREE.Texture,
+): HomekeeperRig {
+  return createRiggedActor(modelPath, 1.28, contactShadowTex, true);
 }
 
 export function applyHomekeeperPose(
   rig: HomekeeperRig,
   state: CharacterMotionState,
   toolMode: ToolMode,
+  dtSec = 0,
 ): void {
   rig.group.position.set(state.x, 0, state.z);
   rig.group.rotation.y = state.rotY;
 
-  rig.lapMesh.visible = toolMode === 'lap';
-  rig.pelMesh.visible = toolMode === 'pel';
-
-  // Reset defaults
-  rig.bodyGroup.position.y = 0;
-  rig.bodyGroup.rotation.x = 0;
-  rig.head.rotation.z = 0;
-  rig.leftLeg.rotation.x = 0;
-  rig.rightLeg.rotation.x = 0;
-  rig.leftArm.rotation.x = 0;
-  rig.leftArm.rotation.z = 0.08;
-  rig.rightArm.rotation.x = -0.22;
-  rig.rightArm.rotation.z = -0.08;
+  if (rig.lapMesh) rig.lapMesh.visible = toolMode === 'lap';
+  if (rig.pelMesh) rig.pelMesh.visible = toolMode === 'pel';
 
   if (state.pose === 'walk') {
-    const s = Math.sin(state.animTime * 11);
-    rig.leftLeg.rotation.x = s * 0.55;
-    rig.rightLeg.rotation.x = -s * 0.55;
-    rig.leftArm.rotation.x = -s * 0.45;
-    rig.rightArm.rotation.x = s * 0.35 - 0.25;
-    rig.bodyGroup.position.y = Math.abs(s) * 0.035;
+    playActorAnimation(rig, ['walk', 'run', 'idle'], dtSec);
   } else if (state.pose === 'scrub') {
-    const s = Math.sin(state.animTime * 16);
-    rig.bodyGroup.rotation.x = 0.16;
-    rig.rightArm.rotation.x = -0.95 + s * 0.28;
-    rig.rightArm.rotation.z = s * 0.32;
-    rig.leftArm.rotation.x = -0.35;
+    playActorAnimation(rig, ['interact-right', 'attack-melee-right', 'idle'], dtSec);
   } else if (state.pose === 'celebrate') {
-    const hop = Math.abs(Math.sin(state.animTime * 9));
-    rig.bodyGroup.position.y = hop * 0.18;
-    rig.leftArm.rotation.z = 2.4 + Math.sin(state.animTime * 12) * 0.25;
-    rig.rightArm.rotation.z = -2.4 - Math.sin(state.animTime * 12) * 0.25;
-    rig.head.rotation.z = Math.sin(state.animTime * 6) * 0.12;
+    playActorAnimation(rig, ['jump', 'emote-yes', 'dance', 'idle'], dtSec);
+  } else {
+    playActorAnimation(rig, ['idle', 'static'], dtSec);
   }
 }
 
-export function disposeHomekeeperRig(rig: HomekeeperRig): void {
-  rig.group.traverse((obj) => {
+export function disposeRiggedActor(actor: RiggedActor): void {
+  actor.destroyed = true;
+  if (actor.mixer) {
+    actor.mixer.stopAllAction();
+    if (actor.modelRoot) {
+      actor.mixer.uncacheRoot(actor.modelRoot);
+    }
+    actor.mixer = null;
+  }
+  actor.group.traverse((obj) => {
     if ((obj as THREE.Mesh).isMesh) {
       const m = obj as THREE.Mesh;
+      if (m.userData.sharedAsset) return;
       m.geometry?.dispose();
       const mats = Array.isArray(m.material) ? m.material : [m.material];
       for (const mat of mats) {
-        mat?.dispose();
+        if (!mat || mat.userData.sharedAsset) continue;
+        mat.dispose();
       }
     }
   });

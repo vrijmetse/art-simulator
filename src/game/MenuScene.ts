@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { JOBS } from '../core/jobs';
 import { UPGRADES, purchaseUpgrade } from '../core/economy';
+import { AVATARS } from '../core/avatars';
 import { DECOR_ITEMS, purchaseDecor, toggleDecorPlacement } from '../core/decor';
 import { getCareerRank, getNextCareerRank } from '../core/career';
 import { canClaimAttendance, claimAttendance, getTodayDateKey } from '../core/attendance';
@@ -139,12 +140,12 @@ export class MenuScene extends Phaser.Scene {
 
     const canClaim = canClaimAttendance(state, today);
     this.makePillButton(
-      225,
+      142,
       194,
-      412,
+      246,
       36,
       canClaim
-        ? `🎁 ${t(loc, 'claimDailyBtn')} (${t(loc, 'dayLabel')} ${(state.attendanceDay % 30) + 1}/30)`
+        ? `🎁 ${t(loc, 'claimDailyBtn')}`
         : `✓ ${t(loc, 'claimedDailyLabel')} (${state.attendanceDay}/30)`,
       canClaim ? 0x2a9d8f : 0xe5d9c8,
       canClaim ? '#FFFFFF' : '#5C6B73',
@@ -157,7 +158,22 @@ export class MenuScene extends Phaser.Scene {
           this.renderUI();
         }
       },
-      '12px',
+      '11px',
+    );
+
+    this.makePillButton(
+      352,
+      194,
+      158,
+      36,
+      `🏘️ ${t(loc, 'streetBtn')}`,
+      0x3d405b,
+      '#F2CC8F',
+      () => {
+        asmrSynth.playSnap();
+        this.scene.start('StreetScene');
+      },
+      '11px',
     );
 
     const dailyDone = state.dailyCompletedDates.includes(today);
@@ -268,9 +284,9 @@ export class MenuScene extends Phaser.Scene {
 
     this.makePillButton(
       225,
-      198,
+      192,
       412,
-      44,
+      40,
       `🏠 ${t(loc, 'kosHeader')} (3D)`,
       0x2a9d8f,
       '#FFFFFF',
@@ -278,24 +294,43 @@ export class MenuScene extends Phaser.Scene {
         asmrSynth.playSnap();
         this.scene.start('PersonalRoomScene');
       },
-      '14px',
+      '13px',
     );
 
     this.add
-      .text(225, 236, t(loc, 'kosHint'), {
+      .text(28, 224, `${t(loc, 'avatarLabel')}:`, {
         fontSize: '11px',
-        color: '#5C6B73',
-        align: 'center',
-      })
-      .setOrigin(0.5);
+        fontStyle: 'bold',
+        color: '#3D405B',
+      });
+
+    AVATARS.forEach((av, idx) => {
+      const selected = state.avatarId === av.id;
+      const ax = 68 + idx * 104;
+      this.makePillButton(
+        ax,
+        252,
+        96,
+        30,
+        pickText(av.name, loc),
+        selected ? 0xe07a5f : 0xede0d4,
+        selected ? '#FFFFFF' : '#3D405B',
+        () => {
+          asmrSynth.playPop();
+          updateState({ ...getState(), avatarId: av.id });
+          this.renderUI();
+        },
+        '11px',
+      );
+    });
 
     DECOR_ITEMS.forEach((item, idx) => {
-      const y = 290 + idx * 62;
+      const y = 304 + idx * 58;
       const owned = state.ownedDecor.includes(item.id);
       const placed = state.placedDecor.includes(item.id);
 
       this.add
-        .rectangle(225, y, 412, 54, owned ? 0xffffff : 0xf4eee6)
+        .rectangle(225, y, 412, 50, owned ? 0xffffff : 0xf4eee6)
         .setStrokeStyle(1, owned ? 0x81b29a : 0xe5d9c8);
 
       this.add.text(32, y - 16, pickText(item.name, loc), {

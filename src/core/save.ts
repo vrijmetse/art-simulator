@@ -1,7 +1,9 @@
-import type { CashbookEntry, DecorId, GameState, UpgradeId } from './types';
+import type { AvatarId, CashbookEntry, DecorId, GameState, UpgradeId } from './types';
 import { createInitialState, UPGRADES } from './economy';
+import { isValidAvatarId } from './avatars';
 import { DECOR_ITEMS } from './decor';
 import { JOBS } from './jobs';
+import { NEIGHBORS } from './neighborhood';
 
 export const SAVE_KEY = 'art_simulator_save_v1';
 export const SAVE_VERSION = 2;
@@ -15,6 +17,7 @@ export interface StorageLike {
 const VALID_UPGRADE_IDS = new Set<string>(UPGRADES.map((u) => u.id));
 const VALID_JOB_IDS = new Set<string>(JOBS.map((j) => j.id));
 const VALID_DECOR_IDS = new Set<string>(DECOR_ITEMS.map((d) => d.id));
+const VALID_NPC_IDS = new Set<string>(NEIGHBORS.map((n) => n.id));
 
 function isValidRecordedJobId(id: string): boolean {
   return VALID_JOB_IDS.has(id) || id.startsWith('daily-');
@@ -123,6 +126,18 @@ export function migrateSave(raw: unknown): GameState {
     }
   }
 
+  const avatarId: AvatarId =
+    typeof obj.avatarId === 'string' && isValidAvatarId(obj.avatarId) ? obj.avatarId : 'sari';
+
+  const npcChattedDates: Record<string, string> = {};
+  if (obj.npcChattedDates && typeof obj.npcChattedDates === 'object' && !Array.isArray(obj.npcChattedDates)) {
+    for (const [npcId, dt] of Object.entries(obj.npcChattedDates as Record<string, unknown>)) {
+      if (VALID_NPC_IDS.has(npcId) && typeof dt === 'string') {
+        npcChattedDates[npcId] = dt;
+      }
+    }
+  }
+
   return {
     version: SAVE_VERSION,
     locale,
@@ -140,6 +155,8 @@ export function migrateSave(raw: unknown): GameState {
     attendanceDay,
     ownedDecor,
     placedDecor,
+    avatarId,
+    npcChattedDates,
     adFree: obj.adFree === true,
   };
 }

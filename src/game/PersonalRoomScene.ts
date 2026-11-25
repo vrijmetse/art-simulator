@@ -46,6 +46,7 @@ export class PersonalRoomScene extends Phaser.Scene {
         onComplete: () => {},
       },
       true,
+      state.avatarId,
     );
 
     // Top HUD

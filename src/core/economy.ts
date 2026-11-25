@@ -78,6 +78,8 @@ export function createInitialState(): GameState {
     attendanceDay: 0,
     ownedDecor: [],
     placedDecor: [],
+    avatarId: 'sari',
+    npcChattedDates: {},
     adFree: false,
   };
 }

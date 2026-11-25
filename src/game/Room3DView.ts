@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type {
+  AvatarId,
   ClutterItemSpec,
   FurniturePropSpec,
   JobSpec,
@@ -8,6 +9,8 @@ import type {
   StainSpotSpec,
   ToolMode,
 } from '../core/types';
+import { getAvatarSpec } from '../core/avatars';
+import { getNeighborForJob, NEIGHBORS } from '../core/neighborhood';
 import { CoverageGrid } from '../core/coverage';
 import { getToolMatchMultiplier } from '../core/economy';
 import {
@@ -41,8 +44,11 @@ import {
 import {
   applyHomekeeperPose,
   createHomekeeperRig,
-  disposeHomekeeperRig,
+  createRiggedActor,
+  disposeRiggedActor,
+  playActorAnimation,
   type HomekeeperRig,
+  type RiggedActor,
 } from './homekeeper3d';
 
 const gltfLoader = new GLTFLoader();
@@ -187,6 +193,7 @@ export interface Room3DCallbacks {
   onScrubStroke: () => void;
   onClutterSnapped: (item: ClutterItemSpec) => void;
   onClutterSelected?: (item: ClutterItemSpec) => void;
+  onToolFeedback?: (kind: 'match' | 'mismatch', expectedTool: ToolMode) => void;
   onComplete: () => void;
 }
 
@@ -241,9 +248,11 @@ export class Room3DView {
   private furnitureGroup = new THREE.Group();
   private contactShadowTex: THREE.CanvasTexture;
   private homekeeper: HomekeeperRig;
+  private resident: RiggedActor | null = null;
   private characterState: CharacterMotionState;
   private propAabbs: PropAabb[] = [];
   private lastTickMs = 0;
+  private lastFeedbackMs = 0;
   private stains: Stain3DState[] = [];
   private clutter: Clutter3DState[] = [];
   private dragged: Clutter3DState | null = null;
@@ -295,6 +304,7 @@ export class Room3DView {
     snapRadiusMeters: number,
     callbacks: Room3DCallbacks,
     readonlyMode = false,
+    avatarId: AvatarId = 'sari',
   ) {
     this.phaserCanvas = phaserCanvas;
     this.job = job;
@@ -329,9 +339,23 @@ export class Room3DView {
     this.propAabbs = layout.map((p) => getPropAabb(p, 0.22));
     const [startCharX, startCharZ] = computeSafeStandPoint(0.2, 0.85, layout);
     this.characterState = createCharacterState(startCharX, startCharZ);
-    this.homekeeper = createHomekeeperRig(this.contactShadowTex);
+    const avatarSpec = getAvatarSpec(avatarId);
+    this.homekeeper = createHomekeeperRig(`characters/${avatarSpec.modelName}`, this.contactShadowTex);
     applyHomekeeperPose(this.homekeeper, this.characterState, this.toolMode);
     this.scene.add(this.homekeeper.group);
+
+    // Friendly Household Resident / Pet in an open corner
+    const residentSpec = readonlyMode ? NEIGHBORS[0] : getNeighborForJob(job.id);
+    const [resX, resZ] = computeSafeStandPoint(-1.45, 1.35, layout);
+    this.resident = createRiggedActor(
+      residentSpec.modelPath,
+      residentSpec.scale3D,
+      this.contactShadowTex,
+      false,
+    );
+    this.resident.group.position.set(resX, 0, resZ);
+    this.resident.group.rotation.y = Math.atan2(0 - resX, 0 - resZ);
+    this.scene.add(this.resident.group);
 
     this.camera = new THREE.PerspectiveCamera(CAMERA_FOV_DEG, 450 / 800, 0.1, 30);
     this.updateCameraPosition();
@@ -685,7 +709,12 @@ export class Room3DView {
           });
         });
 
-    await Promise.all([fPromise, ...clutterPromises]);
+    await Promise.all([
+      fPromise,
+      ...clutterPromises,
+      this.homekeeper.readyPromise,
+      this.resident?.readyPromise ?? Promise.resolve(),
+    ]);
     if (this.destroyed) return;
     this.assetsLoaded = true;
     this.renderer.shadowMap.needsUpdate = true;
@@ -880,6 +909,17 @@ export class Room3DView {
     this.lastScrubUV = { stainId, px, py };
 
     const matchMult = getToolMatchMultiplier(this.toolMode, st.spec.kind);
+    const now = Date.now();
+    if (now - this.lastFeedbackMs > 1200) {
+      this.lastFeedbackMs = now;
+      if (matchMult > 1) {
+        this.callbacks.onToolFeedback?.('match', this.toolMode);
+      } else {
+        const expected: ToolMode =
+          st.spec.kind === 'dust' || st.spec.kind === 'crayon' ? 'lap' : 'pel';
+        this.callbacks.onToolFeedback?.('mismatch', expected);
+      }
+    }
     const r = Math.round(this.brushRadiusPx * matchMult);
     const dist = Math.hypot(px - prev.px, py - prev.py);
     const step = Math.max(4, r * 0.4);
@@ -930,7 +970,10 @@ export class Room3DView {
         celebrateTimer: 1.8,
         animTime: 0.25,
       };
-      applyHomekeeperPose(this.homekeeper, this.characterState, this.toolMode);
+      applyHomekeeperPose(this.homekeeper, this.characterState, this.toolMode, 0.25);
+      if (this.resident) {
+        playActorAnimation(this.resident, ['dance', 'emote-yes', 'gesture-positive', 'idle'], 0.25);
+      }
       // Flush final clean render & capture After snapshot synchronously
       this.flushDirtyStainTextures();
       this.renderer.render(this.scene, this.camera);
@@ -985,7 +1028,10 @@ export class Room3DView {
     const charStep = stepCharacterMotion(this.characterState, dtSec, this.propAabbs);
     this.characterState = charStep.state;
     if (charStep.needsFrame) {
-      applyHomekeeperPose(this.homekeeper, this.characterState, this.toolMode);
+      applyHomekeeperPose(this.homekeeper, this.characterState, this.toolMode, dtSec);
+      if (this.resident && this.characterState.pose === 'celebrate') {
+        playActorAnimation(this.resident, ['dance', 'emote-yes', 'gesture-positive', 'idle'], dtSec);
+      }
       this.dirty = true;
     }
 
@@ -1051,9 +1097,11 @@ export class Room3DView {
       this.dirty = false;
       if (this.assetsLoaded && !this.beforeSnapshot && !this.readonlyMode) {
         this.homekeeper.group.visible = false;
+        if (this.resident) this.resident.group.visible = false;
         this.renderer.render(this.scene, this.camera);
         this.beforeSnapshot = this.captureThumbnailDataUrl();
         this.homekeeper.group.visible = true;
+        if (this.resident) this.resident.group.visible = true;
       }
       this.renderer.render(this.scene, this.camera);
     }
@@ -1069,15 +1117,17 @@ export class Room3DView {
     this.threeCanvas.removeEventListener('webglcontextrestored', this.onContextRestoredBound);
 
     this.scene.remove(this.homekeeper.group);
+    if (this.resident) this.scene.remove(this.resident.group);
     this.scene.traverse((obj) => {
       if ((obj as THREE.Mesh).isMesh || (obj as THREE.Points).isPoints) {
         const renderable = obj as THREE.Mesh | THREE.Points;
+        if (renderable.userData.sharedAsset) return;
         renderable.geometry?.dispose();
         const mats = Array.isArray(renderable.material)
           ? renderable.material
           : [renderable.material];
         for (const m of mats) {
-          if (!m) continue;
+          if (!m || m.userData.sharedAsset) continue;
           const std = m as THREE.MeshStandardMaterial;
           if (std.map && std.map !== this.contactShadowTex) std.map.dispose();
           m.dispose();
@@ -1085,7 +1135,8 @@ export class Room3DView {
       }
     });
 
-    disposeHomekeeperRig(this.homekeeper);
+    disposeRiggedActor(this.homekeeper);
+    if (this.resident) disposeRiggedActor(this.resident);
     this.contactShadowTex.dispose();
     this.renderer.dispose();
     this.threeCanvas.remove();
