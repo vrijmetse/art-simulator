@@ -115,7 +115,7 @@ export function createCharacterState(startX = 0, startZ = 1.2): CharacterMotionS
     targetZ: startZ,
     lookX: 0,
     lookZ: 0,
-    rotY: Math.PI,
+    rotY: Math.PI * 0.22,
     pose: 'idle',
     animTime: 0,
     scrubTimer: 0,

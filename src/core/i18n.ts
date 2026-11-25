@@ -160,3 +160,14 @@ export function formatMoney(amountRp: number, locale: Locale): string {
   const usd = Math.max(1, Math.round(safe / 1000));
   return `$${usd.toLocaleString('en-US')}`;
 }
+
+/**
+ * Formats wallet balances (0 displays as "Rp 0" / "$0", never "Gratis").
+ */
+export function formatBalance(amountRp: number, locale: Locale): string {
+  const safe = Math.max(0, Math.round(amountRp));
+  if (safe === 0) {
+    return locale === 'id' ? 'Rp 0' : '$0';
+  }
+  return formatMoney(safe, locale);
+}

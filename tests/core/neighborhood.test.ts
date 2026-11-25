@@ -42,9 +42,13 @@ describe('neighborhood & family/pet NPCs (TDD)', () => {
     expect(bad.claimed).toBe(false);
   });
 
-  it('patrols NPCs deterministically along sidewalk and pauses when talking', () => {
+  it('patrols NPCs deterministically along sidewalk without spawning clumped together', () => {
     const patrols = createNpcPatrols();
     expect(patrols.length).toBe(5);
+    const sortedX = patrols.map((n) => n.x).sort((a, b) => a - b);
+    for (let i = 1; i < sortedX.length; i++) {
+      expect(sortedX[i] - sortedX[i - 1]).toBeGreaterThanOrEqual(0.8);
+    }
     let p = patrols[0];
     const startX = p.x;
     for (let i = 0; i < 40; i++) {

@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { getTodayDateKey } from '../core/attendance';
 import { canClaimNpcChat, claimNpcChatReward, type NeighborSpec } from '../core/neighborhood';
-import { formatMoney, pickText, t } from '../core/i18n';
+import { formatBalance, formatMoney, pickText, t } from '../core/i18n';
 import { asmrSynth } from '../audio/asmrSynth';
 import { getState, updateState } from './stateStore';
 import { Street3DView } from './Street3DView';
@@ -22,6 +22,7 @@ export class StreetScene extends Phaser.Scene {
     const state = getState();
     const loc = state.locale;
     const canvas = this.sys.game.canvas;
+    const today = getTodayDateKey();
     this.isModalOpen = false;
     this.activeNpcId = null;
     this.modalObjects = [];
@@ -37,22 +38,30 @@ export class StreetScene extends Phaser.Scene {
           for (const txt of this.badgeTexts.values()) txt.setVisible(false);
           return;
         }
+        const curState = getState();
+        const curLoc = curState.locale;
         for (const b of badges) {
+          const canGreet = canClaimNpcChat(curState, b.id, today);
+          const tag = canGreet
+            ? `❗ ${pickText(b.spec.name, curLoc)}`
+            : pickText(b.spec.name, curLoc);
           let label = this.badgeTexts.get(b.id);
           if (!label) {
             label = this.add
-              .text(b.x, b.y, pickText(b.spec.name, getState().locale), {
+              .text(b.x, b.y, tag, {
                 fontSize: '10px',
                 fontStyle: 'bold',
-                color: '#3D405B',
-                backgroundColor: '#FDF6EC',
-                padding: { x: 5, y: 2 },
+                color: '#FFFFFF',
+                backgroundColor: '#1E293B',
+                padding: { x: 6, y: 3 },
               })
               .setOrigin(0.5)
               .setDepth(8);
             this.badgeTexts.set(b.id, label);
+          } else {
+            label.setText(tag);
           }
-          const inPlayfield = b.y > 78 && b.y < 698 && b.x > 25 && b.x < 425;
+          const inPlayfield = b.y > 82 && b.y < 692 && b.x > 30 && b.x < 420;
           label.setVisible(inPlayfield);
           if (inPlayfield) {
             label.setPosition(b.x, b.y);
@@ -61,17 +70,17 @@ export class StreetScene extends Phaser.Scene {
       },
     });
 
-    // Top HUD
-    this.add.rectangle(225, 36, 450, 72, 0x3d405b, 0.92).setDepth(10);
+    // Translucent dark-glass Top HUD (Warung-Life style)
+    this.add.rectangle(225, 36, 450, 72, 0x1e293b, 0.84).setDepth(10);
     const backBtn = this.add
-      .rectangle(46, 36, 70, 36, 0xf2cc8f)
+      .rectangle(52, 36, 82, 34, 0xf2cc8f)
       .setDepth(11)
       .setInteractive({ useHandCursor: true });
     this.add
-      .text(46, 36, `← ${t(loc, 'backBtn')}`, {
+      .text(52, 36, '📱 HP', {
         fontSize: '12px',
         fontStyle: 'bold',
-        color: '#3D405B',
+        color: '#1E293B',
       })
       .setOrigin(0.5)
       .setDepth(12);
@@ -82,25 +91,31 @@ export class StreetScene extends Phaser.Scene {
     });
 
     this.add
-      .text(225, 23, t(loc, 'streetHeader'), {
-        fontSize: '15px',
+      .text(245, 22, `${t(loc, 'streetHeader')} • ${t(loc, 'dayLabel')} ${state.day}`, {
+        fontSize: '14px',
         fontStyle: 'bold',
         color: '#FDF6EC',
       })
       .setOrigin(0.5)
       .setDepth(12);
 
+    const totalStars = Object.values(state.bestStars).reduce((a, b) => a + b, 0);
     this.balanceText = this.add
-      .text(225, 48, `${formatMoney(state.balanceRp, loc)}  •  ${state.xp} ${t(loc, 'xpLabel')}`, {
-        fontSize: '12px',
-        fontStyle: 'bold',
-        color: '#81B29A',
-      })
+      .text(
+        245,
+        48,
+        `${formatBalance(state.balanceRp, loc)}  •  ★ ${totalStars}/15  •  ${state.xp} ${t(loc, 'xpLabel')}`,
+        {
+          fontSize: '12px',
+          fontStyle: 'bold',
+          color: '#81B29A',
+        },
+      )
       .setOrigin(0.5)
       .setDepth(12);
 
-    // Bottom HUD
-    this.add.rectangle(225, 754, 450, 92, 0x3d405b, 0.92).setDepth(10);
+    // Bottom HUD (708..800)
+    this.add.rectangle(225, 754, 450, 92, 0x1e293b, 0.86).setDepth(10);
     this.add
       .text(225, 724, t(loc, 'streetHint'), {
         fontSize: '11px',
@@ -145,7 +160,6 @@ export class StreetScene extends Phaser.Scene {
       this.view3d?.rotateStep(0.22);
     });
 
-    // Street pointer input (gated by playfield bounds AND modal state!)
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       asmrSynth.unlock();
       if (this.isModalOpen) return;
@@ -197,62 +211,45 @@ export class StreetScene extends Phaser.Scene {
     const today = getTodayDateKey();
     const canClaim = canClaimNpcChat(state, spec.id, today);
 
-    const backdrop = this.add.rectangle(225, 400, 450, 800, 0x000000, 0.5).setDepth(20);
-    const panel = this.add
-      .rectangle(225, 410, 384, 320, 0xfdf6ec)
-      .setStrokeStyle(3, 0x81b29a)
+    // Warung-Life style translucent Bottom Story Bar (y = 636, h = 126 -> clears 708..800 Bottom HUD!)
+    const bar = this.add
+      .rectangle(225, 636, 428, 126, 0x1e293b, 0.94)
+      .setStrokeStyle(2, 0xf2cc8f)
       .setDepth(21);
 
     const nameTxt = this.add
-      .text(225, 290, pickText(spec.name, loc), {
-        fontSize: '20px',
-        fontStyle: 'bold',
-        color: '#3D405B',
-      })
-      .setOrigin(0.5)
-      .setDepth(22);
-
-    const roleTxt = this.add
-      .text(225, 316, pickText(spec.role, loc), {
+      .text(24, 586, `${pickText(spec.name, loc)} • ${pickText(spec.role, loc)}`, {
         fontSize: '12px',
         fontStyle: 'bold',
-        color: '#E07A5F',
+        color: '#F2CC8F',
       })
-      .setOrigin(0.5)
       .setDepth(22);
 
-    const bubble = this.add
-      .rectangle(225, 382, 336, 92, 0xffffff)
-      .setStrokeStyle(1, 0xe5d9c8)
-      .setDepth(22);
     const msgTxt = this.add
-      .text(225, 382, `"${pickText(spec.greeting, loc)}"`, {
-        fontSize: '12px',
-        color: '#3D405B',
-        align: 'center',
-        wordWrap: { width: 310 },
+      .text(24, 608, `"${pickText(spec.greeting, loc)}"`, {
+        fontSize: '11px',
+        color: '#FDF6EC',
+        wordWrap: { width: 400 },
       })
-      .setOrigin(0.5)
-      .setDepth(23);
+      .setDepth(22);
 
-    this.modalObjects.push(backdrop, panel, nameTxt, roleTxt, bubble, msgTxt);
+    this.modalObjects.push(bar, nameTxt, msgTxt);
 
-    // Claim daily tip button
     const greetBtn = this.add
-      .rectangle(225, 464, 280, 40, canClaim ? 0x2a9d8f : 0xd1d5db)
+      .rectangle(154, 672, 240, 34, canClaim ? 0x2a9d8f : 0x475569)
       .setDepth(22)
       .setInteractive({ useHandCursor: canClaim });
     const greetTxt = this.add
       .text(
-        225,
-        464,
+        154,
+        672,
         canClaim
           ? `💬 ${t(loc, 'greetBtn')} (+${formatMoney(spec.tipRp, loc)})`
           : `✓ ${t(loc, 'greetedLabel')}`,
         {
-          fontSize: '13px',
+          fontSize: '11px',
           fontStyle: 'bold',
-          color: canClaim ? '#FFFFFF' : '#6B7280',
+          color: canClaim ? '#FFFFFF' : '#CBD5E1',
         },
       )
       .setOrigin(0.5)
@@ -265,23 +262,23 @@ export class StreetScene extends Phaser.Scene {
         if (res.claimed) {
           asmrSynth.playCash();
           updateState(res.state);
+          const stars = Object.values(res.state.bestStars).reduce((a, b) => a + b, 0);
           this.balanceText.setText(
-            `${formatMoney(res.state.balanceRp, loc)}  •  ${res.state.xp} ${t(loc, 'xpLabel')}`,
+            `${formatBalance(res.state.balanceRp, loc)}  •  ★ ${stars}/15  •  ${res.state.xp} ${t(loc, 'xpLabel')}`,
           );
-          greetBtn.setFillStyle(0xd1d5db);
-          greetTxt.setText(`✓ ${t(loc, 'greetedLabel')}`).setColor('#6B7280');
+          greetBtn.setFillStyle(0x475569);
+          greetTxt.setText(`✓ ${t(loc, 'greetedLabel')}`).setColor('#CBD5E1');
         }
       });
     }
 
-    // Close button
     const closeBtn = this.add
-      .rectangle(225, 520, 160, 36, 0xe07a5f)
+      .rectangle(356, 672, 128, 34, 0xe07a5f)
       .setDepth(22)
       .setInteractive({ useHandCursor: true });
     const closeTxt = this.add
-      .text(225, 520, t(loc, 'backBtn'), {
-        fontSize: '13px',
+      .text(356, 672, t(loc, 'backBtn'), {
+        fontSize: '12px',
         fontStyle: 'bold',
         color: '#FFFFFF',
       })

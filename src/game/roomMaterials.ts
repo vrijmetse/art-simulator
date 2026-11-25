@@ -168,3 +168,32 @@ export function createContactShadowTexture(): THREE.CanvasTexture {
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
 }
+
+export function createTerracottaRoofTexture(baseHex = '#B85D3B'): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = 256;
+  c.height = 256;
+  const ctx = c.getContext('2d')!;
+  ctx.fillStyle = baseHex;
+  ctx.fillRect(0, 0, 256, 256);
+
+  for (let row = 0; row < 8; row++) {
+    const y = row * 32;
+    ctx.fillStyle = row % 2 === 0 ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.05)';
+    ctx.fillRect(0, y, 256, 30);
+    ctx.fillStyle = 'rgba(45, 20, 10, 0.22)';
+    ctx.fillRect(0, y + 29, 256, 3);
+    for (let col = 0; col < 8; col++) {
+      const x = col * 32 + (row % 2 === 0 ? 0 : 16);
+      ctx.fillStyle = 'rgba(45, 20, 10, 0.16)';
+      ctx.fillRect(x % 256, y, 2, 32);
+    }
+  }
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(2, 2);
+  return tex;
+}

@@ -533,6 +533,16 @@ export class Room3DView {
     floor.receiveShadow = true;
     this.scene.add(floor);
 
+    // Warm grounded patio/garden surround strictly below floor bottom (-0.14) to avoid void look
+    const skirt = new THREE.Mesh(
+      new THREE.PlaneGeometry(11, 11),
+      new THREE.MeshStandardMaterial({ color: 0xdfe6cf, roughness: 0.96 }),
+    );
+    skirt.rotation.x = -Math.PI / 2;
+    skirt.position.set(0, -0.15, 0);
+    skirt.receiveShadow = false;
+    this.scene.add(skirt);
+
     const wallTex = createWallPaperTexture(this.job.palette.wall, this.job.palette.accent);
     const wallMat = new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.9 });
     const trimMat = new THREE.MeshStandardMaterial({ color: this.job.palette.trim, roughness: 0.7 });

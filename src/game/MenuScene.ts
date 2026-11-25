@@ -6,7 +6,7 @@ import { DECOR_ITEMS, purchaseDecor, toggleDecorPlacement } from '../core/decor'
 import { getCareerRank, getNextCareerRank } from '../core/career';
 import { canClaimAttendance, claimAttendance, getTodayDateKey } from '../core/attendance';
 import { generateDailyJob } from '../core/daily';
-import { formatMoney, pickText, t } from '../core/i18n';
+import { formatBalance, formatMoney, pickText, t } from '../core/i18n';
 import { asmrSynth } from '../audio/asmrSynth';
 import { getState, updateState, resetGameState } from './stateStore';
 
@@ -64,7 +64,7 @@ export class MenuScene extends Phaser.Scene {
     this.add.text(
       18,
       78,
-      `${t(loc, 'dayLabel')} ${state.day}  •  ${formatMoney(state.balanceRp, loc)}  •  ★ ${totalStars}/15  •  🔥 ${state.dailyStreak}`,
+      `${t(loc, 'dayLabel')} ${state.day}  •  ${formatBalance(state.balanceRp, loc)}  •  ★ ${totalStars}/15  •  🔥 ${state.dailyStreak}`,
       {
         fontSize: '12px',
         fontStyle: 'bold',
@@ -298,7 +298,7 @@ export class MenuScene extends Phaser.Scene {
     );
 
     this.add
-      .text(28, 224, `${t(loc, 'avatarLabel')}:`, {
+      .text(28, 218, `${t(loc, 'avatarLabel')}:`, {
         fontSize: '11px',
         fontStyle: 'bold',
         color: '#3D405B',
@@ -325,7 +325,7 @@ export class MenuScene extends Phaser.Scene {
     });
 
     DECOR_ITEMS.forEach((item, idx) => {
-      const y = 304 + idx * 58;
+      const y = 306 + idx * 58;
       const owned = state.ownedDecor.includes(item.id);
       const placed = state.placedDecor.includes(item.id);
 

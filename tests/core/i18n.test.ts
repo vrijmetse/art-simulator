@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DICTIONARIES, t, formatMoney, pickText } from '../../src/core/i18n';
+import { DICTIONARIES, t, formatMoney, formatBalance, pickText } from '../../src/core/i18n';
 
 describe('i18n', () => {
   it('has exact key parity between id and en dictionaries', () => {
@@ -21,6 +21,13 @@ describe('i18n', () => {
   it('formats zero as Gratis/Free instead of Rp 0 or $0', () => {
     expect(formatMoney(0, 'id')).toBe('Gratis');
     expect(formatMoney(0, 'en')).toBe('Free');
+  });
+
+  it('formats wallet balances cleanly with Rp 0 / $0 rather than Gratis', () => {
+    expect(formatBalance(0, 'id')).toBe('Rp 0');
+    expect(formatBalance(0, 'en')).toBe('$0');
+    expect(formatBalance(35000, 'id')).toBe('Rp 35.000');
+    expect(formatBalance(35000, 'en')).toBe('$35');
   });
 
   it('formats canonical Rp amounts cleanly in id and converts display to USD in en', () => {

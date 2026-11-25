@@ -380,18 +380,18 @@ export class RoomScene extends Phaser.Scene {
       .setDepth(22);
 
     if (snaps.before || snaps.after) {
-      this.add.rectangle(160, 260, 96, 152, 0xe5d9c8).setDepth(22);
-      this.add.rectangle(290, 260, 96, 152, 0xe5d9c8).setDepth(22);
+      this.add.rectangle(160, 264, 96, 152, 0xe5d9c8).setDepth(22);
+      this.add.rectangle(290, 264, 96, 152, 0xe5d9c8).setDepth(22);
       this.add
-        .text(160, 192, t(loc, 'beforeLabel'), { fontSize: '10px', fontStyle: 'bold', color: '#5C6B73' })
+        .text(160, 184, t(loc, 'beforeLabel'), { fontSize: '10px', fontStyle: 'bold', color: '#5C6B73' })
         .setOrigin(0.5)
         .setDepth(25);
       this.add
-        .text(290, 192, t(loc, 'afterLabel'), { fontSize: '10px', fontStyle: 'bold', color: '#2A9D8F' })
+        .text(290, 184, t(loc, 'afterLabel'), { fontSize: '10px', fontStyle: 'bold', color: '#2A9D8F' })
         .setOrigin(0.5)
         .setDepth(25);
-      this.loadSnapshotAsync('snap_before', snaps.before, 160, 266);
-      this.loadSnapshotAsync('snap_after', snaps.after, 290, 266);
+      this.loadSnapshotAsync('snap_before', snaps.before, 160, 268);
+      this.loadSnapshotAsync('snap_after', snaps.after, 290, 268);
     }
 
     this.add.rectangle(225, 392, 360, 86, 0xffffff).setStrokeStyle(1, 0xe5d9c8).setDepth(22);

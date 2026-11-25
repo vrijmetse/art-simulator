@@ -76,7 +76,7 @@ export const JOBS: JobSpec[] = [
         modelName: 'laptop.glb',
         pos3D: [1.35, 0.0, 1.2],
         targetPos3D: [1.05, 0.60, -1.5],
-        scale3D: 0.72,
+        scale3D: 0.95,
         note: { id: 'Laptop rapi di meja belajar.', en: 'Laptop set neatly on the desk.' },
       },
       {
