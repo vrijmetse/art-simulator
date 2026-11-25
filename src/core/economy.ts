@@ -1,0 +1,184 @@
+import type {
+  CashbookEntry,
+  GameState,
+  JobCompletionInput,
+  JobSpec,
+  ToolStats,
+  UpgradeId,
+  UpgradeSpec,
+} from './types';
+import { getJobById, JOBS } from './jobs';
+
+export const UPGRADES: UpgradeSpec[] = [
+  {
+    id: 'wide_sponge',
+    costRp: 25000,
+    name: { id: 'Spons Lebar', en: 'Wide Sponge' },
+    description: {
+      id: 'Jangkauan gosok lebih luas 50%',
+      en: '50% wider scrub radius per swipe',
+    },
+  },
+  {
+    id: 'citrus_cleaner',
+    costRp: 40000,
+    name: { id: 'Cairan Jeruk Wangi', en: 'Citrus Cleaner' },
+    description: {
+      id: 'Daya hapus noda membandel lebih cepat',
+      en: 'Cuts through tough stains faster',
+    },
+  },
+  {
+    id: 'quick_gloves',
+    costRp: 55000,
+    name: { id: 'Sarung Tangan Gesit', en: 'Quick-Grip Gloves' },
+    description: {
+      id: 'Area pasang barang lebih mudah & nyaman',
+      en: 'Wider magnetic snap zone when tidying',
+    },
+  },
+  {
+    id: 'neat_uniform',
+    costRp: 75000,
+    name: { id: 'Seragam Rapi', en: 'Neat Uniform' },
+    description: {
+      id: 'Tambah tip tuan rumah +25%',
+      en: 'Increases host tip bonus by +25%',
+    },
+  },
+  {
+    id: 'sparkle_radar',
+    costRp: 95000,
+    name: { id: 'Radar Debu', en: 'Dust Radar' },
+    description: {
+      id: 'Menandai sisa noda & barang yang belum rapi',
+      en: 'Highlights tiny remaining spots & items',
+    },
+  },
+];
+
+export function createInitialState(): GameState {
+  return {
+    version: 1,
+    locale: 'id',
+    muted: false,
+    day: 1,
+    balanceRp: 0,
+    unlockedLevel: 1,
+    bestStars: {},
+    upgrades: [],
+    cashbook: [],
+  };
+}
+
+export function getToolStats(upgrades: readonly UpgradeId[]): ToolStats {
+  const hasWide = upgrades.includes('wide_sponge');
+  const hasCitrus = upgrades.includes('citrus_cleaner');
+  const hasGloves = upgrades.includes('quick_gloves');
+  const hasUniform = upgrades.includes('neat_uniform');
+  const hasRadar = upgrades.includes('sparkle_radar');
+
+  return {
+    brushRadius: (hasWide ? 36 : 24) + (hasCitrus ? 6 : 0),
+    scrubPower: hasCitrus ? 1.35 : 1.0,
+    snapRadius: hasGloves ? 64 : 42,
+    tipMultiplier: hasUniform ? 1.25 : 1.0,
+    hasRadar,
+  };
+}
+
+export function calculateJobPayout(
+  job: JobSpec,
+  elapsedSec: number,
+  upgrades: readonly UpgradeId[],
+): {
+  stars: 1 | 2 | 3;
+  baseWageRp: number;
+  speedBonusRp: number;
+  tipRp: number;
+  totalRp: number;
+} {
+  const safeElapsed = Math.max(1, Math.round(elapsedSec));
+  let stars: 1 | 2 | 3 = 1;
+  if (safeElapsed <= job.parTimeSec) {
+    stars = 3;
+  } else if (safeElapsed <= Math.round(job.parTimeSec * 1.5)) {
+    stars = 2;
+  }
+
+  const baseWageRp = job.baseWageRp;
+  const speedBonusRp =
+    stars === 3
+      ? Math.round(baseWageRp * 0.35)
+      : stars === 2
+        ? Math.round(baseWageRp * 0.15)
+        : 0;
+
+  const { tipMultiplier } = getToolStats(upgrades);
+  const rawTip = Math.round(baseWageRp * (stars === 3 ? 0.2 : stars === 2 ? 0.1 : 0.05));
+  const tipRp = Math.round(rawTip * tipMultiplier);
+  const totalRp = baseWageRp + speedBonusRp + tipRp;
+
+  return { stars, baseWageRp, speedBonusRp, tipRp, totalRp };
+}
+
+export function purchaseUpgrade(
+  state: GameState,
+  upgradeId: UpgradeId,
+): { purchased: boolean; state: GameState } {
+  const spec = UPGRADES.find((u) => u.id === upgradeId);
+  if (!spec) return { purchased: false, state };
+  if (state.upgrades.includes(upgradeId)) return { purchased: false, state };
+  if (state.balanceRp < spec.costRp) return { purchased: false, state };
+
+  return {
+    purchased: true,
+    state: {
+      ...state,
+      balanceRp: state.balanceRp - spec.costRp,
+      upgrades: [...state.upgrades, upgradeId],
+    },
+  };
+}
+
+export function applyJobResult(
+  state: GameState,
+  input: JobCompletionInput,
+): { entry: CashbookEntry; state: GameState } {
+  const job = getJobById(input.jobId);
+  if (!job) {
+    throw new Error(`Unknown job id: ${input.jobId}`);
+  }
+
+  const payout = calculateJobPayout(job, input.elapsedSec, state.upgrades);
+  const entry: CashbookEntry = {
+    jobId: job.id,
+    day: state.day,
+    stars: payout.stars,
+    baseWageRp: payout.baseWageRp,
+    speedBonusRp: payout.speedBonusRp,
+    tipRp: payout.tipRp,
+    totalRp: payout.totalRp,
+    elapsedSec: Math.max(1, Math.round(input.elapsedSec)),
+  };
+
+  const prevBest = state.bestStars[job.id] ?? 0;
+  const nextBest = Math.max(prevBest, payout.stars) as 1 | 2 | 3;
+  const maxLevel = JOBS.length;
+  const nextUnlocked = Math.min(maxLevel, Math.max(state.unlockedLevel, job.level + 1));
+
+  return {
+    entry,
+    state: {
+      ...state,
+      day: state.day + 1,
+      balanceRp: state.balanceRp + payout.totalRp,
+      unlockedLevel: nextUnlocked,
+      bestStars: {
+        ...state.bestStars,
+        [job.id]: nextBest,
+      },
+      cashbook: [entry, ...state.cashbook].slice(0, 50),
+    },
+  };
+}
