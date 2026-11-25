@@ -63,6 +63,7 @@ export class Street3DView {
   private orbitAngle = 0;
   private orbitTargetAngle = 0;
   private lastTickMs = 0;
+  private lastRenderMs = 0;
   private rafId = 0;
   private destroyed = false;
 
@@ -90,7 +91,7 @@ export class Street3DView {
       alpha: false,
       powerPreference: 'high-performance',
     });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.shadowMap.autoUpdate = false;
@@ -180,7 +181,7 @@ export class Street3DView {
       new THREE.MeshStandardMaterial({ color: 0x9ac687, roughness: 0.96 }),
     );
     lawn.rotation.x = -Math.PI / 2;
-    lawn.position.set(0, -0.04, -1.8);
+    lawn.position.set(0, -0.07, -1.8);
     lawn.receiveShadow = true;
     this.scene.add(lawn);
 
@@ -227,7 +228,7 @@ export class Street3DView {
       new THREE.MeshStandardMaterial({ color: 0x4b5066, roughness: 0.92 }),
     );
     road.rotation.x = -Math.PI / 2;
-    road.position.set(0, -0.04, 3.8);
+    road.position.set(0, -0.03, 3.8);
     road.receiveShadow = true;
     this.scene.add(road);
 
@@ -235,7 +236,7 @@ export class Street3DView {
     for (let x = -5.4; x <= 5.4; x += 1.2) {
       const dash = new THREE.Mesh(new THREE.PlaneGeometry(0.58, 0.09), dashMat);
       dash.rotation.x = -Math.PI / 2;
-      dash.position.set(x, -0.035, 3.4);
+      dash.position.set(x, -0.022, 3.4);
       this.scene.add(dash);
     }
   }
@@ -268,7 +269,15 @@ export class Street3DView {
         m.userData.sharedAsset = true;
         const mats = Array.isArray(m.material) ? m.material : [m.material];
         for (const mat of mats) {
-          if (mat) mat.userData.sharedAsset = true;
+          if (!mat) continue;
+          mat.userData.sharedAsset = true;
+          const std = mat as THREE.MeshStandardMaterial;
+          if (typeof std.opacity === 'number' && std.opacity <= 0.05) {
+            std.opacity = 1;
+            std.alphaTest = 0;
+            std.transparent = false;
+            std.needsUpdate = true;
+          }
         }
       }
     });
@@ -399,7 +408,9 @@ export class Street3DView {
   private tick = (nowMs: number): void => {
     if (this.destroyed) return;
     this.rafId = requestAnimationFrame(this.tick);
-    const dtSec = this.lastTickMs > 0 ? Math.min(0.05, (nowMs - this.lastTickMs) / 1000) : 0.016;
+    if (this.lastRenderMs > 0 && nowMs - this.lastRenderMs < 32) return;
+    this.lastRenderMs = nowMs;
+    const dtSec = this.lastTickMs > 0 ? Math.min(0.05, (nowMs - this.lastTickMs) / 1000) : 0.032;
     this.lastTickMs = nowMs;
 
     if (Math.abs(this.orbitTargetAngle - this.orbitAngle) > 0.005) {

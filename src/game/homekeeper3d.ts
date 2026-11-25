@@ -134,10 +134,19 @@ export function createRiggedActor(
         const m = obj as THREE.Mesh;
         m.castShadow = false;
         m.receiveShadow = false;
+        m.frustumCulled = false;
         m.userData.sharedAsset = true;
         const mats = Array.isArray(m.material) ? m.material : [m.material];
         for (const mat of mats) {
-          if (mat) mat.userData.sharedAsset = true;
+          if (!mat) continue;
+          mat.userData.sharedAsset = true;
+          const std = mat as THREE.MeshStandardMaterial;
+          if (typeof std.opacity === 'number' && std.opacity <= 0.05) {
+            std.opacity = 1;
+            std.alphaTest = 0;
+            std.transparent = false;
+            std.needsUpdate = true;
+          }
         }
       }
     });
