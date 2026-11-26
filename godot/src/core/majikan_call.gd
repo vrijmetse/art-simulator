@@ -96,3 +96,6 @@ static func start_new_shift(_prev_state: Dictionary, profile: Dictionary) -> Dic
 	var nxt: Dictionary = create_state(profile)
 	nxt["trust"] = maxi(50, int(profile.get("initial_trust", 60)))
 	return nxt
+
+static func get_phone_badge_count(state: Dictionary) -> int:
+	return 1 if bool(state.get("active_call", false)) else 0

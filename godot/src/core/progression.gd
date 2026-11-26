@@ -65,6 +65,21 @@ static func get_room_upgrade_title(tier: Dictionary, locale: String = "id") -> S
 		return "Upgrade ART Room" if live_in else "Upgrade Kos Room"
 	return "Upgrade Kamar ART" if live_in else "Upgrade Kamar Kos"
 
+static func trust_to_stars(trust: int) -> String:
+	var filled := clampi(int(round(float(trust) / 20.0)), 0, 5)
+	return "★".repeat(filled) + "☆".repeat(5 - filled)
+
+static func format_shift_clock(day: int, elapsed_s: float, locale: String = "id") -> String:
+	var days_id := ["SENIN", "SELASA", "RABU", "KAMIS", "JUMAT", "SABTU", "MINGGU"]
+	var days_en := ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
+	var d_idx := posmod(maxi(1, day) - 1, 7)
+	var day_name: String = days_en[d_idx] if locale == "en" else days_id[d_idx]
+	var total_mins := 7 * 60 + 30 + int(floor(maxf(0.0, elapsed_s) * 0.5))
+	var hh := (total_mins / 60) % 24
+	var mm := total_mins % 60
+	var day_prefix := "DAY" if locale == "en" else "HARI"
+	return "%02d.%02d  %s, %s %d" % [hh, mm, day_name, day_prefix, maxi(1, day)]
+
 static func skill_level_from_xp(skill_xp: int) -> int:
 	var sxp := maxi(0, skill_xp)
 	var lvl := 1

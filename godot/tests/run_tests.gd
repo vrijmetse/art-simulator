@@ -282,5 +282,16 @@ func _initialize() -> void:
 	_assert_eq(chk.size(), 3, "checklist returns 3 items for kos")
 	_assert_eq(bool(chk[0]["done"]), true, "first completed chore marked done in checklist")
 
+	# 15. Warung-Life style HUD formatters (5-star Trust, Indonesian Day Clock, HP Badge)
+	_assert_eq(Progression.trust_to_stars(100), "★★★★★", "100 trust = 5 stars")
+	_assert_eq(Progression.trust_to_stars(60), "★★★☆☆", "60 trust = 3 stars")
+	_assert_eq(Progression.trust_to_stars(0), "☆☆☆☆☆", "0 trust = 0 stars")
+	_assert_true("07." in Progression.format_shift_clock(1, 0.0, "id"), "shift starts at 07.xx")
+	_assert_true("SENIN" in Progression.format_shift_clock(1, 0.0, "id"), "day 1 is SENIN in ID")
+	_assert_true("MON" in Progression.format_shift_clock(1, 0.0, "en"), "day 1 is MON in EN")
+	_assert_eq(MajikanCall.get_phone_badge_count(cs_good), 0, "no active call = 0 phone badge")
+	var cs_ring := MajikanCall.start_call(cs_good, "Paket!")
+	_assert_eq(MajikanCall.get_phone_badge_count(cs_ring), 1, "active call = 1 phone badge")
+
 	print("GODOT TDD RESULT: %d passed, %d failed" % [_passed, _failed])
 	quit(0 if _failed == 0 else 1)
