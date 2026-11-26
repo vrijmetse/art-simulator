@@ -92,6 +92,12 @@ static func create_player_save() -> Dictionary:
 		"balance_rp": 0,
 		"xp": 0,
 		"locale": "id",
+		"onboarding_done": false,
+		"player_name": "Mbak Sari",
+		"starter_style": "cepol",
+		"skin_hex": "#C68B59",
+		"last_rent_day": 0,
+		"pending_rent_rp": 0,
 		"active_tier_id": "kamar_kos",
 		"active_profile_id": "ibu_kos_melati",
 		"equipped_outfit_id": "starter_kasual",
@@ -107,6 +113,56 @@ static func create_player_save() -> Dictionary:
 		"fired_count": 0,
 		"total_earnings_rp": 0,
 	}
+
+static func resolve_player_model_path(save: Dictionary) -> String:
+	var oid := String(save.get("equipped_outfit_id", "starter_kasual"))
+	var style := String(save.get("starter_style", "cepol"))
+	if oid == "starter_kasual":
+		return "res://assets/models/char_art_hijab.glb" if style == "hijab" else "res://assets/models/char_art.glb"
+	for o in CareerTiers.OUTFIT_TIERS:
+		if o["id"] == oid:
+			return String(o["model_path"])
+	return "res://assets/models/char_art.glb"
+
+static func complete_onboarding(save: Dictionary, raw_name: String, starter_style: String, skin_hex: String, outfit_color_hex: String) -> Dictionary:
+	var clean_name := raw_name.strip_edges().left(24)
+	if clean_name.is_empty():
+		clean_name = "Mbak Sari"
+	var clean_style := "hijab" if starter_style == "hijab" else "cepol"
+	var clean_skin := skin_hex if Color.html_is_valid(skin_hex) else "#C68B59"
+	var clean_col := outfit_color_hex if Color.html_is_valid(outfit_color_hex) else "#4E7D63"
+	var nxt := save.duplicate(true)
+	nxt["onboarding_done"] = true
+	nxt["player_name"] = clean_name
+	nxt["starter_style"] = clean_style
+	nxt["skin_hex"] = clean_skin
+	nxt["outfit_color_hex"] = clean_col
+	return {"ok": true, "save": nxt}
+
+static func should_collect_weekly_rent(save: Dictionary, tier: Dictionary) -> bool:
+	if bool(tier.get("live_in_room_provided", false)):
+		return false
+	if int(save.get("pending_rent_rp", 0)) > 0:
+		return true
+	var day := int(save.get("day", 1))
+	var last_rent := int(save.get("last_rent_day", 0))
+	return day >= 7 and (day - last_rent) >= 7
+
+static func pay_weekly_rent(save: Dictionary, pay_now: bool, rent_rp: int = 120000) -> Dictionary:
+	var nxt := save.duplicate(true)
+	var day := int(nxt.get("day", 1))
+	var bal := int(nxt.get("balance_rp", 0))
+	var pending := int(nxt.get("pending_rent_rp", 0))
+	var due_rp := pending if pending > 0 else rent_rp
+	if pay_now:
+		if bal < due_rp:
+			return {"ok": false, "reason": "insufficient_funds", "due_rp": due_rp, "save": save}
+		nxt["balance_rp"] = bal - due_rp
+		nxt["pending_rent_rp"] = 0
+		nxt["last_rent_day"] = day
+		return {"ok": true, "paid": due_rp, "save": nxt}
+	nxt["pending_rent_rp"] = due_rp + 15000
+	return {"ok": true, "paid": 0, "late_fee_rp": 15000, "due_rp": int(nxt["pending_rent_rp"]), "save": nxt}
 
 static func get_max_energy(save: Dictionary) -> int:
 	var total := 100

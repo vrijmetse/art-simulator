@@ -14,7 +14,9 @@ var _model_root: Node3D = null
 var _anim_player: AnimationPlayer = null
 var _current_anim := ""
 var _equipped_outfit_id := ""
-var _equipped_color_hex := ""
+var _equipped_model_path := ""
+var _equipped_color_hex := "#4E7D63"
+var _equipped_skin_hex := "#B87A4B"
 
 func _ready() -> void:
 	floor_stop_on_slope = true
@@ -49,8 +51,8 @@ func set_cleaning(active: bool) -> void:
 func play_celebrate() -> void:
 	_play_anim("Celebrate")
 
-func load_outfit(outfit_id: String, model_path: String, color_hex: String) -> void:
-	if _equipped_outfit_id != outfit_id or _model_root == null:
+func load_outfit(outfit_id: String, model_path: String, color_hex: String, skin_hex: String = "") -> void:
+	if _equipped_outfit_id != outfit_id or _equipped_model_path != model_path or _model_root == null:
 		if _model_root != null:
 			_model_root.queue_free()
 			_model_root = null
@@ -67,11 +69,32 @@ func load_outfit(outfit_id: String, model_path: String, color_hex: String) -> vo
 			add_child(_model_root)
 			_anim_player = _find_anim_player(_model_root)
 		_equipped_outfit_id = outfit_id
+		_equipped_model_path = model_path
 
 	_equipped_color_hex = color_hex
+	if skin_hex != "" and Color.html_is_valid(skin_hex):
+		_equipped_skin_hex = skin_hex
 	if _model_root != null and Color.html_is_valid(color_hex):
 		_apply_outfit_tint(_model_root, Color.html(color_hex))
+	if _model_root != null and Color.html_is_valid(_equipped_skin_hex):
+		_apply_skin_tint(_model_root, Color.html(_equipped_skin_hex))
 	_play_anim("Idle")
+
+func _apply_skin_tint(node: Node, skin_col: Color) -> void:
+	if node is MeshInstance3D:
+		var mi := node as MeshInstance3D
+		if mi.mesh != null:
+			for s in range(mi.mesh.get_surface_count()):
+				var mat: Material = mi.get_active_material(s)
+				if mat is StandardMaterial3D:
+					var std := mat as StandardMaterial3D
+					var mname := std.resource_name.to_lower()
+					if ("skin" in mname or "nose" in mname) and std.albedo_texture == null:
+						var dup := std.duplicate() as StandardMaterial3D
+						dup.albedo_color = skin_col.darkened(0.08) if "nose" in mname else skin_col
+						mi.set_surface_override_material(s, dup)
+	for child in node.get_children():
+		_apply_skin_tint(child, skin_col)
 
 func _apply_outfit_tint(node: Node, tint: Color) -> void:
 	if node is MeshInstance3D:
@@ -80,9 +103,10 @@ func _apply_outfit_tint(node: Node, tint: Color) -> void:
 			for s in range(mi.mesh.get_surface_count()):
 				var mat: Material = mi.get_active_material(s)
 				if mat is StandardMaterial3D:
-					var mname := mat.resource_name.to_lower()
-					if "shirt" in mname and not ("collar" in mname) and not ("apron" in mname):
-						var dup := (mat as StandardMaterial3D).duplicate() as StandardMaterial3D
+					var std := mat as StandardMaterial3D
+					var mname := std.resource_name.to_lower()
+					if "shirt" in mname and not ("collar" in mname) and not ("apron" in mname) and not ("batik" in mname) and not ("daster" in mname) and std.albedo_texture == null:
+						var dup := std.duplicate() as StandardMaterial3D
 						dup.albedo_color = tint
 						mi.set_surface_override_material(s, dup)
 	for child in node.get_children():

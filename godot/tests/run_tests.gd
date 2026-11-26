@@ -9,6 +9,8 @@ const MajikanCall := preload("res://src/core/majikan_call.gd")
 const ChoreEngine := preload("res://src/core/chore_engine.gd")
 const Progression := preload("res://src/core/progression.gd")
 const SaveStore := preload("res://src/core/save_store.gd")
+const NpcRoster := preload("res://src/core/npc_roster.gd")
+const PlayerControllerScene := preload("res://src/scenes/player_controller.gd")
 const AudioSynth := preload("res://src/core/audio_synth.gd")
 
 var _failed := 0
@@ -27,6 +29,15 @@ func _assert_true(cond: bool, label: String) -> void:
 	else:
 		_failed += 1
 		push_error("FAIL [%s]: expected true" % label)
+
+func _find_anim_player(node: Node) -> AnimationPlayer:
+	if node is AnimationPlayer:
+		return node as AnimationPlayer
+	for c in node.get_children():
+		var found := _find_anim_player(c)
+		if found != null:
+			return found
+	return null
 
 func _initialize() -> void:
 	# 1. i18n formatting (Rp 0 balance vs Gratis price)
@@ -292,6 +303,102 @@ func _initialize() -> void:
 	_assert_eq(MajikanCall.get_phone_badge_count(cs_good), 0, "no active call = 0 phone badge")
 	var cs_ring := MajikanCall.start_call(cs_good, "Paket!")
 	_assert_eq(MajikanCall.get_phone_badge_count(cs_ring), 1, "active call = 1 phone badge")
+
+	# 16. Indonesian ART & NPC Roster (Mba2, Ibu2, Kakak2, Bapak2), clearance & animations
+	_assert_true(ResourceLoader.exists("res://assets/models/char_kakak.glb"), "char_kakak.glb exists on disk")
+	var char_models := [
+		"res://assets/models/char_art.glb",
+		"res://assets/models/char_art_pro.glb",
+		"res://assets/models/char_art_elite.glb",
+		"res://assets/models/char_ibu.glb",
+		"res://assets/models/char_kakak.glb",
+		"res://assets/models/char_budi.glb",
+	]
+	for cm_path in char_models:
+		var packed: PackedScene = load(cm_path)
+		_assert_true(packed != null, "char glb loads: " + cm_path)
+		if packed != null:
+			var inst := packed.instantiate()
+			var ap := _find_anim_player(inst)
+			_assert_true(ap != null, "char has AnimationPlayer: " + cm_path)
+			if ap != null:
+				var anims_str := ",".join(ap.get_animation_list()).to_lower()
+				for req_anim in ["idle", "walk", "clean", "talk"]:
+					_assert_true(req_anim in anims_str, cm_path + " has anim " + req_anim)
+			inst.free()
+
+	for t in CareerTiers.TIERS:
+		var tid := String(t["id"])
+		var npcs: Array = NpcRoster.get_shift_npcs(tid)
+		_assert_true(npcs.size() >= 1, "shift has NPCs for tier " + tid)
+		var bounds: Dictionary = NpcRoster.get_tier_bounds_and_chores(tid)
+		var rect: Rect2 = bounds["walk_rect"]
+		var spawn: Vector3 = bounds["player_spawn"]
+		var chores: Dictionary = bounds["chores"]
+		for npc in npcs:
+			_assert_true(ResourceLoader.exists(String(npc["model_path"])), "npc model exists: " + String(npc["model_path"]))
+			_assert_true(String(npc["label_id"]) != String(npc["label_en"]), "npc label localized ID/EN: " + String(npc["id"]))
+			var p: Vector3 = npc["pos"]
+			_assert_true(rect.grow(-0.25).has_point(Vector2(p.x, p.z)), "npc inside safe walk_bounds for " + tid + ": " + String(npc["id"]))
+			_assert_true(p.distance_to(spawn) >= 1.2, "npc >=1.2m from player_spawn in " + tid + ": " + String(npc["id"]))
+			for ck in chores.keys():
+				var cp: Vector3 = chores[ck]
+				_assert_true(p.distance_to(cp) >= 0.9, "npc >=0.9m from chore " + String(ck) + " in " + tid)
+		var h_npcs: Array = NpcRoster.get_home_npcs(tid)
+		_assert_true(h_npcs.size() >= 1, "home mode has neighbor NPC for tier " + tid)
+
+	# 17. Runtime shirt tinting must NOT darken textured Batik / Daster materials
+	var test_ctrl := PlayerControllerScene.new()
+	var mi_batik := MeshInstance3D.new()
+	var box_m := BoxMesh.new()
+	var mat_batik := StandardMaterial3D.new()
+	mat_batik.resource_name = "Shirt_Batik"
+	var img_tx := ImageTexture.create_from_image(Image.create(4, 4, false, Image.FORMAT_RGBA8))
+	mat_batik.albedo_texture = img_tx
+	mat_batik.albedo_color = Color.WHITE
+	box_m.material = mat_batik
+	mi_batik.mesh = box_m
+	test_ctrl._apply_outfit_tint(mi_batik, Color.html("#4E7D63"))
+	var active_m := mi_batik.get_active_material(0) as StandardMaterial3D
+	_assert_eq(active_m.albedo_color, Color.WHITE, "textured Batik/Daster Shirt keeps WHITE albedo_color on tint")
+	mi_batik.free()
+	test_ctrl.free()
+
+	# 18. Onboarding / Character Creation & Weekly Kos Rent (Warung-Life style)
+	var fresh_sv := Progression.create_player_save()
+	_assert_eq(bool(fresh_sv.get("onboarding_done", true)), false, "new save starts with onboarding_done = false")
+	_assert_eq(String(fresh_sv.get("player_name", "")), "Mbak Sari", "default player name is Mbak Sari")
+	_assert_eq(Progression.resolve_player_model_path(fresh_sv), "res://assets/models/char_art.glb", "cepol starter resolves char_art.glb")
+	var ob_res := Progression.complete_onboarding(fresh_sv, "  Mbak Ani  ", "hijab", "#A67349", "#4E7D63")
+	_assert_eq(bool(ob_res["ok"]), true, "complete_onboarding succeeds")
+	var ob_sv: Dictionary = ob_res["save"]
+	_assert_eq(bool(ob_sv["onboarding_done"]), true, "onboarding_done becomes true")
+	_assert_eq(String(ob_sv["player_name"]), "Mbak Ani", "player_name trimmed")
+	_assert_eq(String(ob_sv["starter_style"]), "hijab", "starter_style saved")
+	_assert_eq(Progression.resolve_player_model_path(ob_sv), "res://assets/models/char_art_hijab.glb", "hijab starter resolves char_art_hijab.glb")
+	_assert_true(ResourceLoader.exists("res://assets/models/char_art_hijab.glb"), "char_art_hijab.glb exists on disk")
+	var bad_ob := SaveStore.deserialize("{\"onboarding_done\": true, \"player_name\": \"\", \"starter_style\": \"hacker\", \"skin_hex\": \"bad\"}")
+	_assert_eq(String(bad_ob["player_name"]), "Mbak Sari", "empty player_name falls back to Mbak Sari")
+	_assert_eq(String(bad_ob["starter_style"]), "cepol", "invalid starter_style falls back to cepol")
+	_assert_eq(Color.html_is_valid(String(bad_ob["skin_hex"])), true, "invalid skin_hex sanitized")
+
+	var rent_sv := ob_sv.duplicate(true)
+	rent_sv["day"] = 7
+	rent_sv["balance_rp"] = 200000
+	rent_sv["last_rent_day"] = 0
+	_assert_eq(Progression.should_collect_weekly_rent(rent_sv, CareerTiers.get_tier("kamar_kos")), true, "day 7 live-out triggers weekly kos rent")
+	_assert_eq(Progression.should_collect_weekly_rent(rent_sv, CareerTiers.get_tier("cluster_elite")), false, "live-in tier does not charge kos rent")
+	var paid_rent := Progression.pay_weekly_rent(rent_sv, true, 120000)
+	_assert_eq(bool(paid_rent["ok"]), true, "weekly kos rent payment succeeds")
+	_assert_eq(int(paid_rent["save"]["balance_rp"]), 80000, "balance deducted by rent")
+	_assert_eq(int(paid_rent["save"]["last_rent_day"]), 7, "last_rent_day updated")
+	var later_rent := Progression.pay_weekly_rent(rent_sv, false, 120000)
+	_assert_eq(int(later_rent["save"]["pending_rent_rp"]), 135000, "pay later accrues rent + 15000 late fee")
+	_assert_eq(Progression.should_collect_weekly_rent(later_rent["save"], CareerTiers.get_tier("kamar_kos")), true, "pending rent keeps rent collection active")
+	var settled_later := Progression.pay_weekly_rent(later_rent["save"], true, 120000)
+	_assert_eq(bool(settled_later["ok"]), true, "paying accumulated pending rent succeeds")
+	_assert_eq(int(settled_later["save"]["balance_rp"]), 65000, "balance deducted by 135000 pending rent")
+	_assert_eq(int(settled_later["save"]["pending_rent_rp"]), 0, "pending rent cleared after payment")
 
 	print("GODOT TDD RESULT: %d passed, %d failed" % [_passed, _failed])
 	quit(0 if _failed == 0 else 1)

@@ -32,6 +32,16 @@ static func sanitize(raw: Variant) -> Dictionary:
 	var loc := String(d.get("locale", "id"))
 	clean["locale"] = "en" if loc == "en" else "id"
 
+	clean["onboarding_done"] = bool(d.get("onboarding_done", false))
+	var raw_name := String(d.get("player_name", "Mbak Sari")).strip_edges().left(24)
+	clean["player_name"] = "Mbak Sari" if raw_name.is_empty() else raw_name
+	var raw_style := String(d.get("starter_style", "cepol"))
+	clean["starter_style"] = "hijab" if raw_style == "hijab" else "cepol"
+	var raw_skin := String(d.get("skin_hex", "#C68B59"))
+	clean["skin_hex"] = raw_skin if Color.html_is_valid(raw_skin) else "#C68B59"
+	clean["last_rent_day"] = _safe_int(d.get("last_rent_day", 0), 0, 0)
+	clean["pending_rent_rp"] = _safe_int(d.get("pending_rent_rp", 0), 0, 0)
+
 	var xp := int(clean["xp"])
 	var req_tier := String(d.get("active_tier_id", "kamar_kos"))
 	if CareerTiers.can_access_tier(req_tier, xp):
