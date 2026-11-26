@@ -908,5 +908,15 @@ func _initialize() -> void:
 	_assert_eq(int(sv_lr_rt["game_minutes"]), 1439, "SaveStore clamps game_minutes 0..1439")
 	_assert_eq(int(sv_lr_rt["energy"]), 0, "SaveStore clamps energy >= 0")
 
+	# 27. Warung-Life Warm OmniLight3D Pools
+	var rl_day: Array = ArtAtmosphere.get_room_lights_config("siang")
+	var rl_night: Array = ArtAtmosphere.get_room_lights_config("malam")
+	_assert_eq(rl_day.size(), 2, "room has 2 warm OmniLight3D pools")
+	_assert_true(float(rl_night[0]["energy"]) > float(rl_day[0]["energy"]), "room lamp warms up at night")
+	var sl_day: Array = ArtAtmosphere.get_street_lights_config("siang")
+	var sl_night: Array = ArtAtmosphere.get_street_lights_config("malam")
+	_assert_true(sl_night.size() <= 3 and sl_night.size() >= 2, "street light pool count <= 3 for mobile perf")
+	_assert_true(float(sl_night[0]["energy"]) > float(sl_day[0]["energy"]), "streetlamp glow ramps up at night")
+
 	print("GODOT TDD RESULT: %d passed, %d failed" % [_passed, _failed])
 	quit(0 if _failed == 0 else 1)

@@ -96,6 +96,58 @@ static func apply_lighting(sun: DirectionalLight3D, bounce: DirectionalLight3D, 
 			sky_mat.sky_top_color = sky_top
 			sky_mat.sky_horizon_color = sun_col.lerp(Color(0.86, 0.88, 0.92), 0.30)
 
+static func get_room_lights_config(phase: String) -> Array:
+	var warm := 0.72
+	var beam := 0.85
+	if phase == "sore":
+		warm = 1.15
+		beam = 1.25
+	elif phase == "malam":
+		warm = 1.55
+		beam = 0.45
+	return [
+		{"name": "WarmBedsideOmni", "pos": Vector3(-0.60, 0.92, -1.90), "color": Color(1.0, 0.66, 0.28), "energy": warm, "range": 4.8},
+		{"name": "WarmWindowOmni", "pos": Vector3(0.35, 1.55, -1.75), "color": Color(1.0, 0.78, 0.44), "energy": beam, "range": 4.4},
+	]
+
+static func get_street_lights_config(phase: String) -> Array:
+	var e := 0.35
+	if phase == "sore":
+		e = 0.95
+	elif phase == "malam":
+		e = 1.45
+	return [
+		{"name": "StreetLampL", "pos": Vector3(-3.45, 1.85, -0.55), "color": Color(1.0, 0.70, 0.30), "energy": e, "range": 5.2},
+		{"name": "StreetLampC", "pos": Vector3(0.0, 1.85, -0.55), "color": Color(1.0, 0.70, 0.30), "energy": e, "range": 5.2},
+		{"name": "StreetLampR", "pos": Vector3(3.45, 1.85, -0.55), "color": Color(1.0, 0.70, 0.30), "energy": e, "range": 5.2},
+	]
+
+static func sync_stage_lights(stage_root: Node, world_mode: String, phase: String) -> void:
+	if stage_root == null:
+		return
+	var holder := stage_root.find_child("_WarmStageLights", false, false)
+	if holder == null:
+		holder = Node3D.new()
+		holder.name = "_WarmStageLights"
+		stage_root.add_child(holder)
+	for c in holder.get_children():
+		c.queue_free()
+	var cfgs: Array = []
+	if world_mode == "home" or world_mode == "shift":
+		cfgs = get_room_lights_config(phase)
+	elif world_mode == "street":
+		cfgs = get_street_lights_config(phase)
+	for cfg in cfgs:
+		var omni := OmniLight3D.new()
+		omni.name = String(cfg["name"])
+		omni.position = cfg["pos"]
+		omni.light_color = cfg["color"]
+		omni.light_energy = float(cfg["energy"])
+		omni.omni_range = float(cfg["range"])
+		omni.omni_attenuation = 1.35
+		omni.shadow_enabled = false
+		holder.add_child(omni)
+
 static func _set_nodes_visible(stage_root: Node, names: Array, is_visible: bool) -> void:
 	for n_name in names:
 		var node := stage_root.find_child(String(n_name), true, false)

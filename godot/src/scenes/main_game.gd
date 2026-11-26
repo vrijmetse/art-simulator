@@ -94,6 +94,9 @@ var _shift_event: Dictionary = {}
 var _clock_accum := 0.0
 var _late_night_warned_day := 0
 var _last_prayer_id := ""
+var _is_sleeping := false
+var _tasks_collapsed := false
+var _btn_tasks_toggle: Button
 
 # HUD nodes
 var _lbl_balance: Label
@@ -440,6 +443,7 @@ func _refresh_atmosphere() -> void:
 	_cur_weather = Atmosphere.get_weather(day, bool(_save.get("weather_fx", true)))
 	var env := world_env.environment if world_env != null else null
 	Atmosphere.apply_lighting(sun_light, bounce_light, env, _cur_phase, _cur_weather)
+	Atmosphere.sync_stage_lights(stage_root, _world_mode, _cur_phase)
 	if _rain_particles != null:
 		_rain_particles.emitting = (_world_mode == "street" and _cur_weather == "hujan")
 	StreetPatrols.sync_player_umbrella(player, _world_mode == "street" and _cur_weather == "hujan")
@@ -619,13 +623,15 @@ func _enter_home_mode() -> void:
 	_spawn_npcs(NpcRoster.get_home_npcs(tier_id))
 	_clear_street_traffic()
 	_spawn_portal("exit_street", Vector3(0.45, 0.0, 1.15), Color(0.96, 0.78, 0.24), "Keluar Kamar", "Step Outside")
-	_spawn_portal("sleep_bed", Vector3(-1.15, 0.0, -0.75), Color(0.45, 0.74, 0.96), "Tidur di Kasur", "Sleep to Recharge")
+	_spawn_portal("sleep_bed", Vector3(-0.95, 0.0, -0.85), Color(0.45, 0.74, 0.96), "Tidur di Kasur", "Sleep to Recharge")
 	if bool(_save.get("prayer_reminders", true)):
-		_spawn_portal("pray_mat", Vector3(1.15, 0.0, -0.75), Color(0.32, 0.84, 0.62), "Sholat / Doa", "Pray")
+		_spawn_portal("pray_mat", Vector3(1.20, 0.0, 0.95), Color(0.32, 0.84, 0.62), "Sholat / Doa", "Pray")
 	_refresh_atmosphere()
 	_refresh_hud()
 
 func _enter_street_mode(from_mode: String = "home") -> void:
+	if _is_sleeping:
+		return
 	if _audio_unlocked:
 		_play_sfx(_wav_door)
 	_world_mode = "street"
@@ -892,6 +898,8 @@ func _try_tap_boost() -> void:
 	_play_sfx(_wav_chore_tick)
 
 func _trigger_world_action() -> void:
+	if _is_sleeping:
+		return
 	if _world_mode == "shift":
 		if bool(_call_state.get("active_call", false)):
 			_on_answer_call()
@@ -1273,7 +1281,7 @@ func _process(delta: float) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey or event is InputEventMouseButton or event is InputEventScreenTouch:
 		_unlock_audio()
-	if (_onboarding_wrap != null and _onboarding_wrap.visible) or (_modal_backdrop != null and _modal_backdrop.visible):
+	if _is_sleeping or (_onboarding_wrap != null and _onboarding_wrap.visible) or (_modal_backdrop != null and _modal_backdrop.visible):
 		return
 	if event is InputEventKey and event.pressed and event.keycode in [KEY_E, KEY_SPACE]:
 		if _in_shift and bool(_call_state.get("active_call", false)):
@@ -1426,7 +1434,10 @@ func _refresh_hud() -> void:
 
 		var done_n := (_shift.get("completed_ids", []) as Array).size()
 		var tot_n := (_shift.get("assigned_ids", []) as Array).size()
-		_lbl_tasks_hdr.text = "%d/%d %s" % [done_n, tot_n, _t("TUGAS", "TASKS")]
+		var arrow := " [+]" if _tasks_collapsed else " [-]"
+		_lbl_tasks_hdr.text = "%d/%d %s%s" % [done_n, tot_n, _t("TUGAS", "TASKS"), arrow]
+		if _btn_tasks_toggle != null:
+			_btn_tasks_toggle.text = _lbl_tasks_hdr.text
 		for c in _tasks_list.get_children():
 			c.queue_free()
 		for item in ChoreEngine.get_checklist_items(_shift, _loc()):
@@ -1436,6 +1447,7 @@ func _refresh_hud() -> void:
 			row.add_theme_font_size_override("font_size", 12)
 			row.add_theme_color_override("font_color", Color(0.50, 0.95, 0.52) if bool(item["done"]) else Color(0.95, 0.94, 0.90))
 			_tasks_list.add_child(row)
+		_tasks_list.visible = not _tasks_collapsed
 		_tasks_card.visible = true
 
 		_btn_shift.text = _t("Selesai Shift", "End Shift") if done_n >= tot_n else (_t("Pulang Cepat", "Leave Early") if done_n > 0 else _t("Batal Shift", "Cancel Shift"))
@@ -1475,7 +1487,7 @@ func _refresh_hud() -> void:
 	if _btn_settings != null:
 		var has_rw := Retention.has_unclaimed_daily_reward(_save, _today_date_str())
 		_btn_settings.text = _t("Menu ★" if has_rw else "Menu", "Menu ★" if has_rw else "Menu")
-	_btn_phone.text = "HP"
+	_btn_phone.text = ""
 	var badge_n := MajikanCall.get_phone_badge_count(_call_state) if _in_shift else 0
 	_lbl_phone_badge.text = str(badge_n)
 	_lbl_phone_badge.visible = badge_n > 0
@@ -1508,6 +1520,8 @@ func _refresh_tutorial_banner() -> void:
 			_btn_tutorial_skip.text = _t("Lewati", "Skip")
 
 func _show_modal() -> void:
+	if _is_sleeping:
+		return
 	if _modal_backdrop != null:
 		_modal_backdrop.visible = true
 	_refresh_tutorial_banner()
@@ -1677,6 +1691,24 @@ func _open_retention_modal() -> void:
 	_show_modal()
 
 func _perform_sleep_recharge() -> void:
+	if _is_sleeping:
+		return
+	_is_sleeping = true
+	player.cancel_movement()
+	player.movement_locked = true
+	_reset_joystick()
+	var prev_pos := player.position
+	var prev_rot := player.rotation
+	# Cozy bed-lay pose on single bed (Godot -1.55, 0.56, -1.25)
+	player.position = Vector3(-1.55, 0.54, -1.25)
+	player.rotation = Vector3(-PI * 0.48, 0.0, 0.0)
+	_spawn_float_popup(player.position + Vector3(0.0, 0.45, 0.0), "Zzz...", Color(0.68, 0.88, 1.0))
+	await get_tree().create_timer(0.85).timeout
+	player.rotation = prev_rot
+	player.position = Vector3(-0.95, 0.0, -0.85) if _world_mode == "home" else prev_pos
+	player.movement_locked = false
+	_is_sleeping = false
+
 	var sl := LifeRhythm.sleep_in_bed(_save, _save.get("unlocked_kos_upgrades", []))
 	_save = sl["save"]
 	_last_prayer_id = ""
@@ -2026,6 +2058,8 @@ func _open_rent_modal(res: Dictionary = {}, leveled_up_to: int = 0) -> void:
 	_show_modal()
 
 func _open_map_modal() -> void:
+	if _is_sleeping:
+		return
 	_clear_modal()
 	_modal_title.text = _t("PETA LINGKUNGAN & WILAYAH KERJA", "NEIGHBORHOOD & DISTRICT MAP")
 	var nodes := Portraits.get_map_destinations(_save, _world_mode)
@@ -2122,6 +2156,8 @@ func _open_log_modal() -> void:
 	_show_modal()
 
 func _open_settings_modal() -> void:
+	if _is_sleeping:
+		return
 	_clear_modal()
 	_reset_confirm = false
 	_modal_title.text = _t("MENU, PENGATURAN & CATATAN", "MENU, SETTINGS & LOG")
@@ -2371,10 +2407,21 @@ func _build_hud() -> void:
 	var tk_v := VBoxContainer.new()
 	tk_v.add_theme_constant_override("separation", 3)
 	_lbl_tasks_hdr = Label.new()
-	_lbl_tasks_hdr.add_theme_font_size_override("font_size", 13)
-	_lbl_tasks_hdr.add_theme_color_override("font_color", Color(0.98, 0.82, 0.28))
+	_lbl_tasks_hdr.visible = false
+	_btn_tasks_toggle = Button.new()
+	_btn_tasks_toggle.custom_minimum_size = Vector2(180, 32)
+	_btn_tasks_toggle.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	_btn_tasks_toggle.add_theme_font_size_override("font_size", 13)
+	_btn_tasks_toggle.add_theme_color_override("font_color", Color(0.98, 0.82, 0.28))
+	_btn_tasks_toggle.add_theme_stylebox_override("normal", _make_box(Color(0, 0, 0, 0), Color(0, 0, 0, 0), 4, 4, 2))
+	_btn_tasks_toggle.add_theme_stylebox_override("hover", _make_box(Color(1, 1, 1, 0.08), Color(0, 0, 0, 0), 4, 4, 2))
+	_btn_tasks_toggle.pressed.connect(func():
+		_tasks_collapsed = not _tasks_collapsed
+		_refresh_hud()
+	)
 	_tasks_list = VBoxContainer.new()
 	_tasks_list.add_theme_constant_override("separation", 2)
+	tk_v.add_child(_btn_tasks_toggle)
 	tk_v.add_child(_lbl_tasks_hdr)
 	tk_v.add_child(_tasks_list)
 	_tasks_card.add_child(tk_v)
@@ -2575,22 +2622,60 @@ func _build_hud() -> void:
 	_btn_kos.pressed.connect(_open_kos_modal)
 
 	var phone_wrap := Control.new()
-	phone_wrap.custom_minimum_size = Vector2(56, 42)
+	phone_wrap.custom_minimum_size = Vector2(72, 76)
 	_btn_phone = Button.new()
 	_btn_phone.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_style_btn(_btn_phone, Color(0.20, 0.42, 0.66), Color(0.95, 0.78, 0.26))
+	_btn_phone.text = ""
+	_style_btn(_btn_phone, Color(0.11, 0.14, 0.20, 0.96), Color(0.96, 0.78, 0.26))
 	_btn_phone.pressed.connect(func():
+		if _is_sleeping:
+			return
 		_phone_open = not _phone_open
 		_refresh_hud()
 	)
+	var ph_screen := PanelContainer.new()
+	ph_screen.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ph_screen.set_anchors_preset(Control.PRESET_FULL_RECT)
+	ph_screen.offset_left = 10
+	ph_screen.offset_right = -10
+	ph_screen.offset_top = 8
+	ph_screen.offset_bottom = -20
+	ph_screen.add_theme_stylebox_override("panel", _make_box(Color(0.20, 0.36, 0.62), Color(0.76, 0.86, 0.98), 6, 4, 4))
+	var app_grid := GridContainer.new()
+	app_grid.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	app_grid.columns = 3
+	app_grid.add_theme_constant_override("h_separation", 4)
+	app_grid.add_theme_constant_override("v_separation", 4)
+	for app_col in [
+		Color(0.32, 0.84, 0.44), Color(0.96, 0.76, 0.24), Color(0.92, 0.34, 0.32),
+		Color(0.32, 0.76, 0.96), Color(0.76, 0.48, 0.94), Color(0.98, 0.56, 0.26),
+	]:
+		var ic := ColorRect.new()
+		ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		ic.custom_minimum_size = Vector2(11, 11)
+		ic.color = app_col
+		app_grid.add_child(ic)
+	ph_screen.add_child(app_grid)
+	var ph_lbl := Label.new()
+	ph_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ph_lbl.text = "HP"
+	ph_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	ph_lbl.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	ph_lbl.offset_top = -18
+	ph_lbl.add_theme_font_size_override("font_size", 11)
+	ph_lbl.add_theme_color_override("font_color", Color(0.98, 0.95, 0.88))
+
 	_lbl_phone_badge = Label.new()
-	_lbl_phone_badge.position = Vector2(40, -6)
+	_lbl_phone_badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_lbl_phone_badge.position = Vector2(54, -6)
 	_lbl_phone_badge.custom_minimum_size = Vector2(20, 20)
 	_lbl_phone_badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_lbl_phone_badge.add_theme_stylebox_override("normal", _make_box(Color(0.86, 0.18, 0.16), Color(1, 1, 1), 10, 4, 1))
 	_lbl_phone_badge.add_theme_font_size_override("font_size", 11)
 	_lbl_phone_badge.add_theme_color_override("font_color", Color(1, 1, 1))
 	phone_wrap.add_child(_btn_phone)
+	phone_wrap.add_child(ph_screen)
+	phone_wrap.add_child(ph_lbl)
 	phone_wrap.add_child(_lbl_phone_badge)
 
 	for b in [_btn_action, _btn_shift, _btn_career, _btn_ward, _btn_kos, phone_wrap]:

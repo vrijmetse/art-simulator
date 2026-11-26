@@ -288,23 +288,23 @@ def add_open_standing_fan(x, y, dark_mat, teal_mat, metal_mat):
 def build_room():
     bpy.ops.wm.read_factory_settings(use_empty=True)
 
-    floor_alb, floor_nrm, floor_rgh = generate_tile_textures(TEX_DIR, "room_ceramic_v19", (0.842, 0.7695, 0.657), "ceramic")
-    wall_alb, wall_nrm, wall_rgh = generate_plaster_ao_texture(TEX_DIR, "room_plaster_v5", (0.83, 0.78, 0.68))
-    wood_alb, wood_nrm, wood_rgh = generate_wood_texture(TEX_DIR, "room_teak_v5", (0.40, 0.23, 0.13))
-    grass_alb, grass_nrm, grass_rgh = generate_turf_texture(TEX_DIR, "room_grass_v11", (0.24, 0.46, 0.20))
-    leaf_alb = generate_foliage_texture(TEX_DIR, "room_plant_v5", (0.16, 0.48, 0.18))
+    floor_alb, floor_nrm, floor_rgh = generate_tile_textures(TEX_DIR, "room_ceramic_v19", (0.82, 0.73, 0.60), "ceramic")
+    wall_alb, wall_nrm, wall_rgh = generate_plaster_ao_texture(TEX_DIR, "room_plaster_v5", (0.84, 0.74, 0.58))
+    wood_alb, wood_nrm, wood_rgh = generate_wood_texture(TEX_DIR, "room_teak_v5", (0.34, 0.17, 0.08))
+    grass_alb, grass_nrm, grass_rgh = generate_turf_texture(TEX_DIR, "room_grass_v11", (0.12, 0.24, 0.12))
+    leaf_alb = generate_foliage_texture(TEX_DIR, "room_plant_v5", (0.14, 0.44, 0.16))
     art_img = generate_wall_art_padi(TEX_DIR, "wall_art_padi_v5")
     laptop_img = generate_laptop_ui(TEX_DIR, "laptop_ui_v5")
     rug_img = generate_woven_rug_texture(TEX_DIR, "woven_rug_v5")
-    sheet_img = generate_fabric_weave_texture(TEX_DIR, "fabric_sheet_v5", (0.82, 0.78, 0.70))
-    blanket_img = generate_fabric_weave_texture(TEX_DIR, "fabric_blanket_v5", (0.74, 0.31, 0.22))
-    curtain_img = generate_fabric_weave_texture(TEX_DIR, "fabric_curtain_v5", (0.33, 0.52, 0.42))
+    sheet_img = generate_fabric_weave_texture(TEX_DIR, "fabric_sheet_v5", (0.86, 0.80, 0.70))
+    blanket_img = generate_fabric_weave_texture(TEX_DIR, "fabric_blanket_v5", (0.76, 0.28, 0.14))
+    curtain_img = generate_fabric_weave_texture(TEX_DIR, "fabric_curtain_v5", (0.18, 0.42, 0.56))
 
-    mat_floor = make_pbr_material("RoomFloor", floor_alb, 0.52, floor_nrm, 0.55, (4.4, 4.4), floor_rgh)
-    mat_wall = make_pbr_material("RoomWall", wall_alb, 0.88, wall_nrm, 0.45, (1.6, 1.6), wall_rgh)
-    mat_wood = make_pbr_material("RoomWood", wood_alb, 0.64, wood_nrm, 0.45, (1.5, 1.5), wood_rgh)
-    mat_grass = make_pbr_material("YardGrass", grass_alb, 0.92, grass_nrm, 0.55, (5.0, 5.0), grass_rgh)
-    mat_patio = make_solid_mat("YardPatio", (0.64, 0.60, 0.54), 0.88)
+    mat_floor = make_pbr_material("RoomFloor", floor_alb, 0.46, floor_nrm, 0.62, (4.4, 4.4), floor_rgh)
+    mat_wall = make_pbr_material("RoomWall", wall_alb, 0.84, wall_nrm, 0.50, (1.6, 1.6), wall_rgh)
+    mat_wood = make_pbr_material("RoomWood", wood_alb, 0.44, wood_nrm, 0.55, (1.5, 1.5), wood_rgh)
+    mat_grass = make_pbr_material("YardGrass", grass_alb, 0.94, grass_nrm, 0.55, (5.0, 5.0), grass_rgh)
+    mat_patio = make_solid_mat("YardPatio", (0.24, 0.23, 0.26), 0.90)
     mat_leaf = make_pbr_material("RoomPlant", leaf_alb, 0.68)
     mat_art = make_pbr_material("RoomWallArt", art_img, 0.55)
     mat_screen = make_pbr_material("LaptopScreen", laptop_img, 0.35)
@@ -322,7 +322,9 @@ def build_room():
     mat_dark = make_solid_mat("DarkAlloy", (0.16, 0.18, 0.22), 0.42, 0.65)
     mat_metal = make_solid_mat("AlloyChrome", (0.72, 0.74, 0.78), 0.25, 0.85)
     mat_wicker = make_solid_mat("WickerTan", (0.76, 0.64, 0.46), 0.88)
-    mat_sky = make_solid_mat("WindowSky", (0.34, 0.62, 0.82), 0.28, 0.0, 0.08)
+    mat_sky = make_solid_mat("WindowSky", (0.98, 0.72, 0.36), 0.25, 0.0, 0.65)
+    mat_sajadah = make_solid_mat("SajadahEmerald", (0.10, 0.40, 0.26), 0.86)
+    mat_terracotta_red = make_solid_mat("TermosRed", (0.82, 0.18, 0.16), 0.36, 0.12)
 
     add_beveled_box("OuterYard", (16.0, 16.0, 0.12), (0.0, 0.0, -0.24), mat_grass, 0.0)
     # Surrounding backyard perimeter wall & plain warm stone veranda edge so room sits inside a real garden!
@@ -389,8 +391,15 @@ def build_room():
     add_beveled_box("ClockHandH", (0.02, 0.018, 0.09), (-2.23, 0.45, 1.91), mat_dark, 0.002)
     add_beveled_box("ClockHandM", (0.02, 0.11, 0.018), (-2.23, 0.49, 1.88), mat_dark, 0.002)
 
-    # Patterned Woven Kilim Rug (NO white center glare!)
-    add_beveled_box("CozyRug", (2.15, 1.55, 0.024), (0.35, -0.45, 0.014), mat_rug, 0.012)
+    # Patterned Woven Kilim Rug + 3D Emerald & Gold Sajadah Prayer Mat (clear of rug & chair!)
+    add_beveled_box("CozyRug", (1.95, 1.45, 0.024), (-0.12, -0.35, 0.014), mat_rug, 0.012)
+    add_beveled_box("SajadahBase", (0.68, 1.06, 0.016), (1.20, -0.95, 0.010), mat_sajadah, 0.008)
+    add_beveled_box("SajadahBorder", (0.58, 0.96, 0.006), (1.20, -0.95, 0.019), mat_book2, 0.004)
+    add_beveled_box("SajadahArch", (0.38, 0.54, 0.006), (1.20, -0.88, 0.022), mat_sajadah, 0.004)
+
+    # Wall Calendar next to window + Red Indonesian Floral Thermos on Desk
+    add_beveled_box("WallCalendar", (0.28, 0.02, 0.40), (1.24, 2.28, 1.62), mat_cream, 0.004)
+    add_beveled_box("WallCalendarHeader", (0.26, 0.024, 0.12), (1.24, 2.275, 1.75), mat_book1, 0.003)
 
     # Kenney Single Bed + Indonesian Guling Bolster + Bedside Slippers (centered!)
     import_kenney_glb("BedSingle", "bedSingle.glb", (-1.55, 1.25, 0.0), rot_z=0.0, target_height=0.72, center_xy=True)
@@ -421,6 +430,13 @@ def build_room():
     bpy.context.active_object.data.materials.append(mat_coral)
     bpy.ops.mesh.primitive_cylinder_add(vertices=10, radius=0.035, depth=0.10, location=(1.22, 1.95, 0.82))
     bpy.context.active_object.data.materials.append(mat_book1)
+    # Indonesian Red Thermos
+    bpy.ops.mesh.primitive_cylinder_add(vertices=14, radius=0.065, depth=0.22, location=(0.14, 1.92, 0.88))
+    bpy.ops.object.shade_smooth()
+    bpy.context.active_object.data.materials.append(mat_terracotta_red)
+    bpy.ops.mesh.primitive_cylinder_add(vertices=14, radius=0.052, depth=0.06, location=(0.14, 1.92, 1.01))
+    bpy.ops.object.shade_smooth()
+    bpy.context.active_object.data.materials.append(mat_cream)
 
     # Tall Wooden Wardrobe + Sapu Ijuk Broom (ART signature!) + Laundry Basket + Standing Fan
     add_beveled_box("WardrobeBody", (0.86, 0.56, 1.92), (1.92, 1.98, 0.96), mat_wood, 0.025)

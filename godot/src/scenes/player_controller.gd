@@ -10,6 +10,7 @@ var joystick_input := Vector2.ZERO
 var _tap_target := Vector3.ZERO
 var _has_tap_target := false
 var _busy_cleaning := false
+var movement_locked := false
 var _model_root: Node3D = null
 var _anim_player: AnimationPlayer = null
 var _current_anim := ""
@@ -138,7 +139,7 @@ func _play_anim(target: String) -> void:
 		_current_anim = list[0]
 
 func _physics_process(delta: float) -> void:
-	if _busy_cleaning:
+	if _busy_cleaning or movement_locked:
 		return
 
 	var key_vec := Vector2.ZERO
