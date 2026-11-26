@@ -1,6 +1,7 @@
 import os
 import sys
 import math
+import numpy as np
 import bpy
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -26,6 +27,106 @@ from tex_utils import (
 GODOT_DIR = os.path.dirname(SCRIPT_DIR)
 TEX_DIR = os.path.join(GODOT_DIR, "assets", "textures")
 OUT_GLB = os.path.join(GODOT_DIR, "assets", "models", "kampung_gang.glb")
+OUT_LM = os.path.join(GODOT_DIR, "assets", "lightmaps", "kampung_gang_lightmap.png")
+
+
+def bake_gang_lightmap_uv2(out_png_path: str, size: int = 1024, samples: int = 20):
+    """Bake Cycles GI lightmap (UV2) onto static Gang Kampung architecture & paving (excluding tree foliage UVs!)."""
+    scene = bpy.context.scene
+    scene.render.engine = 'CYCLES'
+    scene.cycles.device = 'CPU'
+    scene.cycles.samples = samples
+    if hasattr(scene.cycles, "use_denoising"):
+        scene.cycles.use_denoising = False
+    scene.cycles.bake_type = 'DIFFUSE'
+    scene.render.bake.use_pass_direct = True
+    scene.render.bake.use_pass_indirect = True
+    scene.render.bake.use_pass_color = False
+    scene.render.bake.margin = 4
+
+    world = scene.world or bpy.data.worlds.new("GangBakeWorld")
+    scene.world = world
+    world.use_nodes = True
+    bg = world.node_tree.nodes.get("Background")
+    if bg:
+        bg.inputs["Color"].default_value = (0.72, 0.80, 0.94, 1.0)
+        bg.inputs["Strength"].default_value = 0.88
+
+    bpy.ops.object.light_add(type='SUN', location=(3.0, -5.0, 7.0))
+    sun_obj = bpy.context.active_object
+    sun_obj.data.energy = 2.8
+    sun_obj.data.angle = math.radians(14.0)
+    sun_obj.data.color = (1.0, 0.90, 0.72)
+    sun_obj.rotation_euler = (math.radians(48.0), math.radians(14.0), math.radians(-24.0))
+
+    # Exclude tree/bush foliage from UV2 unwrap so buildings/paving get full 1024px texel density
+    # while foliage remains visible during the bake to cast real dappled shadows onto the ground & walls!
+    arch_objs = [
+        o for o in bpy.data.objects
+        if o.type == 'MESH' and not o.hide_render
+        and "tree" not in o.name.lower() and "bush" not in o.name.lower() and "leaves" not in o.name.lower()
+    ]
+    for o in arch_objs:
+        if not o.data.uv_layers:
+            o.data.uv_layers.new(name="UVMap")
+        lm_uv = o.data.uv_layers.get("LightmapUV") or o.data.uv_layers.new(name="LightmapUV")
+        o.data.uv_layers.active = lm_uv
+
+    bpy.ops.object.select_all(action='DESELECT')
+    for o in arch_objs:
+        o.select_set(True)
+    if arch_objs:
+        bpy.context.view_layer.objects.active = arch_objs[0]
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_all(action='SELECT')
+        bpy.ops.uv.smart_project(angle_limit=math.radians(66), island_margin=0.01)
+        bpy.ops.object.mode_set(mode='OBJECT')
+
+    lm_img = bpy.data.images.new("GangLightmapBake", width=size, height=size, alpha=False, float_buffer=True)
+    bake_mat = bpy.data.materials.new("_GangBakeDiffuse")
+    bake_mat.use_nodes = True
+    nt = bake_mat.node_tree
+    bsdf = nt.nodes["Principled BSDF"]
+    bsdf.inputs["Base Color"].default_value = (0.94, 0.94, 0.94, 1.0)
+    bsdf.inputs["Roughness"].default_value = 0.90
+    tex_node = nt.nodes.new("ShaderNodeTexImage")
+    tex_node.image = lm_img
+    nt.nodes.active = tex_node
+
+    saved_mats = {}
+    for o in arch_objs:
+        saved_mats[o.name] = list(o.data.materials)
+        o.data.materials.clear()
+        o.data.materials.append(bake_mat)
+
+    bpy.ops.object.bake(type='DIFFUSE')
+
+    arr = np.array(lm_img.pixels[:], dtype=np.float32).reshape(size, size, 4)
+    rgb = arr[:, :, :3]
+    for _ in range(2):
+        p = np.pad(rgb, ((1, 1), (1, 1), (0, 0)), mode='edge')
+        rgb = (
+            p[1:-1, 1:-1] * 4.0
+            + (p[:-2, 1:-1] + p[2:, 1:-1] + p[1:-1, :-2] + p[1:-1, 2:]) * 2.0
+            + (p[:-2, :-2] + p[:-2, 2:] + p[2:, :-2] + p[2:, 2:]) * 1.0
+        ) / 16.0
+    rgb = np.clip(rgb, 0.0, 1.8)
+    rgb = np.clip(0.36 + 0.64 * (rgb / max(0.85, float(np.percentile(rgb, 96)))), 0.36, 1.0)
+    out_rgba = np.concatenate([rgb, np.ones((size, size, 1), dtype=np.float32)], axis=-1).astype(np.float32)
+
+    out_img = bpy.data.images.new("GangLightmapOut", width=size, height=size, alpha=True, float_buffer=False)
+    out_img.pixels.foreach_set(out_rgba.reshape(-1).tolist())
+    out_img.filepath_raw = out_png_path
+    out_img.file_format = 'PNG'
+    out_img.save()
+
+    for o in arch_objs:
+        o.data.materials.clear()
+        for m in saved_mats.get(o.name, []):
+            o.data.materials.append(m)
+        o.data.uv_layers.active_index = 0
+    bpy.data.objects.remove(sun_obj, do_unlink=True)
+    print("BAKED GANG CYCLES LIGHTMAP:", out_png_path)
 
 
 def build_gang_kampung():
@@ -39,7 +140,7 @@ def build_gang_kampung():
     wall_c, _, _ = generate_plaster_ao_texture(TEX_DIR, "gang_wall_peach_v20", (0.88, 0.74, 0.60), use_polyhaven=False)
     pave_alb, pave_nrm, pave_rgh = generate_tile_textures(TEX_DIR, "gang_paving_v20", (0.78, 0.74, 0.68), "paving", use_polyhaven=False)
     wood_alb, wood_nrm, wood_rgh = generate_wood_texture(TEX_DIR, "gang_wood_v20", (0.44, 0.24, 0.12), use_polyhaven=False)
-    grass_alb, grass_nrm, grass_rgh = generate_turf_texture(TEX_DIR, "gang_grass_v15", (0.20, 0.42, 0.18))
+    grass_alb, grass_nrm, grass_rgh = generate_turf_texture(TEX_DIR, "gang_grass_v22", (0.16, 0.28, 0.13))
     batu_alb, batu_nrm, _ = generate_batu_alam_texture(TEX_DIR, "gang_batu_v15")
 
     mat_roof_a = make_pbr_material("GangRoofA", roof_a_alb, 0.70, roof_a_nrm, 0.85, (2.0, 2.0), roof_a_rgh)
@@ -122,16 +223,15 @@ def build_gang_kampung():
     # Parked scooter in narrow Gang Kampung (no cars allowed in alley!)
     add_sculpted_scooter("GangScooter", 1.85, -0.78, math.radians(82), mat_scooter, mat_tire, mat_metal, mat_lamp, mat_tail)
 
-    # Smooth Subsurf-2 tropical trees & Banana Palms (Pohon Pisang)
+    # Smooth stylized CC0 tropical trees & flowering bushes (natural olive-emerald leaves, zero neon slabs)
     for tx, ty, ts in [(-5.4, 3.8, 0.48), (-1.75, 4.0, 0.50), (1.75, 4.0, 0.48), (5.4, 3.8, 0.46)]:
-        import_unpacked_asset("common-tree-1.glb", (tx, ty, 0.0), ts, 25, {"bark": (0.34, 0.22, 0.14), "leaves": (0.20, 0.52, 0.18)})
+        import_unpacked_asset("common-tree-1.glb", (tx, ty, 0.0), ts, 25, {"bark": (0.34, 0.22, 0.14), "leaves": (0.17, 0.36, 0.15)})
     for bx, by in [(-5.05, 0.55), (-1.70, 0.45), (1.70, 0.45), (5.10, 0.55)]:
-        bpy.ops.mesh.primitive_cylinder_add(vertices=8, radius=0.055, depth=1.05, location=(bx, by, 0.52))
-        bpy.context.active_object.data.materials.append(mat_banana)
-        for fi in range(6):
-            ang = fi * (math.pi * 2.0 / 6.0)
-            add_box(f"GangBanana_{bx}_{fi}", (0.68, 0.22, 0.025), (bx + math.cos(ang) * 0.32, by + math.sin(ang) * 0.32, 1.12), mat_banana, 0.008, (0.0, math.radians(24), ang))
+        import_unpacked_asset("bush-common-flowers.glb", (bx, by, 0.0), 0.38, int(bx * 30), {
+            "leaves": (0.16, 0.36, 0.15), "flowers": (0.90, 0.30, 0.46),
+        })
 
+    bake_gang_lightmap_uv2(OUT_LM, size=1024, samples=20)
     bake_cycles_ao()
 
     os.makedirs(os.path.dirname(OUT_GLB), exist_ok=True)

@@ -107,7 +107,14 @@ static func step_patrols(runtime_npcs: Array, street_cfg: Dictionary, player_pos
 
 
 static func _play_matching_anim(ap: AnimationPlayer, target_lower: String) -> void:
-	for anim_name in ap.get_animation_list():
+	var list := ap.get_animation_list()
+	for anim_name in list:
+		var al := String(anim_name).to_lower()
+		if al == target_lower or al.begins_with(target_lower + "_"):
+			if ap.current_animation != anim_name:
+				ap.play(anim_name)
+			return
+	for anim_name in list:
 		if target_lower in String(anim_name).to_lower():
 			if ap.current_animation != anim_name:
 				ap.play(anim_name)

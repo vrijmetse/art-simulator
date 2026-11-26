@@ -279,7 +279,7 @@ def bake_cycles_lightmap(out_png_path: str, size: int = 1024, samples: int = 24)
             + (p[:-2, :-2] + p[:-2, 2:] + p[2:, :-2] + p[2:, 2:]) * 1.0
         ) / 16.0
     rgb = np.clip(rgb, 0.0, 1.8)
-    rgb = np.clip(0.50 + 0.50 * (rgb / max(0.85, float(np.percentile(rgb, 96)))), 0.48, 1.0)
+    rgb = np.clip(0.34 + 0.66 * (rgb / max(0.85, float(np.percentile(rgb, 96)))), 0.34, 1.0)
     out_rgba = np.concatenate([rgb, np.ones((size, size, 1), dtype=np.float32)], axis=-1).astype(np.float32)
 
     out_img = bpy.data.images.new("KosLightmapOut", width=size, height=size, alpha=True, float_buffer=False)
@@ -548,7 +548,7 @@ def build_room():
     # Indonesian Kos Magic Com (Rice Cooker) on desk side + warm lightmap bake!
     add_beveled_box("RiceCookerStand", (0.38, 0.38, 0.42), (1.92, 0.08, 0.21), mat_wood, 0.015)
 
-    bake_cycles_lightmap(os.path.join(TEX_DIR, "kos_room_lightmap.png"), size=1024, samples=24)
+    bake_cycles_lightmap(os.path.join(GODOT_DIR, "assets", "lightmaps", "kos_room_lightmap.png"), size=1024, samples=24)
 
     os.makedirs(os.path.dirname(OUT_GLB), exist_ok=True)
     bpy.ops.export_scene.gltf(filepath=OUT_GLB, export_format='GLB', export_apply=False)

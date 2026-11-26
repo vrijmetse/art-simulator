@@ -490,8 +490,8 @@ func _load_stage_glb(glb_path: String) -> void:
 		stage_root.add_child(inst)
 		SceneVisuals.apply_baked_ao(inst)
 		if "kos_room" in resolved:
-			if ResourceLoader.exists("res://assets/textures/kos_room_lightmap.png"):
-				var lm_tex := load("res://assets/textures/kos_room_lightmap.png") as Texture2D
+			if ResourceLoader.exists("res://assets/lightmaps/kos_room_lightmap.png"):
+				var lm_tex := load("res://assets/lightmaps/kos_room_lightmap.png") as Texture2D
 				if lm_tex != null:
 					SceneVisuals.apply_lightmap(inst, lm_tex)
 			Atmosphere.apply_kos_upgrades_visual(inst, _save.get("unlocked_kos_upgrades", []))
@@ -499,6 +499,11 @@ func _load_stage_glb(glb_path: String) -> void:
 				var fb := inst.find_child(fb_name, true, false)
 				if fb is Node3D:
 					_fan_blades.append(fb)
+		elif "kampung_gang" in resolved:
+			if ResourceLoader.exists("res://assets/lightmaps/kampung_gang_lightmap.png"):
+				var gang_lm := load("res://assets/lightmaps/kampung_gang_lightmap.png") as Texture2D
+				if gang_lm != null:
+					SceneVisuals.apply_lightmap(inst, gang_lm)
 
 func _sync_player_outfit() -> void:
 	var oid := String(_save.get("equipped_outfit_id", "starter_kasual"))
@@ -536,12 +541,29 @@ func _spawn_npcs(npc_list: Array) -> void:
 		var target_anim := String(npc.get("anim", "Idle")).to_lower()
 		var ap := _find_anim_player_recursive(inst)
 		if ap != null:
-			for a_name in ap.get_animation_list():
-				if target_anim in a_name.to_lower():
-					ap.play(a_name)
+			var alist := ap.get_animation_list()
+			var picked := ""
+			for a_name in alist:
+				if a_name.to_lower() == target_anim or a_name.to_lower().begins_with(target_anim + "_"):
+					picked = a_name
 					break
+			if picked == "":
+				for a_name in alist:
+					if target_anim in a_name.to_lower():
+						picked = a_name
+						break
+			if picked == "" and not alist.is_empty():
+				for a_name in alist:
+					if "idle" in a_name.to_lower():
+						picked = a_name
+						break
+				if picked == "":
+					picked = alist[0]
+			if picked != "":
+				ap.play(picked)
 
 		var badge := Label3D.new()
+		badge.name = "_Label3D"
 		badge.text = String(npc.get("label_en") if _loc() == "en" else npc.get("label_id"))
 		badge.position = Vector3(0.0, 1.92, 0.0)
 		badge.billboard = BaseMaterial3D.BILLBOARD_ENABLED
@@ -550,6 +572,7 @@ func _spawn_npcs(npc_list: Array) -> void:
 		badge.modulate = Color(0.98, 0.84, 0.34)
 		badge.outline_modulate = Color(0.06, 0.07, 0.09)
 		badge.outline_size = 6
+		badge.visible = false
 		holder.add_child(badge)
 		_npcs_root.add_child(holder)
 		if npc is Dictionary:
@@ -573,29 +596,34 @@ func _spawn_portal(pid: String, pos: Vector3, color: Color, label_id: String, la
 	holder.set_meta("label_en", label_en)
 
 	var ring := MeshInstance3D.new()
-	var tm := TorusMesh.new()
-	tm.inner_radius = 0.30
-	tm.outer_radius = 0.38
-	ring.mesh = tm
-	ring.scale = Vector3(1.0, 0.35, 1.0)
-	ring.position.y = 0.02
+	var disc := CylinderMesh.new()
+	disc.top_radius = 0.28
+	disc.bottom_radius = 0.30
+	disc.height = 0.004
+	disc.radial_segments = 24
+	ring.mesh = disc
+	ring.position.y = 0.015
 	var mat := StandardMaterial3D.new()
-	mat.albedo_color = color
+	mat.albedo_color = Color(color.r, color.g, color.b, 0.22)
 	mat.emission_enabled = true
 	mat.emission = color
-	mat.emission_energy_multiplier = 0.85
+	mat.emission_energy_multiplier = 0.20
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	ring.material_override = mat
 	holder.add_child(ring)
 
 	var badge := Label3D.new()
+	badge.name = "_Label3D"
 	badge.text = label_en if _loc() == "en" else label_id
 	badge.position = Vector3(0.0, 0.90, 0.0)
 	badge.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	badge.font_size = 22
-	badge.pixel_size = 0.0032
+	badge.font_size = 20
+	badge.pixel_size = 0.0028
 	badge.modulate = color.lightened(0.25)
 	badge.outline_modulate = Color(0.06, 0.07, 0.09)
 	badge.outline_size = 6
+	badge.visible = false
 	holder.add_child(badge)
 
 	hotspots_root.add_child(holder)
@@ -1172,6 +1200,19 @@ func _process(delta: float) -> void:
 
 	if _world_mode == "street" and _street_npcs_data.size() > 0:
 		StreetPatrols.step_patrols(_street_npcs_data, _street_cfg, player.position, delta, _cur_weather == "hujan")
+
+	# Wayfinding Label3D fade: keep floor clean at distance, show cleanly within 3.2m
+	for pnode in _portal_nodes:
+		if is_instance_valid(pnode):
+			var p_lbl3d := pnode.find_child("_Label3D", false, false) as Label3D
+			if p_lbl3d != null:
+				p_lbl3d.visible = pnode.position.distance_to(player.position) <= 3.2
+	for s_npc in _street_npcs_data:
+		var sn_node = s_npc.get("node", null)
+		if sn_node != null and is_instance_valid(sn_node):
+			var n_lbl3d := sn_node.find_child("_Label3D", false, false) as Label3D
+			if n_lbl3d != null:
+				n_lbl3d.visible = sn_node.position.distance_to(player.position) <= 3.2
 
 	if not _in_shift:
 		if _world_prompt != null:

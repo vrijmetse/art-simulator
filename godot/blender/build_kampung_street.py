@@ -95,10 +95,10 @@ def _strip_unlit_and_setup_mat(m, mat_overrides=None):
                 nbsdf = nm.node_tree.nodes.get("Principled BSDF")
                 if nbsdf is not None:
                     nbsdf.inputs["Base Color"].default_value = (*rgb, 1.0)
-                    nbsdf.inputs["Roughness"].default_value = 0.80
+                    nbsdf.inputs["Roughness"].default_value = 0.84
                     if "leaves" in key:
                         nbsdf.inputs["Emission Color"].default_value = (*rgb, 1.0)
-                        nbsdf.inputs["Emission Strength"].default_value = 0.16
+                        nbsdf.inputs["Emission Strength"].default_value = 0.03
                 return nm
     return m
 
@@ -576,7 +576,7 @@ def build_scene():
     plaque_img = generate_street_sign_texture(TEX_DIR, "house_plaque_v14", (0.28, 0.20, 0.12))
     asphalt_alb, asphalt_nrm, asphalt_rgh = generate_asphalt_textures(TEX_DIR, use_polyhaven=False)
     teak_img, teak_nrm, teak_rgh = generate_wood_texture(TEX_DIR, "teak_wood_v20", (0.44, 0.24, 0.12), use_polyhaven=False)
-    grass_img, grass_nrm, grass_rgh = generate_turf_texture(TEX_DIR, "kampung_turf_v5", (0.16, 0.34, 0.14))
+    grass_img, grass_nrm, grass_rgh = generate_turf_texture(TEX_DIR, "kampung_turf_v22", (0.16, 0.28, 0.13))
 
     mat_roof_terra = make_pbr_material("RoofTerra", genteng_a_alb, 0.70, genteng_a_nrm, 0.85, (2.2, 2.2), genteng_a_rgh)
     mat_roof_sage = make_pbr_material("RoofSlate", genteng_b_alb, 0.70, genteng_b_nrm, 0.85, (2.2, 2.2), genteng_b_rgh)
@@ -667,15 +667,11 @@ def build_scene():
             "leaves": leaf_rgb,
         })
 
-    # Sculpted Indonesian Banana Palm clusters (Pohon Pisang) + flower planter boxes between houses!
+    # Natural stylized bushes between houses (zero flat neon slabs)
     for bx, by in [(-5.15, 0.45), (-1.85, 0.42), (1.85, 0.42), (5.20, 0.45)]:
-        bpy.ops.mesh.primitive_cylinder_add(vertices=8, radius=0.055, depth=1.05, location=(bx, by, 0.52))
-        bpy.context.active_object.data.materials.append(mat_banana)
-        for fi in range(6):
-            ang = fi * (math.pi * 2.0 / 6.0)
-            lx = bx + math.cos(ang) * 0.32
-            ly = by + math.sin(ang) * 0.32
-            add_box(f"BananaFrond_{bx}_{fi}", (0.68, 0.22, 0.025), (lx, ly, 1.12), mat_banana, 0.008, (0.0, math.radians(24), ang))
+        import_unpacked_asset("bush-common.glb", (bx, by, 0.0), 0.42, int(bx * 20), {
+            "leaves": (0.16, 0.34, 0.14),
+        })
 
     for bi, (bx, by, bs, yaw) in enumerate([
         (-2.22, -0.04, 0.38, 10), (-1.55, -0.04, 0.35, 90), (1.55, -0.04, 0.36, 45), (2.22, -0.04, 0.38, 160),
@@ -683,8 +679,8 @@ def build_scene():
         (-2.95, -0.06, 0.32, 70), (2.95, -0.06, 0.32, 125),
     ]):
         import_unpacked_asset("bush-common-flowers.glb", (bx, by, 0.0), bs, yaw, {
-            "leaves": (0.20, 0.52, 0.18),
-            "flowers": (0.90, 0.24, 0.46),
+            "leaves": (0.16, 0.36, 0.15),
+            "flowers": (0.88, 0.28, 0.44),
         })
 
     # Use normalized CC0 Kenney stylized vehicles (sedan.glb & van.glb) at 0.46x compact scale, parked cleanly at road edges!

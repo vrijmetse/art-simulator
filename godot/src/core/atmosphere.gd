@@ -38,23 +38,23 @@ static func apply_lighting(sun: DirectionalLight3D, bounce: DirectionalLight3D, 
 			bounce_col = Color(0.76, 0.72, 0.68)
 			bounce_energy = 0.14
 			amb_col = Color(0.46, 0.58, 0.84)
-			amb_energy = 0.28
+			amb_energy = 0.22
 			sky_top = Color(0.18, 0.52, 0.90)
 		"siang":
 			sun_col = Color(1.0, 0.94, 0.80)
-			sun_energy = 1.18
+			sun_energy = 1.12
 			bounce_col = Color(0.80, 0.78, 0.74)
-			bounce_energy = 0.16
+			bounce_energy = 0.14
 			amb_col = Color(0.50, 0.66, 0.90)
-			amb_energy = 0.30
+			amb_energy = 0.24
 			sky_top = Color(0.14, 0.54, 0.96)
 		"sore":
 			sun_col = Color(1.0, 0.60, 0.32)
-			sun_energy = 0.98
+			sun_energy = 0.96
 			bounce_col = Color(0.76, 0.54, 0.48)
-			bounce_energy = 0.15
+			bounce_energy = 0.14
 			amb_col = Color(0.42, 0.48, 0.74)
-			amb_energy = 0.26
+			amb_energy = 0.22
 			adj_sat = 1.26
 			sky_top = Color(0.20, 0.32, 0.68)
 		"malam":
@@ -97,14 +97,14 @@ static func apply_lighting(sun: DirectionalLight3D, bounce: DirectionalLight3D, 
 			sky_mat.sky_horizon_color = sun_col.lerp(Color(0.86, 0.88, 0.92), 0.30)
 
 static func get_room_lights_config(phase: String) -> Array:
-	var warm := 0.72
-	var beam := 0.85
+	var warm := 0.48
+	var beam := 0.56
 	if phase == "sore":
-		warm = 1.15
-		beam = 1.25
+		warm = 0.82
+		beam = 0.88
 	elif phase == "malam":
-		warm = 1.55
-		beam = 0.45
+		warm = 1.25
+		beam = 0.32
 	return [
 		{"name": "WarmBedsideOmni", "pos": Vector3(-0.60, 0.92, -1.90), "color": Color(1.0, 0.66, 0.28), "energy": warm, "range": 4.8},
 		{"name": "WarmWindowOmni", "pos": Vector3(0.35, 1.55, -1.75), "color": Color(1.0, 0.78, 0.44), "energy": beam, "range": 4.4},

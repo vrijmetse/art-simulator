@@ -6,4 +6,5 @@ __pycache__/
 *.pyc
 godot/.godot/
 godot/assets/raw/unpacked/
+godot/assets/raw/charkit/
 build/

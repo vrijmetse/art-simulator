@@ -132,8 +132,16 @@ func _play_anim(target: String) -> void:
 	var list := _anim_player.get_animation_list()
 	if list.is_empty():
 		return
+	var t_low := target.to_lower()
 	for a_name in list:
-		if target.to_lower() in a_name.to_lower():
+		var al := a_name.to_lower()
+		if al == t_low or al.begins_with(t_low + "_"):
+			if _current_anim != a_name:
+				_anim_player.play(a_name, 0.20)
+				_current_anim = a_name
+			return
+	for a_name in list:
+		if t_low in a_name.to_lower():
 			if _current_anim != a_name:
 				_anim_player.play(a_name, 0.20)
 				_current_anim = a_name

@@ -375,12 +375,18 @@ func _initialize() -> void:
 				var i_el := skel.find_bone("lowerarm_l")
 				var i_wr := skel.find_bone("hand_l")
 				var i_tip := skel.find_bone("middle_04_leaf_l")
+				if i_tip < 0:
+					i_tip = skel.find_bone("hand_l")
 				var i_hip := skel.find_bone("thigh_l")
 				var i_knee := skel.find_bone("calf_l")
 				var i_foot := skel.find_bone("foot_l")
 				var i_nk := skel.find_bone("neck_01")
 				var i_hd := skel.find_bone("head_leaf")
-				_assert_true(i_tip >= 0 and i_knee >= 0 and i_hd >= 0 and i_foot >= 0, "UAL1 human bones exist in " + cm_path)
+				var using_head_base := false
+				if i_hd < 0:
+					i_hd = skel.find_bone("head")
+					using_head_base = i_hd >= 0
+				_assert_true(i_tip >= 0 and i_knee >= 0 and i_hd >= 0 and i_foot >= 0, "humanoid bones exist in " + cm_path)
 				if ap != null and i_foot >= 0:
 					for req_anim in ["idle", "walk", "clean", "talk", "celebrate"]:
 						for a_name in ap.get_animation_list():
@@ -405,7 +411,7 @@ func _initialize() -> void:
 					var p_knee := xf * skel.get_bone_global_pose(i_knee).origin
 					var p_nk := xf * skel.get_bone_global_pose(i_nk).origin
 					var p_hd := xf * skel.get_bone_global_pose(i_hd).origin
-					var total_h := p_hd.y
+					var total_h := p_hd.y + (0.16 if using_head_base else 0.0)
 					var arm_len := p_sh.distance_to(p_el) + p_el.distance_to(p_wr) + p_wr.distance_to(p_tip)
 					_assert_true(total_h >= 1.55 and total_h <= 1.98, "%s height %.2fm in [1.55,1.98]" % [cm_path, total_h])
 					_assert_true(p_hip.y / total_h >= 0.46, "%s hip/height %.3f >= 0.46 (human legs)" % [cm_path, p_hip.y / total_h])
@@ -1007,6 +1013,56 @@ func _initialize() -> void:
 	_assert_eq(m_yes.detail_uv_layer, BaseMaterial3D.DETAIL_UV_2, "apply_lightmap binds DETAIL_UV_2")
 	_assert_eq(m_yes.detail_blend_mode, BaseMaterial3D.BLEND_MODE_MUL, "apply_lightmap uses BLEND_MODE_MUL")
 	lm_root.free()
+
+	# 30. Real Human MakeHuman Cast + High-Contrast GI + Clean World (v2 Overhaul)
+	_assert_true(ResourceLoader.exists("res://assets/lightmaps/kampung_gang_lightmap.png"), "kampung_gang_lightmap.png exists in non-excluded lightmaps dir")
+	_assert_true(ResourceLoader.exists("res://assets/lightmaps/kos_room_lightmap.png"), "kos_room_lightmap.png exists in non-excluded lightmaps dir")
+	var ep_txt := FileAccess.get_file_as_string("res://export_presets.cfg")
+	_assert_true(not ("assets/lightmaps" in ep_txt), "export_presets.cfg does not exclude assets/lightmaps/")
+	var gang_ps := load("res://assets/models/kampung_gang.glb") as PackedScene
+	if gang_ps != null:
+		var gang_inst := gang_ps.instantiate()
+		var uv2_count := 0
+		var st_stack := [gang_inst]
+		while st_stack.size() > 0:
+			var sn = st_stack.pop_back()
+			if sn is MeshInstance3D and sn.mesh is ArrayMesh:
+				for s in range(sn.mesh.get_surface_count()):
+					if (sn.mesh.surface_get_format(s) & Mesh.ARRAY_FORMAT_TEX_UV2) != 0:
+						uv2_count += 1
+			for c in sn.get_children():
+				st_stack.append(c)
+		_assert_true(uv2_count >= 10, "kampung_gang.glb exports UV2 TEXCOORD_1 on architectural meshes (got %d)" % uv2_count)
+		gang_inst.free()
+	var kos_lm_img := Image.load_from_file(ProjectSettings.globalize_path("res://assets/lightmaps/kos_room_lightmap.png"))
+	if kos_lm_img != null:
+		var min_l := 1.0
+		var max_l := 0.0
+		for py in range(0, kos_lm_img.get_height(), 8):
+			for px in range(0, kos_lm_img.get_width(), 8):
+				var col := kos_lm_img.get_pixel(px, py)
+				var lum := col.get_luminance()
+				if lum < min_l:
+					min_l = lum
+				if lum > max_l:
+					max_l = lum
+		_assert_true(min_l <= 0.44 and (max_l - min_l) >= 0.45, "kos_room_lightmap has rich GI contrast (min=%.2f max=%.2f)" % [min_l, max_l])
+	var art_ps := load("res://assets/models/char_art.glb") as PackedScene
+	if art_ps != null:
+		var art_inst := art_ps.instantiate()
+		_assert_true(art_inst.find_child("Mannequin_F", true, false) == null, "char_art replaced old Mannequin_F dummy")
+		var ap_art := art_inst.find_child("AnimationPlayer", true, false) as AnimationPlayer
+		_assert_true(ap_art != null, "char_art has AnimationPlayer")
+		if ap_art != null:
+			var anim_str := ",".join(ap_art.get_animation_list()).to_lower()
+			_assert_true("idle" in anim_str and "walk" in anim_str, "char_art has idle and walk clips")
+			_assert_true(("fixing" in anim_str or "clean" in anim_str) and ("celebrat" in anim_str or "jump" in anim_str), "char_art has clean and celebrate clips")
+		art_inst.free()
+	var hs_test := preload("res://src/scenes/chore_hotspot.gd").new()
+	hs_test.setup("sweep", "Sapu", "Sweep", Vector3.ZERO)
+	var hs_ring := hs_test.get_child(0) as MeshInstance3D
+	_assert_true(hs_ring != null and hs_ring.mesh is CylinderMesh, "chore_hotspot uses flat subtle CylinderMesh pad instead of neon TorusMesh")
+	hs_test.free()
 
 	print("GODOT TDD RESULT: %d passed, %d failed" % [_passed, _failed])
 	quit(0 if _failed == 0 else 1)
