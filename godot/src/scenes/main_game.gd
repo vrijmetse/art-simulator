@@ -1699,9 +1699,9 @@ func _perform_sleep_recharge() -> void:
 	_reset_joystick()
 	var prev_pos := player.position
 	var prev_rot := player.rotation
-	# Cozy bed-lay pose on single bed (Godot -1.55, 0.56, -1.25)
-	player.position = Vector3(-1.55, 0.54, -1.25)
-	player.rotation = Vector3(-PI * 0.48, 0.0, 0.0)
+	# Cozy bed-lay pose cleanly atop single bed mattress (Godot -1.62, 0.66, -1.32)
+	player.position = Vector3(-1.62, 0.66, -1.32)
+	player.rotation = Vector3(-PI * 0.50, 0.0, 0.0)
 	_spawn_float_popup(player.position + Vector3(0.0, 0.45, 0.0), "Zzz...", Color(0.68, 0.88, 1.0))
 	await get_tree().create_timer(0.85).timeout
 	player.rotation = prev_rot
