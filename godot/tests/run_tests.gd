@@ -274,10 +274,10 @@ func _initialize() -> void:
 		_assert_true(ResourceLoader.exists(String(p["work_interior_scene"])), "profile work_interior exists: " + String(p["id"]))
 		_assert_true(ResourceLoader.exists(String(p["kamar_art_scene"])), "profile kamar_art exists: " + String(p["id"]))
 
-	# 14. Context-aware Room Upgrade Title (Kos vs Live-In ART) & Chore Checklist Helper
-	_assert_eq(Progression.get_room_upgrade_title(CareerTiers.get_tier("kamar_kos"), "id"), "Upgrade Kamar Kos", "live-out uses Kamar Kos title ID")
-	_assert_eq(Progression.get_room_upgrade_title(CareerTiers.get_tier("cluster_elite"), "id"), "Upgrade Kamar ART", "live-in uses Kamar ART title ID")
-	_assert_eq(Progression.get_room_upgrade_title(CareerTiers.get_tier("cluster_elite"), "en"), "Upgrade ART Room", "live-in uses ART Room title EN")
+	# 14. Unified Room Upgrade Title (works across Kos & Live-In ART) & Chore Checklist Helper
+	_assert_eq(Progression.get_room_upgrade_title(CareerTiers.get_tier("kamar_kos"), "id"), "Upgrade Kamar", "live-out uses Upgrade Kamar ID")
+	_assert_eq(Progression.get_room_upgrade_title(CareerTiers.get_tier("cluster_elite"), "id"), "Upgrade Kamar", "live-in uses Upgrade Kamar ID")
+	_assert_eq(Progression.get_room_upgrade_title(CareerTiers.get_tier("cluster_elite"), "en"), "Upgrade Room", "unified Upgrade Room EN")
 	var chk: Array = ChoreEngine.get_checklist_items(sh_kos, "id")
 	_assert_eq(chk.size(), 3, "checklist returns 3 items for kos")
 	_assert_eq(bool(chk[0]["done"]), true, "first completed chore marked done in checklist")

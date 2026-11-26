@@ -51,19 +51,16 @@ const KOS_UPGRADES := {
 		"energy_bonus": 25,
 		"mood_bonus": 12,
 		"tip_bonus_pct": 0.08,
-		"label_id": "AC Kamar Kos (+25 Energi)",
-		"label_en": "Kos Air Conditioner (+25 Energy)",
+		"label_id": "AC Kamar (+25 Energi)",
+		"label_en": "Room AC (+25 Energy)",
 	},
 }
 
 static func level_from_xp(xp: int) -> int:
 	return 1 + int(floor(sqrt(float(maxi(0, xp)) / 40.0)))
 
-static func get_room_upgrade_title(tier: Dictionary, locale: String = "id") -> String:
-	var live_in := bool(tier.get("live_in_room_provided", false))
-	if locale == "en":
-		return "Upgrade ART Room" if live_in else "Upgrade Kos Room"
-	return "Upgrade Kamar ART" if live_in else "Upgrade Kamar Kos"
+static func get_room_upgrade_title(_tier: Dictionary = {}, locale: String = "id") -> String:
+	return "Upgrade Room" if locale == "en" else "Upgrade Kamar"
 
 static func trust_to_stars(trust: int) -> String:
 	var filled := clampi(int(round(float(trust) / 20.0)), 0, 5)
