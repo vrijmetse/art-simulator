@@ -3,6 +3,7 @@ extends Node3D
 const I18n := preload("res://src/core/i18n.gd")
 const Economy := preload("res://src/core/economy.gd")
 const Neighborhood := preload("res://src/core/neighborhood.gd")
+const SceneVisuals := preload("res://src/core/scene_visuals.gd")
 
 @onready var cam: Camera3D = $Camera3D
 @onready var player_node: Node3D = $Actors/PlayerArt
@@ -24,13 +25,14 @@ var _frame_count := 0
 var _captured := false
 
 func _ready() -> void:
+	SceneVisuals.apply_baked_ao(self)
 	_state = Economy.create_initial_state()
 	_refresh_hud()
 	dialogue_panel.visible = false
 
-	_play_anim(player_node, "Idle")
-	_play_anim(ibu_node, "Idle")
-	_play_anim(budi_node, "Idle")
+	_play_anim(player_node, "Idle", 0.0)
+	_play_anim(ibu_node, "Idle", 0.65)
+	_play_anim(budi_node, "Idle", 1.35)
 
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--capture-street="):
@@ -51,7 +53,7 @@ func _find_anim_player(node: Node) -> AnimationPlayer:
 			return found
 	return null
 
-func _play_anim(actor: Node, target_name: String) -> void:
+func _play_anim(actor: Node, target_name: String, seek_sec: float = 0.0) -> void:
 	var ap := _find_anim_player(actor)
 	if ap == null:
 		return
@@ -61,6 +63,8 @@ func _play_anim(actor: Node, target_name: String) -> void:
 	for a_name in list:
 		if target_name.to_lower() in a_name.to_lower():
 			ap.play(a_name)
+			if seek_sec > 0.0:
+				ap.seek(seek_sec, true)
 			return
 	ap.play(list[0])
 

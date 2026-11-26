@@ -19,17 +19,21 @@ sky_material = SubResource("SkyMat")
 background_mode = 2
 sky = SubResource("SkyRes")
 ambient_light_source = 3
-ambient_light_sky_contribution = 0.55
-tonemap_mode = 3
-tonemap_exposure = 0.88
+ambient_light_sky_contribution = 0.22
+ambient_light_energy = 0.28
+tonemap_mode = 2
+tonemap_exposure = 0.96
 ssao_enabled = true
-ssao_radius = 0.7
-ssao_intensity = 1.45
+ssao_radius = 0.45
+ssao_intensity = 1.85
+sdfgi_enabled = false
 glow_enabled = true
-glow_intensity = 0.18
-fog_enabled = true
-fog_light_color = Color(0.84, 0.91, 0.86, 1)
-fog_density = 0.006
+glow_intensity = 0.12
+fog_enabled = false
+adjustment_enabled = true
+adjustment_brightness = 1.0
+adjustment_contrast = 1.05
+adjustment_saturation = 1.00
 
 [sub_resource type="StyleBoxFlat" id="GlassPill"]
 bg_color = Color(0.11, 0.15, 0.22, 0.76)
@@ -61,15 +65,43 @@ environment = SubResource("EnvRes")
 
 [node name="SunLight" type="DirectionalLight3D" parent="."]
 transform = Transform3D(0.82, -0.34, 0.46, 0, 0.80, 0.60, -0.57, -0.49, 0.66, 6.0, 9.5, 5.5)
-light_color = Color(1.0, 0.93, 0.80, 1)
-light_energy = 1.05
+light_color = Color(1.0, 0.90, 0.74, 1)
+light_energy = 1.28
 shadow_enabled = true
-shadow_blur = 1.8
+shadow_blur = 0.9
 directional_shadow_mode = 1
 
+[node name="GroundBounceLight" type="DirectionalLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, -0.82, -0.57, 0, 0.57, -0.82, 0, -2, 0)
+light_color = Color(0.96, 0.86, 0.70, 1)
+light_energy = 0.24
+light_specular = 0.0
+shadow_enabled = false
+
+[node name="PorchGlow" type="OmniLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0, 1.30, -0.95)
+light_color = Color(1.0, 0.86, 0.62, 1)
+light_energy = 0.45
+omni_range = 3.8
+shadow_enabled = false
+
+[node name="PorchGlowL" type="OmniLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.75, 1.30, -0.95)
+light_color = Color(1.0, 0.86, 0.62, 1)
+light_energy = 0.45
+omni_range = 3.8
+shadow_enabled = false
+
+[node name="PorchGlowR" type="OmniLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3.75, 1.30, -0.95)
+light_color = Color(1.0, 0.86, 0.62, 1)
+light_energy = 0.45
+omni_range = 3.8
+shadow_enabled = false
+
 [node name="Camera3D" type="Camera3D" parent="."]
-transform = Transform3D(0.936, -0.175, 0.305, 0, 0.867, 0.498, -0.352, -0.466, 0.812, 3.6, 5.5, 9.8)
-fov = 46.0
+transform = Transform3D(0.94, -0.134, 0.315, 0, 0.921, 0.391, -0.342, -0.367, 0.865, 2.7, 4.1, 9.4)
+fov = 44.0
 
 [node name="KampungStreet" parent="." instance=ExtResource("2")]
 

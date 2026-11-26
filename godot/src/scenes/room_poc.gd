@@ -1,5 +1,7 @@
 extends Node3D
 
+const SceneVisuals := preload("res://src/core/scene_visuals.gd")
+
 @onready var player_node: Node3D = $PlayerArt
 
 var _capture_path := ""
@@ -7,6 +9,7 @@ var _frame_count := 0
 var _captured := false
 
 func _ready() -> void:
+	SceneVisuals.apply_baked_ao(self)
 	_play_idle(player_node)
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--capture-room="):
