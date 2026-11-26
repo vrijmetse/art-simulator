@@ -4,7 +4,7 @@
 // Incrementing CACHE_VERSION will kick off the install event and force
 // previously cached resources to be updated from the network.
 /** @type {string} */
-const CACHE_VERSION = '1795707398|4899847';
+const CACHE_VERSION = '1795707899|4818051';
 /** @type {string} */
 const CACHE_PREFIX = 'ART Simulator-sw-cache-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;

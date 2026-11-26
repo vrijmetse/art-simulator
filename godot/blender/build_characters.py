@@ -265,15 +265,15 @@ def _add_headgear(arm, hb: dict, zmax: float, style: str, hair_rgb=(0.05, 0.04, 
 
     if style == "cepol":
         bpy.ops.object.select_all(action='DESELECT')
-        bpy.ops.mesh.primitive_uv_sphere_add(segments=22, ring_count=14, radius=1.0, location=(cx, cy + 0.028 * s_u, cz + 0.030 * s_u), rotation=(math.radians(14), 0, 0))
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=22, ring_count=14, radius=1.0, location=(cx, cy + 0.018 * s_u, cz + 0.022 * s_u), rotation=(math.radians(7), 0, 0))
         cap = bpy.context.active_object
         cap.name = "HairCap"
-        cap.scale = (rx + 0.008 * s_u, ry - 0.004 * s_u, rz * 0.90)
+        cap.scale = (rx + 0.010 * s_u, ry - 0.002 * s_u, rz * 0.95)
         apply_subsurf_and_smooth(cap, levels=1)
         attach_to_bone(cap, arm, "head", mat_hair)
 
         bpy.ops.object.select_all(action='DESELECT')
-        bpy.ops.mesh.primitive_uv_sphere_add(segments=16, ring_count=12, radius=0.052 * s_u, location=(cx, hb["y_max"] + 0.014 * s_u, cz + 0.052 * s_u))
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=16, ring_count=12, radius=0.056 * s_u, location=(cx, hb["y_max"] + 0.014 * s_u, cz + 0.052 * s_u))
         bun = bpy.context.active_object
         bun.name = "CepolBun"
         bun.scale = (1.04, 0.94, 1.0)
@@ -285,7 +285,7 @@ def _add_headgear(arm, hb: dict, zmax: float, style: str, hair_rgb=(0.05, 0.04, 
         bpy.ops.object.select_all(action='DESELECT')
         bpy.ops.mesh.primitive_torus_add(
             major_segments=14, minor_segments=8,
-            major_radius=0.042 * s_u, minor_radius=0.009 * s_u,
+            major_radius=0.044 * s_u, minor_radius=0.009 * s_u,
             location=(cx, hb["y_max"] + 0.004 * s_u, cz + 0.046 * s_u),
             rotation=(math.radians(68), 0, 0),
         )
@@ -296,10 +296,10 @@ def _add_headgear(arm, hb: dict, zmax: float, style: str, hair_rgb=(0.05, 0.04, 
 
     if style == "ponytail":
         bpy.ops.object.select_all(action='DESELECT')
-        bpy.ops.mesh.primitive_uv_sphere_add(segments=22, ring_count=14, radius=1.0, location=(cx, cy + 0.028 * s_u, cz + 0.030 * s_u), rotation=(math.radians(14), 0, 0))
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=22, ring_count=14, radius=1.0, location=(cx, cy + 0.018 * s_u, cz + 0.022 * s_u), rotation=(math.radians(7), 0, 0))
         cap = bpy.context.active_object
         cap.name = "PonytailCap"
-        cap.scale = (rx + 0.008 * s_u, ry - 0.004 * s_u, rz * 0.90)
+        cap.scale = (rx + 0.010 * s_u, ry - 0.002 * s_u, rz * 0.95)
         apply_subsurf_and_smooth(cap, levels=1)
         attach_to_bone(cap, arm, "head", mat_hair)
 
@@ -367,17 +367,17 @@ def _build_mh_skirt(arm, mat_skirt, name: str, zmax: float, pelvis_z: float, lon
     s_u = zmax / 1.72
     if long_skirt:
         rings_cfg = [
-            (pelvis_z * 0.28, 0.23 * s_u, 0.20 * s_u, 0.0),
-            (pelvis_z * 0.58, 0.22 * s_u, 0.19 * s_u, 0.0),
-            (pelvis_z * 0.88, 0.21 * s_u, 0.18 * s_u, 0.0),
-            (pelvis_z * 1.18, 0.175 * s_u, 0.145 * s_u, 0.0),
+            (pelvis_z * 0.28, 0.260 * s_u, 0.228 * s_u, 0.0),
+            (pelvis_z * 0.58, 0.250 * s_u, 0.220 * s_u, 0.0),
+            (pelvis_z * 0.88, 0.240 * s_u, 0.210 * s_u, 0.0),
+            (pelvis_z * 1.18, 0.205 * s_u, 0.175 * s_u, 0.0),
         ]
     else:
         rings_cfg = [
-            (pelvis_z * 0.50, 0.23 * s_u, 0.20 * s_u, 0.0),
-            (pelvis_z * 0.74, 0.22 * s_u, 0.19 * s_u, 0.0),
-            (pelvis_z * 0.96, 0.21 * s_u, 0.18 * s_u, 0.0),
-            (pelvis_z * 1.18, 0.175 * s_u, 0.145 * s_u, 0.0),
+            (pelvis_z * 0.50, 0.258 * s_u, 0.226 * s_u, 0.0),
+            (pelvis_z * 0.74, 0.248 * s_u, 0.218 * s_u, 0.0),
+            (pelvis_z * 0.96, 0.238 * s_u, 0.208 * s_u, 0.0),
+            (pelvis_z * 1.18, 0.205 * s_u, 0.175 * s_u, 0.0),
         ]
     bm = bmesh.new()
     segs = 24
@@ -430,9 +430,9 @@ def _build_mh_apron(arm, zmax: float, pelvis_z: float, mat_apron, mat_pocket):
     # MakeHuman faces -Y forward in Blender (+Z in Godot)! Place apron & pocket on -Y front!
     s_u = zmax / 1.72
     rows = [
-        (pelvis_z * 0.62, 0.165 * s_u, -0.205 * s_u),
-        (pelvis_z * 0.88, 0.155 * s_u, -0.195 * s_u),
-        (pelvis_z * 1.12, 0.135 * s_u, -0.190 * s_u),
+        (pelvis_z * 0.62, 0.175 * s_u, -0.228 * s_u),
+        (pelvis_z * 0.88, 0.165 * s_u, -0.220 * s_u),
+        (pelvis_z * 1.12, 0.145 * s_u, -0.205 * s_u),
         (pelvis_z * 1.32, 0.118 * s_u, -0.210 * s_u),
         (pelvis_z * 1.50, 0.098 * s_u, -0.180 * s_u),
     ]
@@ -472,7 +472,7 @@ def _build_mh_apron(arm, zmax: float, pelvis_z: float, mat_apron, mat_pocket):
     attach_multi_bone(apron, arm, mat_apron, ap_w)
 
     bpy.ops.object.select_all(action='DESELECT')
-    bpy.ops.mesh.primitive_cube_add(size=1.0, location=(0.0, -0.205 * s_u, pelvis_z * 0.90))
+    bpy.ops.mesh.primitive_cube_add(size=1.0, location=(0.0, -0.228 * s_u, pelvis_z * 0.90))
     pkt = bpy.context.active_object
     pkt.name = "ApronPocket"
     pkt.scale = (0.10 * s_u, 0.012 * s_u, 0.08 * s_u)
@@ -649,10 +649,10 @@ def build_mh_character(
 
 
 if __name__ == "__main__":
-    # 4 Player Tiers (mh_1000 Asian female base, full Indonesian daster/uniform + cepol/hijab + Fixing_Kneeling/Celebration)
+    # 4 Player Tiers (mh_1000 Asian female base, full Indonesian daster/uniform + cepol/hijab + Clean/Celebrate)
     build_mh_character(
         "mh_1000.glb", "char_art.glb", target_h=1.64,
-        skin_warmth=(0.94, 0.86, 0.80), shirt_rgb=(0.14, 0.36, 0.26), pants_rgb=(0.14, 0.20, 0.16),
+        skin_warmth=(0.94, 0.86, 0.80), shirt_rgb=(0.14, 0.36, 0.26), pants_rgb=(0.14, 0.36, 0.26),
         batik_cfg={"name": "daster_art_starter", "base": (0.14, 0.36, 0.26), "accent": (0.92, 0.76, 0.38)},
         strip_mats=("fedora", "afro"), hair_style="cepol", ribbon_rgb=(0.76, 0.24, 0.18),
         apron=True, skirt_cfg={"name": "DasterSkirt_Batik", "obj_name": "DasterSkirt", "use_batik": True, "long": False},
@@ -660,7 +660,7 @@ if __name__ == "__main__":
     )
     build_mh_character(
         "mh_1000.glb", "char_art_hijab.glb", target_h=1.64,
-        skin_warmth=(0.94, 0.86, 0.80), shirt_rgb=(0.16, 0.34, 0.42), pants_rgb=(0.12, 0.16, 0.22),
+        skin_warmth=(0.94, 0.86, 0.80), shirt_rgb=(0.16, 0.34, 0.42), pants_rgb=(0.16, 0.34, 0.42),
         batik_cfg={"name": "daster_art_hijab", "base": (0.16, 0.34, 0.42), "accent": (0.90, 0.80, 0.56)},
         strip_mats=("fedora", "afro"), hair_style="hijab_bergo", hijab_rgb=(0.14, 0.30, 0.22),
         apron=True, skirt_cfg={"name": "DasterHijab_Batik", "obj_name": "DasterSkirt", "use_batik": True, "long": True},
