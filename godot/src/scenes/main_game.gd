@@ -760,6 +760,7 @@ func _finish_shift() -> void:
 	if not _in_shift:
 		return
 	var prev_lv := Progression.level_from_xp(int(_save.get("xp", 0)))
+	var prev_xp := int(_save.get("xp", 0))
 	var res := Progression.settle_shift(_save, _shift, _call_state)
 	if not res["ok"]:
 		return
@@ -781,6 +782,7 @@ func _finish_shift() -> void:
 		_save = WishlistStory.advance_tutorial(_save, 4)
 	SaveStore.save_to_path(_save)
 	var new_lv := Progression.level_from_xp(int(_save.get("xp", 0)))
+	_pending_story_tier = WishlistStory.get_newly_unlocked_chapter_tier(prev_xp, int(_save.get("xp", 0)), _save)
 	if new_lv > prev_lv:
 		_play_sfx(_wav_fanfare)
 	else:
@@ -1141,6 +1143,11 @@ func _refresh_tutorial_banner() -> void:
 		if _btn_tutorial_skip != null:
 			_btn_tutorial_skip.text = _t("Lewati", "Skip")
 
+func _show_modal() -> void:
+	if _modal_backdrop != null:
+		_modal_backdrop.visible = true
+	_refresh_tutorial_banner()
+
 func _refresh_call_banner() -> void:
 	var active_call := _in_shift and bool(_call_state.get("active_call", false))
 	_call_banner.visible = active_call
@@ -1205,7 +1212,7 @@ func _open_career_modal() -> void:
 	_style_btn(btn_wish, Color(0.20, 0.44, 0.56), Color(0.96, 0.78, 0.26))
 	btn_wish.pressed.connect(_open_wishlist_modal)
 	_modal_list.add_child(btn_wish)
-	_modal_backdrop.visible = true
+	_show_modal()
 
 func _maybe_show_chapter_modal(tier_id: String) -> void:
 	if _smoke_mode or _capture_path != "" or not bool(_save.get("onboarding_done", false)):
@@ -1234,7 +1241,7 @@ func _open_chapter_modal(ch: Dictionary) -> void:
 	body.add_theme_color_override("font_color", Color(0.95, 0.94, 0.90))
 	hdr_row.add_child(body)
 	_modal_list.add_child(hdr_row)
-	_modal_backdrop.visible = true
+	_show_modal()
 
 func _open_wishlist_modal() -> void:
 	_clear_modal()
@@ -1268,7 +1275,7 @@ func _open_wishlist_modal() -> void:
 				_refresh_hud()
 		)
 		_modal_list.add_child(btn)
-	_modal_backdrop.visible = true
+	_show_modal()
 
 func _open_wardrobe_modal() -> void:
 	_clear_modal()
@@ -1299,7 +1306,7 @@ func _open_wardrobe_modal() -> void:
 			)
 			hbox.add_child(b)
 		_modal_list.add_child(hbox)
-	_modal_backdrop.visible = true
+	_show_modal()
 
 func _open_kos_modal() -> void:
 	_clear_modal()
@@ -1334,7 +1341,7 @@ func _open_kos_modal() -> void:
 				_refresh_hud()
 		)
 		_modal_list.add_child(btn)
-	_modal_backdrop.visible = true
+	_show_modal()
 
 func _open_summary_modal(res: Dictionary) -> void:
 	_clear_modal()
@@ -1351,7 +1358,7 @@ func _open_summary_modal(res: Dictionary) -> void:
 	_modal_list.add_child(l1)
 	_modal_list.add_child(l2)
 	_modal_list.add_child(l3)
-	_modal_backdrop.visible = true
+	_show_modal()
 
 func _open_levelup_modal(new_lv: int, res: Dictionary) -> void:
 	_clear_modal()
@@ -1365,7 +1372,7 @@ func _open_levelup_modal(new_lv: int, res: Dictionary) -> void:
 	pay_lbl.add_theme_color_override("font_color", Color(0.45, 0.94, 0.44))
 	_modal_list.add_child(sub)
 	_modal_list.add_child(pay_lbl)
-	_modal_backdrop.visible = true
+	_show_modal()
 
 func _open_rent_modal(res: Dictionary = {}, leveled_up_to: int = 0) -> void:
 	_clear_modal()
@@ -1443,7 +1450,7 @@ func _open_rent_modal(res: Dictionary = {}, leveled_up_to: int = 0) -> void:
 	)
 	_modal_list.add_child(btn_pay)
 	_modal_list.add_child(btn_later)
-	_modal_backdrop.visible = true
+	_show_modal()
 
 func _open_map_modal() -> void:
 	_clear_modal()
@@ -1508,7 +1515,7 @@ func _open_map_modal() -> void:
 				_maybe_show_chapter_modal(tid)
 		)
 		_modal_list.add_child(b)
-	_modal_backdrop.visible = true
+	_show_modal()
 
 func _open_log_modal() -> void:
 	_clear_modal()
@@ -1539,7 +1546,7 @@ func _open_log_modal() -> void:
 	_style_btn(btn_back, Color(0.16, 0.18, 0.22), Color(0.96, 0.78, 0.26))
 	btn_back.pressed.connect(_open_settings_modal)
 	_modal_list.add_child(btn_back)
-	_modal_backdrop.visible = true
+	_show_modal()
 
 func _open_settings_modal() -> void:
 	_clear_modal()
@@ -1649,7 +1656,7 @@ func _open_settings_modal() -> void:
 		_refresh_hud()
 	)
 	_modal_list.add_child(btn_rst)
-	_modal_backdrop.visible = true
+	_show_modal()
 
 func _make_box(bg: Color, border: Color, radius: int = 12, pad_h: int = 12, pad_v: int = 8) -> StyleBoxFlat:
 	var sb := StyleBoxFlat.new()

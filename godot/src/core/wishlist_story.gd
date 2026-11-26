@@ -1,6 +1,8 @@
 class_name ArtWishlistStory
 extends RefCounted
 
+const CareerTiers := preload("res://src/core/career_tiers.gd")
+
 const WISHLIST_ITEMS := {
 	"kirim_kampung": {
 		"id": "kirim_kampung",
@@ -135,6 +137,15 @@ static func mark_chapter_seen(save: Dictionary, chapter_id: String) -> Dictionar
 		seen.append(chapter_id)
 	nxt["seen_chapters"] = seen
 	return nxt
+
+static func get_newly_unlocked_chapter_tier(prev_xp: int, new_xp: int, save: Dictionary) -> String:
+	var found := ""
+	for t in CareerTiers.TIERS:
+		var tid := String(t["id"])
+		if CareerTiers.can_access_tier(tid, new_xp) and not CareerTiers.can_access_tier(tid, prev_xp):
+			if not get_unseen_chapter(save, tid).is_empty():
+				found = tid
+	return found
 
 static func get_tutorial_hint(step: int, locale: String = "id") -> String:
 	match step:
