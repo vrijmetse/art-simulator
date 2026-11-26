@@ -529,3 +529,124 @@ def generate_street_sign_texture(tex_dir: str, name: str = "street_sign", bg_rgb
     rgb[sub] = [0.88, 0.82, 0.45]
     rgba = np.concatenate([rgb, np.ones((h, w, 1), dtype=np.float32)], axis=-1).astype(np.float32)
     return save_rgba_png(name, rgba, tex_dir, False)
+
+
+def bake_scene_lightmap_uv2(
+    out_png_path: str,
+    size: int = 1024,
+    samples: int = 16,
+    exclude_substrings=("tree", "bush", "flower", "planter", "sedan", "van", "car", "pug", "cat", "casual", "glass", "window", "wheel", "trunk", "leaf", "leaves"),
+    include_substrings=None,
+    lift_min: float = 0.34,
+    sun_energy: float = 4.2,
+    sun_rot_deg=(48.0, 0.0, 28.0),
+    ambient_strength: float = 0.32,
+):
+    """Bake shared Cycles GI lightmap into UV2 (LightmapUV -> glTF TEXCOORD_1) without bloating .glb."""
+    scene = bpy.context.scene
+    scene.render.engine = 'CYCLES'
+    scene.cycles.device = 'CPU'
+    scene.cycles.samples = samples
+    scene.cycles.use_denoising = False
+    scene.cycles.max_bounces = 4
+    scene.cycles.diffuse_bounces = 3
+    scene.cycles.bake_type = 'DIFFUSE'
+    scene.render.bake.use_pass_direct = True
+    scene.render.bake.use_pass_indirect = True
+    scene.render.bake.use_pass_color = False
+    scene.render.bake.target = 'IMAGE_TEXTURES'
+    scene.render.bake.use_clear = True
+    scene.render.bake.margin = 4
+
+    world = scene.world or bpy.data.worlds.new("BakeWorld")
+    scene.world = world
+    world.use_nodes = True
+    bg = world.node_tree.nodes.get("Background")
+    if bg:
+        bg.inputs["Color"].default_value = (0.76, 0.84, 0.96, 1.0)
+        bg.inputs["Strength"].default_value = ambient_strength
+
+    temp_sun = None
+    if not any(o.type == 'LIGHT' and o.data and o.data.type == 'SUN' for o in bpy.data.objects):
+        bpy.ops.object.light_add(type='SUN', location=(4.0, -4.0, 8.0))
+        temp_sun = bpy.context.active_object
+        temp_sun.data.energy = sun_energy
+        temp_sun.data.color = (1.0, 0.94, 0.84)
+        temp_sun.data.angle = math.radians(10.0)
+        temp_sun.rotation_euler = tuple(math.radians(a) for a in sun_rot_deg)
+
+    hidden_glass = []
+    for o in bpy.data.objects:
+        if o.type == 'MESH' and any(g in o.name.lower() for g in ("glass", "window")) and not o.hide_render:
+            o.hide_render = True
+            hidden_glass.append(o)
+
+    target_objs = [
+        o for o in bpy.data.objects
+        if o.type == 'MESH' and o.data and len(o.data.polygons) > 0
+        and not any(ex in o.name.lower() for ex in exclude_substrings)
+        and (include_substrings is None or any(inc in o.name.lower() for inc in include_substrings))
+    ]
+
+    for o in target_objs:
+        if o.data.users > 1:
+            o.data = o.data.copy()
+        if not o.data.uv_layers:
+            o.data.uv_layers.new(name="UVMap")
+        lm_uv = o.data.uv_layers.get("LightmapUV") or o.data.uv_layers.new(name="LightmapUV")
+        o.data.uv_layers.active = lm_uv
+
+    bpy.ops.object.select_all(action='DESELECT')
+    for o in target_objs:
+        o.select_set(True)
+    if target_objs:
+        bpy.context.view_layer.objects.active = target_objs[0]
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_all(action='SELECT')
+        bpy.ops.uv.smart_project(angle_limit=math.radians(66), island_margin=0.025)
+        bpy.ops.object.mode_set(mode='OBJECT')
+
+    bake_img = bpy.data.images.new("_SceneLightmapBake", width=size, height=size, alpha=False, float_buffer=True)
+    bake_mat = bpy.data.materials.new("_SceneBakeMat")
+    bake_mat.use_nodes = True
+    nt = bake_mat.node_tree
+    bsdf = nt.nodes["Principled BSDF"]
+    bsdf.inputs["Base Color"].default_value = (0.88, 0.88, 0.88, 1.0)
+    bsdf.inputs["Roughness"].default_value = 0.90
+    tex_node = nt.nodes.new("ShaderNodeTexImage")
+    tex_node.image = bake_img
+    nt.nodes.active = tex_node
+
+    orig_mats = {}
+    for o in target_objs:
+        orig_mats[o.name] = list(o.data.materials)
+        o.data.materials.clear()
+        o.data.materials.append(bake_mat)
+
+    bpy.ops.object.bake(type='DIFFUSE')
+
+    arr = np.array(bake_img.pixels[:], dtype=np.float32).reshape(size, size, 4)
+    p97 = max(0.28, float(np.percentile(arr[:, :, :3], 97)))
+    norm = np.clip(arr[:, :, :3] / p97, 0.0, 1.0)
+    lifted = np.clip(lift_min + norm * (1.0 - lift_min), lift_min, 1.0)
+    arr[:, :, :3] = lifted
+    arr[:, :, 3] = 1.0
+    bake_img.pixels.foreach_set(arr.reshape(-1).tolist())
+
+    os.makedirs(os.path.dirname(out_png_path), exist_ok=True)
+    bake_img.filepath_raw = out_png_path
+    bake_img.file_format = 'PNG'
+    bake_img.save()
+
+    for o in target_objs:
+        o.data.materials.clear()
+        for m in orig_mats.get(o.name, []):
+            o.data.materials.append(m)
+        o.data.uv_layers.active_index = 0
+    for o in hidden_glass:
+        o.hide_render = False
+    if temp_sun is not None:
+        bpy.data.objects.remove(temp_sun, do_unlink=True)
+    bpy.data.materials.remove(bake_mat)
+    bpy.data.images.remove(bake_img)
+    print("BAKED SCENE LIGHTMAP UV2:", out_png_path, "targets=", len(target_objs))

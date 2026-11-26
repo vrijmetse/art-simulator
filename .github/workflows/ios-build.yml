@@ -1,0 +1,48 @@
+name: iOS Export (macOS Xcode)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'godot/src/**'
+      - 'godot/scenes/**'
+      - 'godot/project.godot'
+      - 'godot/export_presets.cfg'
+      - '.github/workflows/ios-build.yml'
+
+jobs:
+  build-ios:
+    runs-on: macos-latest
+    env:
+      GODOT_VERSION: 4.7.2-stable
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download Godot 4.7.2 & iOS export templates
+        run: |
+          mkdir -p "$HOME/.local/bin" "$HOME/Library/Application Support/Godot/export_templates/4.7.2.stable"
+          curl -sSL -o /tmp/Godot.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}/Godot_v${GODOT_VERSION}_macos.universal.zip"
+          unzip -q /tmp/Godot.zip -d /tmp/godot_app
+          ln -sf /tmp/godot_app/Godot.app/Contents/MacOS/Godot "$HOME/.local/bin/godot4"
+          curl -sSL -o /tmp/templates.tpz "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}/Godot_v${GODOT_VERSION}_export_templates.tpz"
+          unzip -q /tmp/templates.tpz -d /tmp/templates_out
+          mv /tmp/templates_out/templates/* "$HOME/Library/Application Support/Godot/export_templates/4.7.2.stable/"
+
+      - name: Import resources & run Godot TDD
+        run: |
+          "$HOME/.local/bin/godot4" --headless --path godot --import --quit
+          "$HOME/.local/bin/godot4" --headless --path godot -s res://tests/run_tests.gd
+
+      - name: Export iOS Xcode project / archive
+        run: |
+          mkdir -p build/ios
+          "$HOME/.local/bin/godot4" --headless --path godot --export-debug "iOS" ../build/ios/ART-Simulator.ipa || \
+            "$HOME/.local/bin/godot4" --headless --path godot --export-pack "iOS" ../build/ios/ART-Simulator.pck
+
+      - name: Upload iOS build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: art-simulator-ios
+          path: build/ios/

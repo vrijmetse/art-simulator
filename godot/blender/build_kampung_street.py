@@ -8,6 +8,7 @@ import bmesh
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
 from tex_utils import (
+    bake_scene_lightmap_uv2,
     generate_asphalt_textures,
     generate_batu_alam_texture,
     generate_license_plate,
@@ -726,7 +727,17 @@ def build_scene():
             bpy.context.active_object.data.materials.append(mat_wood)
     add_box("PosRondaRoof", (1.70, 1.50, 0.10), (-6.35, -0.55, 1.98), mat_tank, 0.02, (math.radians(-12), 0, 0))
 
-    bake_cycles_ao()
+    bake_scene_lightmap_uv2(
+        os.path.join(GODOT_DIR, "assets", "lightmaps", "kampung_street_lightmap.png"),
+        size=1024, samples=12,
+        include_substrings=(
+            "ground_", "sidewalk_", "road_", "gangground", "gangalley",
+            "_body", "_terrace", "_porchroof",
+            "kampunghouse", "kampungterrace", "kampungporchroof",
+            "perimeterwall", "perimeterfrontwall", "posronda",
+        ),
+        lift_min=0.38, sun_energy=4.5, sun_rot_deg=(46.0, 0.0, 26.0), ambient_strength=0.34,
+    )
 
     os.makedirs(os.path.dirname(OUT_GLB), exist_ok=True)
     bpy.ops.export_scene.gltf(filepath=OUT_GLB, export_format='GLB', export_apply=False, export_image_format='JPEG', export_jpeg_quality=70)

@@ -489,21 +489,18 @@ func _load_stage_glb(glb_path: String) -> void:
 		var inst := packed.instantiate()
 		stage_root.add_child(inst)
 		SceneVisuals.apply_baked_ao(inst)
+		var stage_base := resolved.get_file().get_basename()
+		var lm_path := "res://assets/lightmaps/%s_lightmap.png" % stage_base
+		if ResourceLoader.exists(lm_path):
+			var lm_tex := load(lm_path) as Texture2D
+			if lm_tex != null:
+				SceneVisuals.apply_lightmap(inst, lm_tex)
 		if "kos_room" in resolved:
-			if ResourceLoader.exists("res://assets/lightmaps/kos_room_lightmap.png"):
-				var lm_tex := load("res://assets/lightmaps/kos_room_lightmap.png") as Texture2D
-				if lm_tex != null:
-					SceneVisuals.apply_lightmap(inst, lm_tex)
 			Atmosphere.apply_kos_upgrades_visual(inst, _save.get("unlocked_kos_upgrades", []))
 			for fb_name in ["FanBlade_0", "FanBlade_1", "FanBlade_2", "FanBlade_3"]:
 				var fb := inst.find_child(fb_name, true, false)
 				if fb is Node3D:
 					_fan_blades.append(fb)
-		elif "kampung_gang" in resolved:
-			if ResourceLoader.exists("res://assets/lightmaps/kampung_gang_lightmap.png"):
-				var gang_lm := load("res://assets/lightmaps/kampung_gang_lightmap.png") as Texture2D
-				if gang_lm != null:
-					SceneVisuals.apply_lightmap(inst, gang_lm)
 
 func _sync_player_outfit() -> void:
 	var oid := String(_save.get("equipped_outfit_id", "starter_kasual"))

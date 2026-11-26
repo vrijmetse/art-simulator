@@ -1064,5 +1064,55 @@ func _initialize() -> void:
 	_assert_true(hs_ring != null and hs_ring.mesh is CylinderMesh, "chore_hotspot uses flat subtle CylinderMesh pad instead of neon TorusMesh")
 	hs_test.free()
 
+	# 31. Full-Game GI Lightmaps (all 10 stages) + App Icon + iOS CI
+	var gi_stages := [
+		"kos_room",
+		"kampung_gang",
+		"kampung_street",
+		"cluster_elite_street",
+		"kos_neighbor_room",
+		"room_kampung_house",
+		"room_majikan_living",
+		"room_elite_living",
+		"kamar_art_small",
+		"kamar_art_large",
+	]
+	for st_name in gi_stages:
+		var lm_p := "res://assets/lightmaps/%s_lightmap.png" % st_name
+		_assert_true(ResourceLoader.exists(lm_p), "lightmap exists for stage: " + st_name)
+		var st_ps := load("res://assets/models/%s.glb" % st_name) as PackedScene
+		_assert_true(st_ps != null, "stage glb loads: " + st_name)
+		if st_ps != null:
+			var st_inst := st_ps.instantiate()
+			var st_uv2 := 0
+			var st_q := [st_inst]
+			while st_q.size() > 0:
+				var nd = st_q.pop_back()
+				if nd is MeshInstance3D and nd.mesh is ArrayMesh:
+					for s in range(nd.mesh.get_surface_count()):
+						if (nd.mesh.surface_get_format(s) & Mesh.ARRAY_FORMAT_TEX_UV2) != 0:
+							st_uv2 += 1
+				for ch in nd.get_children():
+					st_q.append(ch)
+			_assert_true(st_uv2 >= 5, "%s exports UV2 TEXCOORD_1 (>=5 surfaces, got %d)" % [st_name, st_uv2])
+			st_inst.free()
+		var abs_lm := ProjectSettings.globalize_path(lm_p)
+		if FileAccess.file_exists(abs_lm):
+			var lmi := Image.load_from_file(abs_lm)
+			if lmi != null:
+				var mn := 1.0
+				var mx := 0.0
+				for py in range(0, lmi.get_height(), 16):
+					for px in range(0, lmi.get_width(), 16):
+						var lv := lmi.get_pixel(px, py).get_luminance()
+						mn = minf(mn, lv)
+						mx = maxf(mx, lv)
+				_assert_true(mn >= 0.25 and (mx - mn) >= 0.28, "%s lightmap contrast valid (min=%.2f max=%.2f)" % [st_name, mn, mx])
+
+	_assert_true(String(ProjectSettings.get_setting("application/config/icon", "")) == "res://assets/icon.png", "project.godot sets application/config/icon")
+	_assert_true(ResourceLoader.exists("res://assets/icon.png"), "res://assets/icon.png exists for Android/iOS/PWA")
+	_assert_true("platform=\"iOS\"" in ep_txt, "export_presets.cfg includes iOS export preset")
+	_assert_true(FileAccess.file_exists(ProjectSettings.globalize_path("res://../.github/workflows/ios-build.yml")), "iOS macOS GitHub workflow exists")
+
 	print("GODOT TDD RESULT: %d passed, %d failed" % [_passed, _failed])
 	quit(0 if _failed == 0 else 1)

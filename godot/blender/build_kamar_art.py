@@ -8,6 +8,7 @@ from mathutils import Vector
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
 from tex_utils import (
+    bake_scene_lightmap_uv2,
     generate_fabric_weave_texture,
     generate_laptop_ui,
     generate_plaster_ao_texture,
@@ -319,7 +320,11 @@ def build_kamar_art_small():
     bpy.context.active_object.data.materials.append(mat_wood)
     add_beveled_box("BroomHead", (0.05, 0.22, 0.14), (1.38, -0.52, 0.07), mat_dark, 0.01)
 
-    bake_cycles_ao(samples=10, ao_min=0.48, ao_max=1.0)
+    bake_scene_lightmap_uv2(
+        os.path.join(GODOT_DIR, "assets", "lightmaps", "kamar_art_small_lightmap.png"),
+        size=1024, samples=16, lift_min=0.34, sun_energy=4.2, sun_rot_deg=(48.0, 0.0, 28.0), ambient_strength=0.32,
+    )
+    bake_cycles_ao(samples=6, ao_min=0.86, ao_max=1.0)
 
     os.makedirs(os.path.dirname(OUT_SMALL), exist_ok=True)
     bpy.ops.export_scene.gltf(
@@ -431,7 +436,11 @@ def build_kamar_art_large():
     add_beveled_box("VanityMirrorFrame", (0.50, 0.04, 0.96), (1.85, 2.28, 1.38), mat_wood, 0.015)
     add_beveled_box("VanityMirrorGlass", (0.40, 0.02, 0.84), (1.85, 2.25, 1.38), mat_glass, 0.004)
 
-    bake_cycles_ao(samples=10, ao_min=0.48, ao_max=1.0)
+    bake_scene_lightmap_uv2(
+        os.path.join(GODOT_DIR, "assets", "lightmaps", "kamar_art_large_lightmap.png"),
+        size=1024, samples=16, lift_min=0.34, sun_energy=4.2, sun_rot_deg=(48.0, 0.0, 28.0), ambient_strength=0.32,
+    )
+    bake_cycles_ao(samples=6, ao_min=0.86, ao_max=1.0)
 
     os.makedirs(os.path.dirname(OUT_LARGE), exist_ok=True)
     bpy.ops.export_scene.gltf(

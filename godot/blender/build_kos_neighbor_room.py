@@ -6,6 +6,7 @@ import bpy
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
 from tex_utils import (
+    bake_scene_lightmap_uv2,
     generate_fabric_weave_texture,
     generate_foliage_texture,
     generate_plaster_ao_texture,
@@ -210,6 +211,11 @@ def build_neighbor_room():
     bpy.ops.mesh.primitive_cylinder_add(vertices=8, radius=0.018, depth=1.16, location=(-1.38, 1.86, 0.62), rotation=(0, math.radians(8), 0))
     bpy.context.active_object.data.materials.append(mat_wood)
     add_box("NbBroomHead", (0.24, 0.05, 0.16), (-1.30, 1.86, 0.08), mat_dark, 0.008)
+
+    bake_scene_lightmap_uv2(
+        os.path.join(GODOT_DIR, "assets", "lightmaps", "kos_neighbor_room_lightmap.png"),
+        size=1024, samples=16, lift_min=0.34, sun_energy=4.2, sun_rot_deg=(48.0, 0.0, 28.0), ambient_strength=0.32,
+    )
 
     total_verts = sum(len(o.data.vertices) for o in bpy.data.objects if o.type == 'MESH' and o.data)
     os.makedirs(os.path.dirname(OUT_GLB), exist_ok=True)

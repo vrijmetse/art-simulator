@@ -8,6 +8,7 @@ from mathutils import Vector
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
 from tex_utils import (
+    bake_scene_lightmap_uv2,
     generate_asphalt_textures,
     generate_batu_alam_texture,
     generate_fabric_weave_texture,
@@ -317,7 +318,11 @@ def build_elite_living():
     add_beveled_box("IslandBase", (1.10, 2.20, 0.88), (1.45, -0.35, 0.44), mat_wood, 0.02)
     add_beveled_box("IslandTop", (1.22, 2.32, 0.06), (1.45, -0.35, 0.91), mat_marble_top, 0.015)
 
-    bake_cycles_ao(samples=8, ao_min=0.48, ao_max=1.0)
+    bake_scene_lightmap_uv2(
+        os.path.join(GODOT_DIR, "assets", "lightmaps", "room_elite_living_lightmap.png"),
+        size=1024, samples=16, lift_min=0.34, sun_energy=4.2, sun_rot_deg=(48.0, 0.0, 32.0), ambient_strength=0.32,
+    )
+    bake_cycles_ao(samples=6, ao_min=0.86, ao_max=1.0)
 
     os.makedirs(os.path.dirname(OUT_ELITE_LIVING), exist_ok=True)
     bpy.ops.export_scene.gltf(
@@ -391,8 +396,12 @@ def build_elite_street():
     # Parked sedan cleanly on road edge
     import_kenney_glb("ParkedSedan", "sedan.glb", (-3.8, -2.15, 0.0), rot_z=-math.pi * 0.5, scale=0.52)
 
-    # Bake Cycles AO on architecture only (samples=4)
-    bake_cycles_ao(samples=4, ao_min=0.48, ao_max=1.0, target_objs=arch_objs)
+    bake_scene_lightmap_uv2(
+        os.path.join(GODOT_DIR, "assets", "lightmaps", "cluster_elite_street_lightmap.png"),
+        size=1024, samples=16, lift_min=0.38, sun_energy=4.5, sun_rot_deg=(46.0, 0.0, 26.0), ambient_strength=0.34,
+    )
+    # Bake subtle Cycles AO on architecture only (no double-darkening with UV2 lightmap)
+    bake_cycles_ao(samples=4, ao_min=0.86, ao_max=1.0, target_objs=arch_objs)
 
     os.makedirs(os.path.dirname(OUT_ELITE_STREET), exist_ok=True)
     bpy.ops.export_scene.gltf(

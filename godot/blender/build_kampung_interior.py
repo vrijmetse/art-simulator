@@ -8,6 +8,7 @@ from mathutils import Vector
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
 from tex_utils import (
+    bake_scene_lightmap_uv2,
     generate_fabric_weave_texture,
     generate_plaster_ao_texture,
     generate_tile_textures,
@@ -341,7 +342,11 @@ def build_kampung_house():
     bpy.ops.object.shade_smooth()
     bpy.context.active_object.data.materials.append(mat_aqua_blue)
 
-    bake_cycles_ao(samples=8, ao_min=0.48, ao_max=1.0)
+    bake_scene_lightmap_uv2(
+        os.path.join(GODOT_DIR, "assets", "lightmaps", "room_kampung_house_lightmap.png"),
+        size=1024, samples=16, lift_min=0.34, sun_energy=4.2, sun_rot_deg=(48.0, 0.0, 28.0), ambient_strength=0.32,
+    )
+    bake_cycles_ao(samples=6, ao_min=0.86, ao_max=1.0)
 
     os.makedirs(os.path.dirname(OUT_GLB), exist_ok=True)
     bpy.ops.export_scene.gltf(

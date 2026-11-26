@@ -98,7 +98,7 @@ def apply_bevel_and_smooth(obj, width: float = 0.003, segments: int = 2):
     return obj
 
 
-def _fix_mh_materials_and_textures(mesh_obj, skin_warmth=None):
+def _fix_mh_materials_and_textures(mesh_obj, skin_warmth=None, dark_hair: bool = False):
     """Fix MakeHuman Alpha=0 / BLEND quirk and downscale embedded images <= 512px for lean mobile/WebGL2 .pck."""
     seen_imgs = set()
     for m in mesh_obj.data.materials:
@@ -106,6 +106,7 @@ def _fix_mh_materials_and_textures(mesh_obj, skin_warmth=None):
             continue
         m.blend_method = 'OPAQUE'
         bsdf = m.node_tree.nodes.get("Principled BSDF")
+        is_hair = "hair" in m.name.lower()
         if bsdf:
             if "Alpha" in bsdf.inputs:
                 bsdf.inputs["Alpha"].default_value = 1.0
@@ -115,6 +116,11 @@ def _fix_mh_materials_and_textures(mesh_obj, skin_warmth=None):
                 bsdf.inputs["Emission Strength"].default_value = 0.0
             if "Roughness" in bsdf.inputs and "iris" not in m.name.lower():
                 bsdf.inputs["Roughness"].default_value = max(0.62, bsdf.inputs["Roughness"].default_value)
+            if dark_hair and is_hair:
+                for lk in list(bsdf.inputs["Base Color"].links):
+                    m.node_tree.links.remove(lk)
+                bsdf.inputs["Base Color"].default_value = (0.05, 0.04, 0.04, 1.0)
+                bsdf.inputs["Roughness"].default_value = 0.68
 
         is_body = "body" in m.name.lower()
         max_dim = 512 if is_body else 256
@@ -367,17 +373,17 @@ def _build_mh_skirt(arm, mat_skirt, name: str, zmax: float, pelvis_z: float, lon
     s_u = zmax / 1.72
     if long_skirt:
         rings_cfg = [
-            (pelvis_z * 0.28, 0.260 * s_u, 0.228 * s_u, 0.0),
-            (pelvis_z * 0.58, 0.250 * s_u, 0.220 * s_u, 0.0),
-            (pelvis_z * 0.88, 0.240 * s_u, 0.210 * s_u, 0.0),
-            (pelvis_z * 1.18, 0.205 * s_u, 0.175 * s_u, 0.0),
+            (pelvis_z * 0.28, 0.255 * s_u, 0.224 * s_u, 0.0),
+            (pelvis_z * 0.58, 0.245 * s_u, 0.214 * s_u, 0.0),
+            (pelvis_z * 0.88, 0.232 * s_u, 0.200 * s_u, 0.0),
+            (pelvis_z * 1.18, 0.168 * s_u, 0.140 * s_u, 0.0),
         ]
     else:
         rings_cfg = [
-            (pelvis_z * 0.50, 0.258 * s_u, 0.226 * s_u, 0.0),
-            (pelvis_z * 0.74, 0.248 * s_u, 0.218 * s_u, 0.0),
-            (pelvis_z * 0.96, 0.238 * s_u, 0.208 * s_u, 0.0),
-            (pelvis_z * 1.18, 0.205 * s_u, 0.175 * s_u, 0.0),
+            (pelvis_z * 0.50, 0.252 * s_u, 0.220 * s_u, 0.0),
+            (pelvis_z * 0.74, 0.242 * s_u, 0.210 * s_u, 0.0),
+            (pelvis_z * 0.96, 0.226 * s_u, 0.194 * s_u, 0.0),
+            (pelvis_z * 1.18, 0.156 * s_u, 0.128 * s_u, 0.0),
         ]
     bm = bmesh.new()
     segs = 24
@@ -522,6 +528,7 @@ def build_mh_character(
     skirt_cfg=None,
     is_player: bool = False,
     decimate_ratio: float = 0.46,
+    dark_hair: bool = False,
 ):
     bpy.ops.wm.read_factory_settings(use_empty=True)
     bpy.ops.import_scene.gltf(filepath=os.path.join(CHARKIT_DIR, mh_file))
@@ -544,7 +551,7 @@ def build_mh_character(
     hb = _measure_head_bounds_mh(body_mesh, arm)
 
     # 3. Fix MakeHuman Alpha=0, downscale images <= 512px, remove MakeHuman chest logo
-    _fix_mh_materials_and_textures(body_mesh, skin_warmth=skin_warmth)
+    _fix_mh_materials_and_textures(body_mesh, skin_warmth=skin_warmth, dark_hair=dark_hair)
     batik_img = None
     if batik_cfg is not None:
         batik_img = generate_batik_texture(TEX_DIR, batik_cfg["name"], batik_cfg["base"], batik_cfg["accent"])
@@ -734,7 +741,7 @@ if __name__ == "__main__":
     build_mh_character(
         "mh_3000.glb", "char_hendra.glb", target_h=1.73,
         skin_warmth=(0.92, 0.84, 0.78), keep_suit_tex=True,
-        strip_mats=("beard",), hair_style="none", decimate_ratio=0.46,
+        strip_mats=("beard",), hair_style="none", decimate_ratio=0.46, dark_hair=True,
     )
     build_mh_character(
         "mh_3488.glb", "char_rina.glb", target_h=1.64,

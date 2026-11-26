@@ -9,6 +9,7 @@ from mathutils import Vector
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
 from tex_utils import (
+    bake_scene_lightmap_uv2,
     generate_fabric_weave_texture,
     generate_foliage_texture,
     generate_plaster_ao_texture,
@@ -367,8 +368,12 @@ def build_majikan_living():
         add_beveled_box(f"Sandal_{sx}", (0.10, 0.24, 0.025), (sx, sy, 0.015), mat_teal, 0.01, (0.0, 0.0, srot))
         add_beveled_box(f"SandalStrap_{sx}", (0.10, 0.06, 0.03), (sx, sy + 0.02, 0.032), mat_coral, 0.008, (0.0, 0.0, srot))
 
-    # Bake smooth Cycles Ambient Occlusion into Col (BYTE_COLOR, CORNER)
-    bake_cycles_ao(samples=10, ao_min=0.48, ao_max=1.0)
+    bake_scene_lightmap_uv2(
+        os.path.join(GODOT_DIR, "assets", "lightmaps", "room_majikan_living_lightmap.png"),
+        size=1024, samples=16, lift_min=0.34, sun_energy=4.2, sun_rot_deg=(48.0, 0.0, 28.0), ambient_strength=0.32,
+    )
+    # Bake subtle Cycles AO (no double-darkening with UV2 lightmap)
+    bake_cycles_ao(samples=6, ao_min=0.86, ao_max=1.0)
 
     os.makedirs(os.path.dirname(OUT_GLB), exist_ok=True)
     bpy.ops.export_scene.gltf(
