@@ -65,7 +65,7 @@ func load_outfit(outfit_id: String, model_path: String, color_hex: String, skin_
 		var packed: PackedScene = load(resolved_path)
 		if packed != null:
 			_model_root = packed.instantiate() as Node3D
-			_model_root.scale = Vector3(0.72, 0.72, 0.72)
+			_model_root.scale = Vector3(0.84, 0.84, 0.84)
 			add_child(_model_root)
 			_anim_player = _find_anim_player(_model_root)
 		_equipped_outfit_id = outfit_id

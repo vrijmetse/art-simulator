@@ -229,7 +229,7 @@ func _spawn_npcs(npc_list: Array) -> void:
 		holder.position = npc.get("pos", Vector3.ZERO)
 		holder.rotation.y = float(npc.get("rot_y", 0.0))
 		var inst := ps.instantiate() as Node3D
-		inst.scale = Vector3(0.72, 0.72, 0.72)
+		inst.scale = Vector3(0.84, 0.84, 0.84)
 		holder.add_child(inst)
 
 		var target_anim := String(npc.get("anim", "Idle")).to_lower()
@@ -242,7 +242,7 @@ func _spawn_npcs(npc_list: Array) -> void:
 
 		var badge := Label3D.new()
 		badge.text = String(npc.get("label_en") if _loc() == "en" else npc.get("label_id"))
-		badge.position = Vector3(0.0, 1.80, 0.0)
+		badge.position = Vector3(0.0, 1.92, 0.0)
 		badge.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 		badge.font_size = 18
 		badge.pixel_size = 0.0026

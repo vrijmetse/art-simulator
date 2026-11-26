@@ -39,6 +39,37 @@ func _find_anim_player(node: Node) -> AnimationPlayer:
 			return found
 	return null
 
+func _local_xform_to(node: Node3D, ancestor: Node3D) -> Transform3D:
+	var xf := Transform3D.IDENTITY
+	var cur: Node = node
+	while cur != null and cur != ancestor:
+		if cur is Node3D:
+			xf = (cur as Node3D).transform * xf
+		cur = cur.get_parent()
+	return xf
+
+func _count_mesh_verts(node: Node) -> int:
+	var total := 0
+	if node is MeshInstance3D:
+		var mi := node as MeshInstance3D
+		if mi.mesh != null:
+			for s in range(mi.mesh.get_surface_count()):
+				var arr := mi.mesh.surface_get_arrays(s)
+				if arr.size() > Mesh.ARRAY_VERTEX and arr[Mesh.ARRAY_VERTEX] is PackedVector3Array:
+					total += (arr[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()
+	for c in node.get_children():
+		total += _count_mesh_verts(c)
+	return total
+
+func _find_skeleton(node: Node) -> Skeleton3D:
+	if node is Skeleton3D:
+		return node as Skeleton3D
+	for c in node.get_children():
+		var found := _find_skeleton(c)
+		if found != null:
+			return found
+	return null
+
 func _initialize() -> void:
 	# 1. i18n formatting (Rp 0 balance vs Gratis price)
 	_assert_eq(I18n.format_balance(0, "id"), "Rp 0", "balance zero id")
@@ -308,6 +339,7 @@ func _initialize() -> void:
 	_assert_true(ResourceLoader.exists("res://assets/models/char_kakak.glb"), "char_kakak.glb exists on disk")
 	var char_models := [
 		"res://assets/models/char_art.glb",
+		"res://assets/models/char_art_hijab.glb",
 		"res://assets/models/char_art_pro.glb",
 		"res://assets/models/char_art_elite.glb",
 		"res://assets/models/char_ibu.glb",
@@ -319,12 +351,60 @@ func _initialize() -> void:
 		_assert_true(packed != null, "char glb loads: " + cm_path)
 		if packed != null:
 			var inst := packed.instantiate()
+			root.add_child(inst)
+			_assert_true(inst.find_child("*Icosphere*", true, false) == null, "no Icosphere bone-shape mesh in " + cm_path)
 			var ap := _find_anim_player(inst)
 			_assert_true(ap != null, "char has AnimationPlayer: " + cm_path)
 			if ap != null:
 				var anims_str := ",".join(ap.get_animation_list()).to_lower()
-				for req_anim in ["idle", "walk", "clean", "talk"]:
+				for req_anim in ["idle", "walk", "clean", "talk", "celebrate"]:
 					_assert_true(req_anim in anims_str, cm_path + " has anim " + req_anim)
+			var skel := _find_skeleton(inst)
+			_assert_true(skel != null, "char has Skeleton3D: " + cm_path)
+			if skel != null:
+				var i_sh := skel.find_bone("upperarm_l")
+				var i_el := skel.find_bone("lowerarm_l")
+				var i_wr := skel.find_bone("hand_l")
+				var i_tip := skel.find_bone("middle_04_leaf_l")
+				var i_hip := skel.find_bone("thigh_l")
+				var i_knee := skel.find_bone("calf_l")
+				var i_foot := skel.find_bone("foot_l")
+				var i_nk := skel.find_bone("neck_01")
+				var i_hd := skel.find_bone("head_leaf")
+				_assert_true(i_tip >= 0 and i_knee >= 0 and i_hd >= 0 and i_foot >= 0, "UAL1 human bones exist in " + cm_path)
+				if ap != null and i_foot >= 0:
+					for req_anim in ["idle", "walk", "clean", "talk", "celebrate"]:
+						for a_name in ap.get_animation_list():
+							if req_anim in a_name.to_lower():
+								ap.play(a_name)
+								ap.advance(0.25)
+								var fp := (_local_xform_to(skel, inst) * skel.get_bone_global_pose(i_foot).origin)
+								_assert_true(is_finite(fp.y) and fp.y >= -0.08 and fp.y <= 0.55, "%s %s foot_l.y=%.3f valid" % [cm_path, req_anim, fp.y])
+								break
+					for a_name in ap.get_animation_list():
+						if "idle" in a_name.to_lower():
+							ap.play(a_name)
+							ap.advance(0.25)
+							break
+				if i_tip >= 0 and i_knee >= 0 and i_hd >= 0:
+					var xf := _local_xform_to(skel, inst)
+					var p_sh := xf * skel.get_bone_global_pose(i_sh).origin
+					var p_el := xf * skel.get_bone_global_pose(i_el).origin
+					var p_wr := xf * skel.get_bone_global_pose(i_wr).origin
+					var p_tip := xf * skel.get_bone_global_pose(i_tip).origin
+					var p_hip := xf * skel.get_bone_global_pose(i_hip).origin
+					var p_knee := xf * skel.get_bone_global_pose(i_knee).origin
+					var p_nk := xf * skel.get_bone_global_pose(i_nk).origin
+					var p_hd := xf * skel.get_bone_global_pose(i_hd).origin
+					var total_h := p_hd.y
+					var arm_len := p_sh.distance_to(p_el) + p_el.distance_to(p_wr) + p_wr.distance_to(p_tip)
+					_assert_true(total_h >= 1.55 and total_h <= 1.98, "%s height %.2fm in [1.55,1.98]" % [cm_path, total_h])
+					_assert_true(p_hip.y / total_h >= 0.46, "%s hip/height %.3f >= 0.46 (human legs)" % [cm_path, p_hip.y / total_h])
+					_assert_true(arm_len / total_h <= 0.41, "%s arm/height %.3f <= 0.41 (human arms)" % [cm_path, arm_len / total_h])
+					_assert_true((p_tip.y - p_knee.y) / total_h >= 0.12, "%s (tip-knee)/height %.3f >= 0.12 in Idle" % [cm_path, (p_tip.y - p_knee.y) / total_h])
+					_assert_true((p_hd.y - p_nk.y) / total_h <= 0.22, "%s head+neck/height %.3f <= 0.22 (6+ heads)" % [cm_path, (p_hd.y - p_nk.y) / total_h])
+			_assert_true(_count_mesh_verts(inst) <= 14500, "%s vertex count <= 14500 for mobile WebGL2" % cm_path)
+			root.remove_child(inst)
 			inst.free()
 
 	for t in CareerTiers.TIERS:
