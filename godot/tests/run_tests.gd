@@ -16,6 +16,8 @@ const ArtAtmosphere := preload("res://src/core/atmosphere.gd")
 const ArtSettings := preload("res://src/core/settings_store.gd")
 const ArtStreetTraffic := preload("res://src/core/street_traffic.gd")
 const ArtPortraits := preload("res://src/core/portraits.gd")
+const ArtWishlistStory := preload("res://src/core/wishlist_story.gd")
+const ArtStreetPatrols := preload("res://src/core/street_patrols.gd")
 
 var _failed := 0
 var _passed := 0
@@ -620,6 +622,65 @@ func _initialize() -> void:
 	_assert_eq(String(sv_rt["gfx_quality"]), "low", "SaveStore preserves gfx_quality")
 	_assert_eq(bool(sv_rt["weather_fx"]), false, "SaveStore preserves weather_fx")
 	_assert_eq(ArtSettings.get_daily_log(sv_rt).size(), ArtSettings.MAX_DAILY_LOG, "SaveStore preserves daily_log")
+
+	# 21. Remaining Polish Gaps: Wishlist, Story Chapters, Day-1 Tutorial, Street Patrols + Umbrella, BGM/Rain Loops
+	var sv_w := Progression.create_player_save()
+	sv_w["balance_rp"] = 500000
+	var bw_ok := ArtWishlistStory.buy_wishlist_item(sv_w, "kirim_kampung")
+	_assert_eq(bool(bw_ok["ok"]), true, "buy wishlist item succeeds")
+	_assert_eq(int(bw_ok["save"]["balance_rp"]), 350000, "wishlist deducts balance")
+	_assert_eq(int(bw_ok["save"]["xp"]), 60, "wishlist awards xp bonus")
+	var bw_dup := ArtWishlistStory.buy_wishlist_item(bw_ok["save"], "kirim_kampung")
+	_assert_eq(bool(bw_dup["ok"]), false, "duplicate wishlist purchase blocked")
+	_assert_eq(int(bw_dup["save"]["xp"]), 60, "duplicate wishlist purchase grants 0 extra xp")
+	_assert_true(Progression.get_mood_bonus(bw_ok["save"]) >= 5, "wishlist mood_bonus folds into Progression.get_mood_bonus")
+
+	for t_ch in CareerTiers.TIERS:
+		var ch_tid := String(t_ch["id"])
+		var ch := ArtWishlistStory.get_unseen_chapter(sv_w, ch_tid)
+		_assert_true(not ch.is_empty(), "story chapter exists for tier " + ch_tid)
+	var sv_seen := ArtWishlistStory.mark_chapter_seen(sv_w, "ch_kamar_kos")
+	_assert_true(ArtWishlistStory.get_unseen_chapter(sv_seen, "kamar_kos").is_empty(), "seen chapter not repeated")
+	_assert_true(ArtWishlistStory.get_tutorial_hint(0, "id") != "", "tutorial step 0 hint present")
+	var sv_tut := ArtWishlistStory.advance_tutorial(sv_w, 2)
+	_assert_eq(int(sv_tut["tutorial_step"]), 2, "tutorial advances cleanly")
+
+	# SaveStore backward compatibility for legacy saves (completed_shifts > 0, no tutorial_step)
+	var sv_legacy := SaveStore.deserialize('{"completed_shifts": 3, "unlocked_wishlist": ["kirim_kampung", "kirim_kampung", "fake_item"], "seen_chapters": ["ch_kamar_kos", "bogus"], "bgm_enabled": false}')
+	_assert_eq(int(sv_legacy["tutorial_step"]), 4, "legacy save with completed_shifts skips Day-1 tutorial")
+	_assert_eq((sv_legacy["unlocked_wishlist"] as Array).size(), 1, "SaveStore deduplicates & validates unlocked_wishlist")
+	_assert_eq((sv_legacy["seen_chapters"] as Array).size(), 1, "SaveStore validates seen_chapters")
+	_assert_eq(bool(sv_legacy["bgm_enabled"]), false, "SaveStore preserves bgm_enabled")
+
+	# Street patrols stay inside walk_rect, clear of portals, and pause near player
+	var sc_p36 := NpcRoster.get_street_config("perumahan_36")
+	var rt_npcs := ArtStreetPatrols.create_runtime_npcs(sc_p36["street_npcs"])
+	var wrect_p36: Rect2 = sc_p36["walk_rect"]
+	for _step_i in range(25):
+		ArtStreetPatrols.step_patrols(rt_npcs, sc_p36, Vector3(-10.0, 0.0, -10.0), 0.25)
+	var moved_any := false
+	for rnpc in rt_npcs:
+		if bool(rnpc["patrol"]):
+			moved_any = true
+			var rpos: Vector3 = rnpc["pos"]
+			_assert_true(wrect_p36.has_point(Vector2(rpos.x, rpos.z)), "patrol stays inside walk_rect: " + String(rnpc["id"]))
+			_assert_true(absf(rpos.x - float(sc_p36["portal_home"].x)) >= 0.80, "patrol avoids portal_home: " + String(rnpc["id"]))
+			_assert_true(absf(rpos.x - float(sc_p36["portal_work"].x)) >= 0.80, "patrol avoids portal_work: " + String(rnpc["id"]))
+	_assert_true(moved_any, "street has >=1 patrolling citizen")
+
+	var test_player := PlayerControllerScene.new()
+	var umb := ArtStreetPatrols.sync_player_umbrella(test_player, true)
+	_assert_true(umb != null and umb.visible, "umbrella attached and visible when raining")
+	ArtStreetPatrols.sync_player_umbrella(test_player, false)
+	_assert_eq(umb.visible, false, "umbrella hidden indoors / clear weather")
+	test_player.free()
+
+	var bgm_wav := AudioSynth.make_cozy_bgm_loop()
+	var rain_wav := AudioSynth.make_rain_loop()
+	_assert_eq(bgm_wav.loop_mode, AudioStreamWAV.LOOP_FORWARD, "BGM uses LOOP_FORWARD")
+	_assert_true(bgm_wav.loop_end > 44100, "BGM loop_end set to frame count (>2s)")
+	_assert_eq(rain_wav.loop_mode, AudioStreamWAV.LOOP_FORWARD, "Rain ambient uses LOOP_FORWARD")
+	_assert_true(rain_wav.loop_end > 22050, "Rain loop_end set to frame count (>1s)")
 
 	print("GODOT TDD RESULT: %d passed, %d failed" % [_passed, _failed])
 	quit(0 if _failed == 0 else 1)

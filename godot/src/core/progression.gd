@@ -4,6 +4,7 @@ extends RefCounted
 const CareerTiers := preload("res://src/core/career_tiers.gd")
 const MajikanProfiles := preload("res://src/core/majikan_profiles.gd")
 const MajikanCall := preload("res://src/core/majikan_call.gd")
+const WishlistStory := preload("res://src/core/wishlist_story.gd")
 
 const SKILL_KEYS := ["sweeping", "tidiness", "cooking", "laundry"]
 const SKILL_THRESHOLDS := [0, 30, 80, 160, 280]
@@ -117,6 +118,10 @@ static func create_player_save() -> Dictionary:
 		"gfx_quality": "high",
 		"weather_fx": true,
 		"muted": false,
+		"bgm_enabled": true,
+		"unlocked_wishlist": [],
+		"seen_chapters": [],
+		"tutorial_step": 0,
 		"daily_log": [],
 	}
 
@@ -184,6 +189,7 @@ static func get_mood_bonus(save: Dictionary) -> int:
 	for uid in ups:
 		if KOS_UPGRADES.has(uid):
 			bonus += int(KOS_UPGRADES[uid].get("mood_bonus", 0))
+	bonus += WishlistStory.get_wishlist_mood_bonus(save)
 	return bonus
 
 static func get_tip_bonus_multiplier(save: Dictionary) -> float:

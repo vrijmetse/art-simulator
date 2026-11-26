@@ -4,6 +4,7 @@ extends RefCounted
 const CareerTiers := preload("res://src/core/career_tiers.gd")
 const Progression := preload("res://src/core/progression.gd")
 const SettingsStore := preload("res://src/core/settings_store.gd")
+const WishlistStory := preload("res://src/core/wishlist_story.gd")
 
 const DEFAULT_PATH := "user://save_v1.json"
 
@@ -90,6 +91,36 @@ static func sanitize(raw: Variant) -> Dictionary:
 	clean["gfx_quality"] = SettingsStore.sanitize_gfx_quality(d.get("gfx_quality", "high"))
 	clean["weather_fx"] = bool(d.get("weather_fx", true))
 	clean["muted"] = bool(d.get("muted", false))
+	clean["bgm_enabled"] = bool(d.get("bgm_enabled", true))
+
+	var valid_wish: Array = []
+	var raw_wish: Variant = d.get("unlocked_wishlist", [])
+	if typeof(raw_wish) == TYPE_ARRAY:
+		for wid in raw_wish:
+			var s_wid := String(wid)
+			if WishlistStory.WISHLIST_ITEMS.has(s_wid) and not (s_wid in valid_wish):
+				valid_wish.append(s_wid)
+	clean["unlocked_wishlist"] = valid_wish
+
+	var valid_ch_ids := {}
+	for tid in WishlistStory.STORY_CHAPTERS.keys():
+		valid_ch_ids[String(WishlistStory.STORY_CHAPTERS[tid]["id"])] = true
+	var valid_seen: Array = []
+	var raw_seen: Variant = d.get("seen_chapters", [])
+	if typeof(raw_seen) == TYPE_ARRAY:
+		for ch_id in raw_seen:
+			var s_ch := String(ch_id)
+			if valid_ch_ids.has(s_ch) and not (s_ch in valid_seen):
+				valid_seen.append(s_ch)
+	clean["seen_chapters"] = valid_seen
+
+	if d.has("tutorial_step"):
+		clean["tutorial_step"] = clampi(_safe_int(d.get("tutorial_step", 0), 0, 0), 0, 4)
+	elif int(clean["completed_shifts"]) > 0:
+		clean["tutorial_step"] = 4
+	else:
+		clean["tutorial_step"] = 0
+
 	clean["daily_log"] = SettingsStore.sanitize_daily_log(d.get("daily_log", []))
 
 	return clean

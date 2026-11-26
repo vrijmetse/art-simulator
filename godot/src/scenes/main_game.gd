@@ -15,6 +15,8 @@ const Atmosphere := preload("res://src/core/atmosphere.gd")
 const Settings := preload("res://src/core/settings_store.gd")
 const StreetTraffic := preload("res://src/core/street_traffic.gd")
 const Portraits := preload("res://src/core/portraits.gd")
+const WishlistStory := preload("res://src/core/wishlist_story.gd")
+const StreetPatrols := preload("res://src/core/street_patrols.gd")
 const PlayerControllerScene := preload("res://src/scenes/player_controller.gd")
 const ChoreHotspotScene := preload("res://src/scenes/chore_hotspot.gd")
 
@@ -66,6 +68,12 @@ var _wav_ring: AudioStreamWAV
 var _wav_sweep: AudioStreamWAV
 var _wav_fanfare: AudioStreamWAV
 var _wav_buzz: AudioStreamWAV
+var _wav_bgm: AudioStreamWAV
+var _wav_rain: AudioStreamWAV
+var _bgm_player: AudioStreamPlayer
+var _rain_player: AudioStreamPlayer
+var _audio_unlocked := false
+var _pending_story_tier := ""
 
 # HUD nodes
 var _lbl_balance: Label
@@ -119,6 +127,9 @@ var _toast_lbl: Label
 var _toast_portrait: TextureRect
 var _toast_panel: PanelContainer
 var _toast_timer := 0.0
+var _tutorial_panel: PanelContainer
+var _lbl_tutorial: Label
+var _btn_tutorial_skip: Button
 var _world_prompt: PanelContainer
 var _lbl_world_prompt: Label
 var _modal_backdrop: ColorRect
@@ -133,6 +144,7 @@ var _joy_active := false
 var _capture_path := ""
 var _capture_shift := false
 var _capture_street := false
+var _capture_rain := false
 var _capture_onboarding := false
 var _capture_tier := ""
 var _skip_onboarding := false
@@ -156,6 +168,20 @@ func _ready() -> void:
 	_wav_sweep = AudioSynth.make_broom_sweep()
 	_wav_fanfare = AudioSynth.make_level_up_fanfare()
 	_wav_buzz = AudioSynth.make_warning_buzz()
+	_wav_bgm = AudioSynth.make_cozy_bgm_loop()
+	_wav_rain = AudioSynth.make_rain_loop()
+
+	_bgm_player = AudioStreamPlayer.new()
+	_bgm_player.name = "BgmPlayer"
+	_bgm_player.stream = _wav_bgm
+	_bgm_player.volume_db = -18.0
+	add_child(_bgm_player)
+
+	_rain_player = AudioStreamPlayer.new()
+	_rain_player.name = "RainPlayer"
+	_rain_player.stream = _wav_rain
+	_rain_player.volume_db = -22.0
+	add_child(_rain_player)
 
 	for arg in OS.get_cmdline_user_args():
 		if arg == "--smoke-test":
@@ -170,6 +196,8 @@ func _ready() -> void:
 		elif arg.begins_with("--capture-street="):
 			_capture_path = arg.substr("--capture-street=".length())
 			_capture_street = true
+		elif arg == "--capture-rain":
+			_capture_rain = true
 		elif arg.begins_with("--capture-onboarding="):
 			_capture_path = arg.substr("--capture-onboarding=".length())
 			_capture_onboarding = true
@@ -200,6 +228,9 @@ func _ready() -> void:
 
 	if _capture_street:
 		_save["onboarding_done"] = true
+		if _capture_rain:
+			_save["day"] = 3
+			_save["weather_fx"] = true
 		if _capture_tier != "":
 			_save["xp"] = 2000
 			_save = Progression.select_job_tier(_save, _capture_tier)["save"]
@@ -262,6 +293,32 @@ func _build_rain_particles() -> void:
 	_rain_particles.mesh = drop
 	add_child(_rain_particles)
 
+func _unlock_audio() -> void:
+	if _audio_unlocked:
+		return
+	_audio_unlocked = true
+	_sync_ambient_audio()
+
+func _sync_ambient_audio() -> void:
+	if _smoke_mode or _muted or not _audio_unlocked:
+		if _bgm_player != null and _bgm_player.playing:
+			_bgm_player.stop()
+		if _rain_player != null and _rain_player.playing:
+			_rain_player.stop()
+		return
+	var want_bgm := bool(_save.get("bgm_enabled", true))
+	if _bgm_player != null:
+		if want_bgm and not _bgm_player.playing:
+			_bgm_player.play()
+		elif not want_bgm and _bgm_player.playing:
+			_bgm_player.stop()
+	var want_rain := (_world_mode == "street" and _cur_weather == "hujan")
+	if _rain_player != null:
+		if want_rain and not _rain_player.playing:
+			_rain_player.play()
+		elif not want_rain and _rain_player.playing:
+			_rain_player.stop()
+
 func _refresh_atmosphere() -> void:
 	var day := int(_save.get("day", 1))
 	var t_elapsed := _shift_elapsed_s if _in_shift else 15.0
@@ -271,6 +328,8 @@ func _refresh_atmosphere() -> void:
 	Atmosphere.apply_lighting(sun_light, bounce_light, env, _cur_phase, _cur_weather)
 	if _rain_particles != null:
 		_rain_particles.emitting = (_world_mode == "street" and _cur_weather == "hujan")
+	StreetPatrols.sync_player_umbrella(player, _world_mode == "street" and _cur_weather == "hujan")
+	_sync_ambient_audio()
 
 func _clear_street_traffic() -> void:
 	_traffic_items.clear()
@@ -369,6 +428,9 @@ func _spawn_npcs(npc_list: Array) -> void:
 		badge.outline_size = 6
 		holder.add_child(badge)
 		_npcs_root.add_child(holder)
+		if npc is Dictionary:
+			npc["node"] = holder
+			npc["anim_player"] = ap
 
 func _find_anim_player_recursive(node: Node) -> AnimationPlayer:
 	if node is AnimationPlayer:
@@ -464,11 +526,14 @@ func _enter_street_mode(from_mode: String = "home") -> void:
 	player.position = spawn_pos
 	player.cancel_movement()
 
-	_street_npcs_data = _street_cfg.get("street_npcs", [])
+	_street_npcs_data = StreetPatrols.create_runtime_npcs(_street_cfg.get("street_npcs", []))
 	_spawn_npcs(_street_npcs_data)
 	_spawn_street_traffic(tier_id)
 	_spawn_portal("enter_home", _street_cfg.get("portal_home", Vector3(-3.9, 0.0, 0.55)), Color(0.96, 0.78, 0.24), "Masuk Kamar", "Enter Room")
 	_spawn_portal("enter_work", _street_cfg.get("portal_work", Vector3(2.9, 0.0, 0.55)), Color(0.28, 0.86, 0.50), "Rumah Majikan", "Work Shift")
+	if int(_save.get("tutorial_step", 0)) < 1:
+		_save = WishlistStory.advance_tutorial(_save, 1)
+		SaveStore.save_to_path(_save)
 	_refresh_atmosphere()
 	_show_toast(_t("Di gang luar — sapa tetangga atau masuk Rumah Majikan.", "Outside on the street — greet neighbors or enter Work Shift."))
 	_refresh_hud()
@@ -509,6 +574,9 @@ func _start_shift() -> void:
 	_spawn_hotspots(work_glb)
 	_spawn_npcs(NpcRoster.get_shift_npcs(tier_id))
 	_clear_street_traffic()
+	if int(_save.get("tutorial_step", 0)) < 2:
+		_save = WishlistStory.advance_tutorial(_save, 2)
+		SaveStore.save_to_path(_save)
 	_refresh_atmosphere()
 	var emp_lbl := String(prof.get("name", prof.get("label_id", "")))
 	_show_toast(_t("Shift di %s dimulai! Kerjakan tugas & jawab panggilan." % emp_lbl, "Shift at %s started! Finish chores & answer calls." % emp_lbl))
@@ -683,6 +751,9 @@ func _finish_active_chore() -> void:
 			player.play_celebrate()
 			_play_sfx(_wav_fanfare)
 			_show_toast(_t("Semua tugas beres! Tekan Selesai Shift untuk gajian.", "All chores done! Tap End Shift to collect pay."))
+			if int(_save.get("tutorial_step", 0)) < 3:
+				_save = WishlistStory.advance_tutorial(_save, 3)
+				SaveStore.save_to_path(_save)
 	_refresh_hud()
 
 func _finish_shift() -> void:
@@ -706,6 +777,8 @@ func _finish_shift() -> void:
 		"title_en": "Fired on shift" if bool(res.get("fired", false)) else "Shift completed",
 		"delta_rp": int(res.get("payout_rp", 0)),
 	})
+	if int(_save.get("tutorial_step", 0)) < 4:
+		_save = WishlistStory.advance_tutorial(_save, 4)
 	SaveStore.save_to_path(_save)
 	var new_lv := Progression.level_from_xp(int(_save.get("xp", 0)))
 	if new_lv > prev_lv:
@@ -758,6 +831,9 @@ func _process(delta: float) -> void:
 			var tn: Node3D = _traffic_nodes[ti]
 			if is_instance_valid(tn):
 				tn.position.x = float(_traffic_items[ti]["x"])
+
+	if _world_mode == "street" and _street_npcs_data.size() > 0:
+		StreetPatrols.step_patrols(_street_npcs_data, _street_cfg, player.position, delta)
 
 	if not _in_shift:
 		if _world_prompt != null:
@@ -848,6 +924,8 @@ func _process(delta: float) -> void:
 			_refresh_hud()
 
 func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey or event is InputEventMouseButton or event is InputEventScreenTouch:
+		_unlock_audio()
 	if (_onboarding_wrap != null and _onboarding_wrap.visible) or (_modal_backdrop != null and _modal_backdrop.visible):
 		return
 	if event is InputEventKey and event.pressed and event.keycode in [KEY_E, KEY_SPACE]:
@@ -1044,12 +1122,29 @@ func _refresh_hud() -> void:
 	_btn_ward.text = _t("Seragam", "Outfits")
 	_btn_kos.text = Progression.get_room_upgrade_title(tier, _loc())
 	_btn_modal_close.text = _t("Mantap!", "Awesome!")
+	_refresh_tutorial_banner()
 	_refresh_onboarding_texts()
 	_refresh_call_banner()
+
+func _refresh_tutorial_banner() -> void:
+	if _tutorial_panel == null or _lbl_tutorial == null:
+		return
+	var ob_active := _onboarding_wrap != null and _onboarding_wrap.visible
+	var modal_active := _modal_backdrop != null and _modal_backdrop.visible
+	var call_active := _in_shift and bool(_call_state.get("active_call", false))
+	var step := int(_save.get("tutorial_step", 0))
+	var hint := WishlistStory.get_tutorial_hint(step, _loc())
+	var show := (not ob_active) and (not modal_active) and (not call_active) and (hint != "") and bool(_save.get("onboarding_done", false))
+	_tutorial_panel.visible = show
+	if show:
+		_lbl_tutorial.text = hint
+		if _btn_tutorial_skip != null:
+			_btn_tutorial_skip.text = _t("Lewati", "Skip")
 
 func _refresh_call_banner() -> void:
 	var active_call := _in_shift and bool(_call_state.get("active_call", false))
 	_call_banner.visible = active_call
+	_refresh_tutorial_banner()
 	if active_call:
 		var pers := MajikanProfiles.get_personality(String(_call_state.get("personality", "ramah")))
 		var pat := float(pers.get("call_patience_s", 12.0))
@@ -1101,6 +1196,75 @@ func _open_career_modal() -> void:
 				_modal_backdrop.visible = false
 				if not _in_shift:
 					_enter_home_mode()
+				_refresh_hud()
+				_maybe_show_chapter_modal(tid)
+		)
+		_modal_list.add_child(btn)
+	var btn_wish := Button.new()
+	btn_wish.text = _t("★ Impian ART (Wishlist)", "★ ART Dreams (Wishlist)")
+	_style_btn(btn_wish, Color(0.20, 0.44, 0.56), Color(0.96, 0.78, 0.26))
+	btn_wish.pressed.connect(_open_wishlist_modal)
+	_modal_list.add_child(btn_wish)
+	_modal_backdrop.visible = true
+
+func _maybe_show_chapter_modal(tier_id: String) -> void:
+	if _smoke_mode or _capture_path != "" or not bool(_save.get("onboarding_done", false)):
+		return
+	var ch := WishlistStory.get_unseen_chapter(_save, tier_id)
+	if ch.is_empty():
+		return
+	_open_chapter_modal(ch)
+
+func _open_chapter_modal(ch: Dictionary) -> void:
+	_clear_modal()
+	_save = WishlistStory.mark_chapter_seen(_save, String(ch.get("id", "")))
+	SaveStore.save_to_path(_save)
+	_modal_title.text = String(ch["title_en"] if _loc() == "en" else ch["title_id"])
+	var hdr_row := HBoxContainer.new()
+	hdr_row.add_theme_constant_override("separation", 10)
+	var p_rect := TextureRect.new()
+	p_rect.texture = Portraits.get_portrait("player", "happy")
+	p_rect.custom_minimum_size = Vector2(48, 48)
+	p_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	hdr_row.add_child(p_rect)
+	var body := Label.new()
+	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	body.custom_minimum_size = Vector2(360, 0)
+	body.text = String(ch["body_en"] if _loc() == "en" else ch["body_id"])
+	body.add_theme_color_override("font_color", Color(0.95, 0.94, 0.90))
+	hdr_row.add_child(body)
+	_modal_list.add_child(hdr_row)
+	_modal_backdrop.visible = true
+
+func _open_wishlist_modal() -> void:
+	_clear_modal()
+	_modal_title.text = _t("IMPIAN ART & TARGET TABUNGAN", "ART DREAMS & MILESTONE GOALS")
+	var unlocked: Array = _save.get("unlocked_wishlist", [])
+	for raw_wid in WishlistStory.WISHLIST_ITEMS.keys():
+		var wid := String(raw_wid)
+		var item: Dictionary = WishlistStory.WISHLIST_ITEMS[wid]
+		var is_done := wid in unlocked
+		var title := String(item["label_en"] if _loc() == "en" else item["label_id"])
+		var desc := String(item["desc_en"] if _loc() == "en" else item["desc_id"])
+		var btn := Button.new()
+		var status := _t("✓ Tercapai", "✓ Achieved") if is_done else ("%s (+%d XP, +%d%% Semangat)" % [I18n.format_balance(int(item["cost_rp"]), _loc()), int(item["xp_bonus"]), int(item["mood_bonus"])])
+		btn.text = "%s — %s\n%s" % [title, status, desc]
+		btn.disabled = is_done or int(_save.get("balance_rp", 0)) < int(item["cost_rp"])
+		btn.pressed.connect(func():
+			var res := WishlistStory.buy_wishlist_item(_save, wid)
+			if res["ok"]:
+				_save = res["save"]
+				_save = Settings.append_daily_log(_save, {
+					"day": int(_save.get("day", 1)),
+					"kind": "wishlist",
+					"title_id": "Impian: %s" % String(item["label_id"]),
+					"title_en": "Dream: %s" % String(item["label_en"]),
+					"delta_rp": -int(item["cost_rp"]),
+				})
+				SaveStore.save_to_path(_save)
+				_play_sfx(_wav_fanfare)
+				_show_toast(_t("Impian tercapai: %s! (+%d XP)" % [title, int(item["xp_bonus"])], "Dream achieved: %s! (+%d XP)" % [title, int(item["xp_bonus"])]), "player", "happy")
+				call_deferred("_open_wishlist_modal")
 				_refresh_hud()
 		)
 		_modal_list.add_child(btn)
@@ -1341,6 +1505,7 @@ func _open_map_modal() -> void:
 				else:
 					_enter_home_mode()
 				_refresh_hud()
+				_maybe_show_chapter_modal(tid)
 		)
 		_modal_list.add_child(b)
 	_modal_backdrop.visible = true
@@ -1396,6 +1561,11 @@ func _open_settings_modal() -> void:
 	btn_log.pressed.connect(_open_log_modal)
 	_modal_list.add_child(btn_log)
 
+	var btn_wish := Button.new()
+	btn_wish.text = _t("Impian ART (%d/4)" % (_save.get("unlocked_wishlist", []) as Array).size(), "ART Dreams (%d/4)" % (_save.get("unlocked_wishlist", []) as Array).size())
+	btn_wish.pressed.connect(_open_wishlist_modal)
+	_modal_list.add_child(btn_wish)
+
 	var btn_lang := Button.new()
 	btn_lang.text = _t("Bahasa: Indonesia (Ubah ke EN)", "Language: English (Switch to ID)")
 	btn_lang.pressed.connect(func():
@@ -1412,9 +1582,21 @@ func _open_settings_modal() -> void:
 		_muted = not _muted
 		_save["muted"] = _muted
 		SaveStore.save_to_path(_save)
+		_sync_ambient_audio()
 		_open_settings_modal()
 	)
 	_modal_list.add_child(btn_sfx)
+
+	var bgm_on := bool(_save.get("bgm_enabled", true))
+	var btn_bgm := Button.new()
+	btn_bgm.text = _t("Musik Latar (BGM): Aktif" if bgm_on else "Musik Latar (BGM): Mati", "Background Music: On" if bgm_on else "Background Music: Off")
+	btn_bgm.pressed.connect(func():
+		_save["bgm_enabled"] = not bgm_on
+		SaveStore.save_to_path(_save)
+		_sync_ambient_audio()
+		_open_settings_modal()
+	)
+	_modal_list.add_child(btn_bgm)
 
 	var q_cur := String(_save.get("gfx_quality", "high"))
 	var btn_gfx := Button.new()
@@ -1643,6 +1825,28 @@ func _build_hud() -> void:
 	_toast_panel.add_child(toast_h)
 	tc_v.add_child(_toast_panel)
 
+	_tutorial_panel = PanelContainer.new()
+	_tutorial_panel.visible = false
+	_tutorial_panel.add_theme_stylebox_override("panel", _make_box(Color(0.10, 0.14, 0.18, 0.90), Color(0.32, 0.82, 0.62), 10, 12, 5))
+	var tut_h := HBoxContainer.new()
+	tut_h.add_theme_constant_override("separation", 8)
+	_lbl_tutorial = Label.new()
+	_lbl_tutorial.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_lbl_tutorial.custom_minimum_size = Vector2(180, 0)
+	_lbl_tutorial.add_theme_font_size_override("font_size", 11)
+	_lbl_tutorial.add_theme_color_override("font_color", Color(0.94, 0.96, 0.90))
+	_btn_tutorial_skip = Button.new()
+	_style_btn(_btn_tutorial_skip, Color(0.18, 0.22, 0.28), Color(0.75, 0.72, 0.56))
+	_btn_tutorial_skip.pressed.connect(func():
+		_save = WishlistStory.advance_tutorial(_save, 4)
+		SaveStore.save_to_path(_save)
+		_refresh_tutorial_banner()
+	)
+	tut_h.add_child(_lbl_tutorial)
+	tut_h.add_child(_btn_tutorial_skip)
+	_tutorial_panel.add_child(tut_h)
+	tc_v.add_child(_tutorial_panel)
+
 	tc_center.add_child(tc_v)
 	hud.add_child(tc_center)
 
@@ -1804,7 +2008,14 @@ func _build_hud() -> void:
 	_modal_list.add_theme_constant_override("separation", 8)
 	_btn_modal_close = Button.new()
 	_style_btn(_btn_modal_close, Color(0.96, 0.78, 0.24), Color(0.99, 0.89, 0.48), dark_ink)
-	_btn_modal_close.pressed.connect(func(): _modal_backdrop.visible = false)
+	_btn_modal_close.pressed.connect(func():
+		_modal_backdrop.visible = false
+		_refresh_tutorial_banner()
+		if _pending_story_tier != "":
+			var pt := _pending_story_tier
+			_pending_story_tier = ""
+			_maybe_show_chapter_modal(pt)
+	)
 	vb.add_child(hdr_pill)
 	vb.add_child(_modal_list)
 	vb.add_child(_btn_modal_close)
@@ -1971,6 +2182,7 @@ func _refresh_onboarding_texts() -> void:
 	_ob_btn_start.text = _t("Mulai Kerja! (Hari 1)", "Start Working! (Day 1)")
 
 func _finish_onboarding() -> void:
+	_unlock_audio()
 	var nm := _ob_name_edit.text if _ob_name_edit != null else "Mbak Sari"
 	var res := Progression.complete_onboarding(_save, nm, _ob_style, _ob_skin, _ob_color)
 	_save = res["save"]
@@ -1981,6 +2193,7 @@ func _finish_onboarding() -> void:
 	_play_sfx(_wav_fanfare)
 	_show_toast(_t("Selamat datang %s! Ketuk Keluar Kamar untuk keluar ke gang atau Mulai Shift." % String(_save["player_name"]), "Welcome %s! Tap Step Outside to explore the street or Start Shift." % String(_save["player_name"])))
 	_refresh_hud()
+	_maybe_show_chapter_modal(String(_save.get("active_tier_id", "kamar_kos")))
 
 func _run_headless_smoke_test() -> void:
 	_save = Progression.create_player_save()
