@@ -153,3 +153,16 @@ static func rest_recover(shift: Dictionary, gain: int) -> Dictionary:
 	var max_e := maxi(10, int(nxt.get("max_energy", 100)))
 	nxt["energy"] = clampi(int(nxt.get("energy", 0)) + maxi(0, gain), 0, max_e)
 	return nxt
+
+static func get_checklist_items(shift: Dictionary, locale: String = "id") -> Array:
+	var assigned: Array = shift.get("assigned_ids", [])
+	var completed: Array = shift.get("completed_ids", [])
+	var out: Array = []
+	for raw_cid in assigned:
+		var cid := String(raw_cid)
+		if not CHORES.has(cid):
+			continue
+		var cfg: Dictionary = CHORES[cid]
+		var lbl := String(cfg["label_en"] if locale == "en" else cfg["label_id"])
+		out.append({"id": cid, "label": lbl, "done": cid in completed})
+	return out

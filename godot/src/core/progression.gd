@@ -59,6 +59,12 @@ const KOS_UPGRADES := {
 static func level_from_xp(xp: int) -> int:
 	return 1 + int(floor(sqrt(float(maxi(0, xp)) / 40.0)))
 
+static func get_room_upgrade_title(tier: Dictionary, locale: String = "id") -> String:
+	var live_in := bool(tier.get("live_in_room_provided", false))
+	if locale == "en":
+		return "Upgrade ART Room" if live_in else "Upgrade Kos Room"
+	return "Upgrade Kamar ART" if live_in else "Upgrade Kamar Kos"
+
 static func skill_level_from_xp(skill_xp: int) -> int:
 	var sxp := maxi(0, skill_xp)
 	var lvl := 1

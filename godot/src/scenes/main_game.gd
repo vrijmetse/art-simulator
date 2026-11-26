@@ -48,8 +48,12 @@ var _wav_buzz: AudioStreamWAV
 var _lbl_balance: Label
 var _lbl_meta: Label
 var _lbl_energy: Label
+var _bar_energy: ProgressBar
 var _lbl_trust: Label
-var _lbl_mode: Label
+var _bar_trust: ProgressBar
+var _lbl_tasks_hdr: Label
+var _tasks_list: VBoxContainer
+var _tasks_card: PanelContainer
 var _btn_lang: Button
 var _btn_mute: Button
 var _btn_action: Button
@@ -203,7 +207,7 @@ func _start_shift() -> void:
 	_load_stage_glb(work_glb)
 	if "elite_living" in work_glb:
 		player.set_walk_bounds(-3.4, 3.4, -2.5, 2.3)
-		player.position = Vector3(-0.35, 0.0, 1.35)
+		player.position = Vector3(0.35, 0.0, 1.35)
 	elif "majikan_living" in work_glb:
 		player.set_walk_bounds(-2.8, 2.8, -2.1, 1.8)
 		player.position = Vector3(0.0, 0.0, -0.5)
@@ -226,10 +230,10 @@ func _get_chore_positions(work_glb: String) -> Dictionary:
 	if "elite_living" in work_glb:
 		return {
 			"make_bed": Vector3(-2.35, 0.0, -1.65),
-			"sweep_floor": Vector3(-0.65, 0.0, 1.55),
-			"wash_dishes": Vector3(2.15, 0.0, -0.35),
+			"sweep_floor": Vector3(0.35, 0.0, 1.60),
+			"wash_dishes": Vector3(2.25, 0.0, -0.35),
 			"cook_rice": Vector3(2.45, 0.0, -1.45),
-			"iron_laundry": Vector3(1.55, 0.0, 1.65),
+			"iron_laundry": Vector3(1.85, 0.0, 1.45),
 			"water_plants": Vector3(-2.35, 0.0, 1.55),
 		}
 	if "kampung_house" in work_glb:
@@ -481,24 +485,46 @@ func _refresh_hud() -> void:
 	var tier := CareerTiers.get_tier(String(_save.get("active_tier_id", "kamar_kos")))
 	_lbl_balance.text = I18n.format_balance(int(_save.get("balance_rp", 0)), _loc())
 	var tier_label := String(tier.get("house_type_en", tier.get("house_type", "")) if _loc() == "en" else tier.get("house_type", ""))
-	_lbl_meta.text = "%s %d • Lv.%d (%d XP) • %s" % [
-		_t("Hari", "Day"), int(_save.get("day", 1)), lv, xp, tier_label
+	_lbl_meta.text = "Lv.%d • %s %d • %s" % [
+		lv, _t("Hari", "Day"), int(_save.get("day", 1)), tier_label
 	]
 	if _in_shift:
-		_lbl_energy.text = "%s: %d/%d" % [_t("Energi", "Energy"), int(_shift.get("energy", 0)), int(_shift.get("max_energy", 100))]
-		_lbl_trust.text = "Trust: %d%%" % int(_call_state.get("trust", 60))
-		_lbl_mode.text = "%s (%d/%d)" % [
-			_t("Tugas", "Chores"),
-			(_shift.get("completed_ids", []) as Array).size(),
-			(_shift.get("assigned_ids", []) as Array).size(),
-		]
+		var e_val := int(_shift.get("energy", 0))
+		var e_max := maxi(1, int(_shift.get("max_energy", 100)))
+		var t_val := int(_call_state.get("trust", 60))
+		_lbl_energy.text = "%s %d/%d" % [_t("Energi", "Energy"), e_val, e_max]
+		_bar_energy.max_value = e_max
+		_bar_energy.value = e_val
+		_lbl_trust.text = "Trust %d%%" % t_val
+		_bar_trust.max_value = 100
+		_bar_trust.value = t_val
+
+		var done_n := (_shift.get("completed_ids", []) as Array).size()
+		var tot_n := (_shift.get("assigned_ids", []) as Array).size()
+		_lbl_tasks_hdr.text = "%s (%d/%d)" % [_t("Daftar Tugas", "Tasks"), done_n, tot_n]
+		for c in _tasks_list.get_children():
+			c.queue_free()
+		for item in ChoreEngine.get_checklist_items(_shift, _loc()):
+			var row := Label.new()
+			var mark := "✓" if bool(item["done"]) else "○"
+			row.text = "%s %s" % [mark, String(item["label"])]
+			row.add_theme_font_size_override("font_size", 13)
+			row.add_theme_color_override("font_color", Color(0.16, 0.48, 0.30) if bool(item["done"]) else Color(0.22, 0.18, 0.14))
+			_tasks_list.add_child(row)
+		_tasks_card.visible = true
+
 		_btn_shift.text = _t("Selesai Shift", "End Shift")
 		_btn_action.visible = true
 		_btn_action.text = _t("Kerjakan [E]", "Do Chore [E]")
 	else:
-		_lbl_energy.text = "%s: %d" % [_t("Energi Maks", "Max Energy"), Progression.get_max_energy(_save)]
-		_lbl_trust.text = _t("Mode: Kamar", "Mode: Home")
-		_lbl_mode.text = _t("Siap Bekerja", "Ready to Work")
+		var max_e := Progression.get_max_energy(_save)
+		_lbl_energy.text = "%s %d/%d" % [_t("Energi", "Energy"), max_e, max_e]
+		_bar_energy.max_value = max_e
+		_bar_energy.value = max_e
+		_lbl_trust.text = _t("Kamar Pribadi", "Home Base")
+		_bar_trust.max_value = 100
+		_bar_trust.value = 100
+		_tasks_card.visible = false
 		_btn_shift.text = _t("Mulai Shift", "Start Shift")
 		_btn_action.visible = false
 
@@ -508,7 +534,7 @@ func _refresh_hud() -> void:
 	_btn_call_bf.text = _t("Telp Pacar", "Call BF")
 	_btn_career.text = _t("Karier", "Career")
 	_btn_ward.text = _t("Seragam", "Outfits")
-	_btn_kos.text = _t("Upgrade Kos", "Upgrade Room")
+	_btn_kos.text = Progression.get_room_upgrade_title(tier, _loc())
 	_btn_modal_close.text = _t("Tutup", "Close")
 	_refresh_call_banner()
 
@@ -588,7 +614,8 @@ func _open_wardrobe_modal() -> void:
 
 func _open_kos_modal() -> void:
 	_clear_modal()
-	_modal_title.text = _t("Upgrade Kamar Kos", "Upgrade Your Room")
+	var tier := CareerTiers.get_tier(String(_save.get("active_tier_id", "kamar_kos")))
+	_modal_title.text = Progression.get_room_upgrade_title(tier, _loc())
 	var owned: Array = _save.get("unlocked_kos_upgrades", [])
 	for raw_uid in Progression.KOS_UPGRADES.keys():
 		var uid := String(raw_uid)
@@ -647,24 +674,72 @@ func _style_btn(btn: Button, bg: Color, border: Color, txt: Color = Color(0.98, 
 	btn.add_theme_color_override("font_pressed_color", txt)
 
 func _build_hud() -> void:
-	var cream_sb := _make_box(Color(0.98, 0.95, 0.88, 0.94), Color(0.45, 0.34, 0.24), 14, 14, 8)
+	var cream_sb := _make_box(Color(0.98, 0.95, 0.88, 0.94), Color(0.45, 0.34, 0.24), 14, 12, 8)
 	var dark_ink := Color(0.18, 0.14, 0.11)
 
-	# Top pill
-	var top := PanelContainer.new()
-	top.position = Vector2(16, 14)
-	top.add_theme_stylebox_override("panel", cream_sb)
-	var top_h := HBoxContainer.new()
-	top_h.add_theme_constant_override("separation", 14)
-	top.add_child(top_h)
+	# 1. TOP-LEFT COMPACT CLUSTER (Wallet + Level + Mini Energy/Trust Bars)
+	var tl_vbox := VBoxContainer.new()
+	tl_vbox.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	tl_vbox.position = Vector2(14, 12)
+	tl_vbox.add_theme_constant_override("separation", 6)
 
+	var wallet_card := PanelContainer.new()
+	wallet_card.add_theme_stylebox_override("panel", cream_sb)
+	var w_v := VBoxContainer.new()
+	w_v.add_theme_constant_override("separation", 2)
 	_lbl_balance = Label.new()
+	_lbl_balance.add_theme_font_size_override("font_size", 18)
+	_lbl_balance.add_theme_color_override("font_color", Color(0.12, 0.44, 0.28))
 	_lbl_meta = Label.new()
+	_lbl_meta.add_theme_font_size_override("font_size", 13)
+	_lbl_meta.add_theme_color_override("font_color", dark_ink)
+	w_v.add_child(_lbl_balance)
+	w_v.add_child(_lbl_meta)
+	wallet_card.add_child(w_v)
+	tl_vbox.add_child(wallet_card)
+
+	var bars_card := PanelContainer.new()
+	bars_card.add_theme_stylebox_override("panel", _make_box(Color(0.98, 0.95, 0.88, 0.90), Color(0.45, 0.34, 0.24), 12, 10, 6))
+	var bars_h := HBoxContainer.new()
+	bars_h.add_theme_constant_override("separation", 10)
+
+	var e_box := VBoxContainer.new()
 	_lbl_energy = Label.new()
+	_lbl_energy.add_theme_font_size_override("font_size", 12)
+	_lbl_energy.add_theme_color_override("font_color", dark_ink)
+	_bar_energy = ProgressBar.new()
+	_bar_energy.custom_minimum_size = Vector2(98, 12)
+	_bar_energy.show_percentage = false
+	e_box.add_child(_lbl_energy)
+	e_box.add_child(_bar_energy)
+
+	var t_box := VBoxContainer.new()
 	_lbl_trust = Label.new()
-	_lbl_mode = Label.new()
-	for l in [_lbl_balance, _lbl_meta, _lbl_energy, _lbl_trust, _lbl_mode]:
-		(l as Label).add_theme_color_override("font_color", dark_ink)
+	_lbl_trust.add_theme_font_size_override("font_size", 12)
+	_lbl_trust.add_theme_color_override("font_color", dark_ink)
+	_bar_trust = ProgressBar.new()
+	_bar_trust.custom_minimum_size = Vector2(98, 12)
+	_bar_trust.show_percentage = false
+	t_box.add_child(_lbl_trust)
+	t_box.add_child(_bar_trust)
+
+	bars_h.add_child(e_box)
+	bars_h.add_child(t_box)
+	bars_card.add_child(bars_h)
+	tl_vbox.add_child(bars_card)
+	hud.add_child(tl_vbox)
+
+	# 2. TOP-RIGHT CLUSTER (Compact Controls + Collapsible Task Checklist)
+	var tr_vbox := VBoxContainer.new()
+	tr_vbox.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	tr_vbox.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	tr_vbox.offset_right = -14
+	tr_vbox.offset_top = 12
+	tr_vbox.add_theme_constant_override("separation", 6)
+
+	var util_h := HBoxContainer.new()
+	util_h.alignment = BoxContainer.ALIGNMENT_END
+	util_h.add_theme_constant_override("separation", 8)
 	_btn_lang = Button.new()
 	_btn_mute = Button.new()
 	_style_btn(_btn_lang, Color(0.32, 0.48, 0.42), Color(0.20, 0.34, 0.28))
@@ -678,21 +753,43 @@ func _build_hud() -> void:
 		_muted = not _muted
 		_refresh_hud()
 	)
-	for n in [_lbl_balance, _lbl_meta, _lbl_energy, _lbl_trust, _lbl_mode, _btn_lang, _btn_mute]:
-		top_h.add_child(n)
-	hud.add_child(top)
+	util_h.add_child(_btn_lang)
+	util_h.add_child(_btn_mute)
+	tr_vbox.add_child(util_h)
 
-	# Majikan Call Urgent Banner (warm coral alert card)
+	_tasks_card = PanelContainer.new()
+	_tasks_card.add_theme_stylebox_override("panel", _make_box(Color(0.98, 0.95, 0.88, 0.92), Color(0.45, 0.34, 0.24), 12, 12, 8))
+	var tk_v := VBoxContainer.new()
+	tk_v.add_theme_constant_override("separation", 3)
+	_lbl_tasks_hdr = Label.new()
+	_lbl_tasks_hdr.add_theme_font_size_override("font_size", 13)
+	_lbl_tasks_hdr.add_theme_color_override("font_color", dark_ink)
+	_tasks_list = VBoxContainer.new()
+	_tasks_list.add_theme_constant_override("separation", 2)
+	tk_v.add_child(_lbl_tasks_hdr)
+	tk_v.add_child(_tasks_list)
+	_tasks_card.add_child(tk_v)
+	tr_vbox.add_child(_tasks_card)
+	hud.add_child(tr_vbox)
+
+	# 3. TOP-CENTER OPEN SKY (Urgent Call Banner + Toast)
+	var tc_center := CenterContainer.new()
+	tc_center.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	tc_center.offset_top = 14
+	tc_center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var tc_v := VBoxContainer.new()
+	tc_v.add_theme_constant_override("separation", 8)
+	tc_v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
 	_call_banner = PanelContainer.new()
-	_call_banner.position = Vector2(310, 72)
 	_call_banner.visible = false
 	_call_banner.add_theme_stylebox_override("panel", _make_box(Color(0.76, 0.25, 0.20, 0.96), Color(0.98, 0.86, 0.65), 14, 14, 8))
 	var call_h := HBoxContainer.new()
-	call_h.add_theme_constant_override("separation", 12)
+	call_h.add_theme_constant_override("separation", 10)
 	_lbl_call_title = Label.new()
 	_lbl_call_title.add_theme_color_override("font_color", Color(0.99, 0.97, 0.94))
 	_bar_call = ProgressBar.new()
-	_bar_call.custom_minimum_size = Vector2(150, 22)
+	_bar_call.custom_minimum_size = Vector2(120, 20)
 	_btn_answer = Button.new()
 	_style_btn(_btn_answer, Color(0.18, 0.62, 0.40), Color(0.95, 0.90, 0.72))
 	_btn_answer.pressed.connect(_on_answer_call)
@@ -700,7 +797,18 @@ func _build_hud() -> void:
 	call_h.add_child(_bar_call)
 	call_h.add_child(_btn_answer)
 	_call_banner.add_child(call_h)
-	hud.add_child(_call_banner)
+	tc_v.add_child(_call_banner)
+
+	_toast_panel = PanelContainer.new()
+	_toast_panel.visible = false
+	_toast_panel.add_theme_stylebox_override("panel", _make_box(Color(0.20, 0.24, 0.22, 0.92), Color(0.84, 0.72, 0.46), 12, 14, 6))
+	_toast_lbl = Label.new()
+	_toast_lbl.add_theme_color_override("font_color", Color(0.98, 0.96, 0.90))
+	_toast_panel.add_child(_toast_lbl)
+	tc_v.add_child(_toast_panel)
+
+	tc_center.add_child(tc_v)
+	hud.add_child(tc_center)
 
 	# World floating prompt for nearest chore
 	_world_prompt = PanelContainer.new()
@@ -712,37 +820,35 @@ func _build_hud() -> void:
 	_world_prompt.add_child(_lbl_world_prompt)
 	hud.add_child(_world_prompt)
 
-	# Chore progress bar
+	# Chore progress bar (anchored bottom-center)
+	var bc_prog := CenterContainer.new()
+	bc_prog.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	bc_prog.offset_bottom = -82
+	bc_prog.offset_top = -148
+	bc_prog.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_chore_bar_wrap = PanelContainer.new()
-	_chore_bar_wrap.position = Vector2(490, 560)
 	_chore_bar_wrap.visible = false
 	_chore_bar_wrap.add_theme_stylebox_override("panel", cream_sb)
 	var ch_v := VBoxContainer.new()
 	_lbl_chore_prog = Label.new()
 	_lbl_chore_prog.add_theme_color_override("font_color", dark_ink)
 	_bar_chore = ProgressBar.new()
-	_bar_chore.custom_minimum_size = Vector2(260, 22)
+	_bar_chore.custom_minimum_size = Vector2(260, 20)
 	ch_v.add_child(_lbl_chore_prog)
 	ch_v.add_child(_bar_chore)
 	_chore_bar_wrap.add_child(ch_v)
-	hud.add_child(_chore_bar_wrap)
+	bc_prog.add_child(_chore_bar_wrap)
+	hud.add_child(bc_prog)
 
-	# Toast pill
-	_toast_panel = PanelContainer.new()
-	_toast_panel.position = Vector2(360, 132)
-	_toast_panel.visible = false
-	_toast_panel.add_theme_stylebox_override("panel", _make_box(Color(0.20, 0.24, 0.22, 0.90), Color(0.84, 0.72, 0.46), 12, 14, 6))
-	_toast_lbl = Label.new()
-	_toast_lbl.add_theme_color_override("font_color", Color(0.98, 0.96, 0.90))
-	_toast_panel.add_child(_toast_lbl)
-	hud.add_child(_toast_panel)
-
-	# Virtual Joystick (bottom-left)
+	# 4. BOTTOM-LEFT VIRTUAL JOYSTICK (Anchored)
 	_joy_base = Panel.new()
-	_joy_base.position = Vector2(24, 578)
+	_joy_base.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	_joy_base.offset_left = 18
+	_joy_base.offset_bottom = -18
+	_joy_base.offset_top = -130
+	_joy_base.offset_right = 130
 	_joy_base.custom_minimum_size = Vector2(112, 112)
-	_joy_base.size = Vector2(112, 112)
-	_joy_base.add_theme_stylebox_override("panel", _make_box(Color(0.96, 0.93, 0.86, 0.50), Color(0.45, 0.34, 0.24, 0.85), 56, 0, 0))
+	_joy_base.add_theme_stylebox_override("panel", _make_box(Color(0.96, 0.93, 0.86, 0.52), Color(0.45, 0.34, 0.24, 0.85), 56, 0, 0))
 	_joy_base.gui_input.connect(_on_joy_gui_input)
 	_joy_knob = Panel.new()
 	_joy_knob.custom_minimum_size = Vector2(40, 40)
@@ -753,10 +859,14 @@ func _build_hud() -> void:
 	_joy_base.add_child(_joy_knob)
 	hud.add_child(_joy_base)
 
-	# Bottom dock
+	# 5. BOTTOM-RIGHT TACTILE ACTION DOCK (Anchored)
 	var dock := HBoxContainer.new()
-	dock.position = Vector2(165, 646)
-	dock.add_theme_constant_override("separation", 10)
+	dock.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	dock.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	dock.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	dock.offset_right = -16
+	dock.offset_bottom = -16
+	dock.add_theme_constant_override("separation", 8)
 	_btn_shift = Button.new()
 	_style_btn(_btn_shift, Color(0.76, 0.44, 0.24), Color(0.48, 0.26, 0.14))
 	_btn_shift.pressed.connect(func():
@@ -783,7 +893,7 @@ func _build_hud() -> void:
 	_btn_kos = Button.new()
 	_style_btn(_btn_kos, Color(0.46, 0.38, 0.28), Color(0.30, 0.24, 0.16))
 	_btn_kos.pressed.connect(_open_kos_modal)
-	for b in [_btn_shift, _btn_action, _btn_game, _btn_call_bf, _btn_career, _btn_ward, _btn_kos]:
+	for b in [_btn_action, _btn_shift, _btn_game, _btn_call_bf, _btn_career, _btn_ward, _btn_kos]:
 		dock.add_child(b)
 	hud.add_child(dock)
 
