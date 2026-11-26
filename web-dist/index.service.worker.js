@@ -4,7 +4,7 @@
 // Incrementing CACHE_VERSION will kick off the install event and force
 // previously cached resources to be updated from the network.
 /** @type {string} */
-const CACHE_VERSION = '1795681073|5282563';
+const CACHE_VERSION = '1795681904|5297733';
 /** @type {string} */
 const CACHE_PREFIX = 'ART Simulator-sw-cache-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
@@ -21,6 +21,7 @@ const CACHEABLE_FILES = ["index.wasm","index.pck"];
 const FULL_CACHE = CACHED_FILES.concat(CACHEABLE_FILES);
 
 self.addEventListener('install', (event) => {
+	self.skipWaiting();
 	event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(CACHED_FILES)));
 });
 
@@ -30,8 +31,9 @@ self.addEventListener('activate', (event) => {
 			// Remove old caches.
 			return Promise.all(keys.filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME).map((key) => caches.delete(key)));
 		}
-	).then(function () {
+	).then(async function () {
 		// Enable navigation preload if available.
+		await self.clients.claim();
 		return ('navigationPreload' in self.registration) ? self.registration.navigationPreload.enable() : Promise.resolve();
 	}));
 });
@@ -121,6 +123,14 @@ self.addEventListener(
 						}
 					}
 				}
+				try {
+					const response = await fetchAndCache(event, cache, isCacheable);
+					if (response && response.ok) {
+						return response;
+					}
+				} catch (_err) {
+					// Offline fallback below
+				}
 				let cached = await cache.match(event.request);
 				if (cached != null) {
 					if (ENSURE_CROSSORIGIN_ISOLATION_HEADERS) {
@@ -128,9 +138,7 @@ self.addEventListener(
 					}
 					return cached;
 				}
-				// Try network if don't have it in cache.
-				const response = await fetchAndCache(event, cache, isCacheable);
-				return response;
+				return caches.match(OFFLINE_URL);
 			})());
 		} else if (ENSURE_CROSSORIGIN_ISOLATION_HEADERS) {
 			event.respondWith((async () => {
