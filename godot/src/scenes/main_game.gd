@@ -714,6 +714,8 @@ func _process(delta: float) -> void:
 			_refresh_hud()
 
 func _unhandled_input(event: InputEvent) -> void:
+	if (_onboarding_wrap != null and _onboarding_wrap.visible) or (_modal_backdrop != null and _modal_backdrop.visible):
+		return
 	if event is InputEventKey and event.pressed and event.keycode in [KEY_E, KEY_SPACE]:
 		if _in_shift and bool(_call_state.get("active_call", false)):
 			_on_answer_call()
@@ -803,6 +805,8 @@ func _refresh_hud() -> void:
 	var ob_active := _onboarding_wrap != null and _onboarding_wrap.visible
 	if _npcs_root != null:
 		_npcs_root.visible = not ob_active
+	if hotspots_root != null:
+		hotspots_root.visible = not ob_active
 	if _tl_card != null:
 		_tl_card.visible = not ob_active
 	if _tr_vbox != null:
