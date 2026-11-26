@@ -16,17 +16,19 @@ sky_material = SubResource("SkyMat")
 background_mode = 2
 sky = SubResource("SkyRes")
 ambient_light_source = 3
-ambient_light_sky_contribution = 0.25
+ambient_light_sky_contribution = 0.22
 ambient_light_energy = 0.34
-tonemap_mode = 2
-tonemap_exposure = 0.96
+tonemap_mode = 1
+tonemap_exposure = 1.0
+tonemap_white = 1.35
 ssao_enabled = true
 ssao_radius = 0.45
 ssao_intensity = 1.45
 sdfgi_enabled = false
 adjustment_enabled = true
-adjustment_contrast = 1.04
-adjustment_saturation = 1.02
+adjustment_brightness = 1.0
+adjustment_contrast = 1.08
+adjustment_saturation = 1.24
 
 [sub_resource type="WorldBoundaryShape3D" id="FloorShape"]
 
@@ -51,7 +53,7 @@ directional_shadow_mode = 1
 [node name="GroundBounceLight" type="DirectionalLight3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, -0.82, -0.57, 0, 0.57, -0.82, 0, -2, 0)
 light_color = Color(0.96, 0.86, 0.70, 1)
-light_energy = 0.24
+light_energy = 0.20
 light_specular = 0.0
 shadow_enabled = false
 

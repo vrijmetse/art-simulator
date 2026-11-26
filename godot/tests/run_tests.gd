@@ -19,6 +19,7 @@ const ArtPortraits := preload("res://src/core/portraits.gd")
 const ArtWishlistStory := preload("res://src/core/wishlist_story.gd")
 const ArtStreetPatrols := preload("res://src/core/street_patrols.gd")
 const ArtRetention := preload("res://src/core/retention.gd")
+const ArtLifeRhythm := preload("res://src/core/life_rhythm.gd")
 
 var _failed := 0
 var _passed := 0
@@ -823,6 +824,89 @@ func _initialize() -> void:
 	var res_meal := Progression.settle_shift(sv_meal, sh_meal, cs_meal)
 	_assert_eq(int(res_meal["meal_cost_rp"]), 8000, "day >= 3 non-live-in deducts Rp 8,000 meal sink cleanly")
 	_assert_eq(int(res_meal["save"]["balance_rp"]), 20000 + int(res_meal["payout_rp"]) - 8000, "meal sink deducted from balance after payout_rp")
+
+	# 25. Vibrant Mobile Color Grading
+	var cg_sun := DirectionalLight3D.new()
+	var cg_bounce := DirectionalLight3D.new()
+	var cg_env := Environment.new()
+	var cg_sky_mat := ProceduralSkyMaterial.new()
+	var cg_sky := Sky.new()
+	cg_sky.sky_material = cg_sky_mat
+	cg_env.sky = cg_sky
+	ArtAtmosphere.apply_lighting(cg_sun, cg_bounce, cg_env, "siang", "hujan")
+	_assert_true(cg_env.adjustment_saturation <= 1.16, "rainy saturation slightly tempered")
+	ArtAtmosphere.apply_lighting(cg_sun, cg_bounce, cg_env, "siang", "cerah")
+	_assert_true(cg_env.adjustment_enabled, "color adjustment enabled on Environment")
+	_assert_true(cg_env.adjustment_saturation >= 1.20, "sunny siang resets & boosts saturation >= 1.20")
+	_assert_true(cg_env.ambient_light_energy <= 0.38, "ambient energy stays crisp (<= 0.38) instead of washed out")
+	_assert_true(cg_bounce.light_energy <= 0.24, "bounce light subtle (<= 0.24) for shadow depth")
+	_assert_true(cg_sky_mat.sky_top_color.b > 0.85, "sunny sky top color vibrant tropical blue")
+	cg_sun.free()
+	cg_bounce.free()
+
+	# 26. Indonesian Life Rhythm: Clock, Sleep Recharge, Prayer Times, Ramadhan & THR
+	_assert_eq(ArtLifeRhythm.format_clock(450), "07:30", "clock formats 450 min as 07:30")
+	_assert_eq(ArtLifeRhythm.get_phase_from_minutes(450), "pagi", "07:30 is pagi")
+	_assert_eq(ArtLifeRhythm.get_phase_from_minutes(720), "siang", "12:00 is siang")
+	_assert_eq(ArtLifeRhythm.get_phase_from_minutes(930), "sore", "15:30 is sore")
+	_assert_eq(ArtLifeRhythm.get_phase_from_minutes(1140), "malam", "19:00 is malam")
+	_assert_eq(ArtLifeRhythm.get_season(9), "biasa", "day 9 is biasa")
+	_assert_eq(ArtLifeRhythm.get_season(10), "ramadhan", "day 10 is ramadhan")
+	_assert_eq(ArtLifeRhythm.get_season(16), "lebaran", "day 16 is lebaran")
+
+	var sh_low_e := ChoreEngine.create_shift("kamar_kos", MajikanProfiles.get_profile("ibu_kos_melati"), 100, 42)
+	_assert_eq(int(sh_low_e["energy"]), 42, "4-arg create_shift uses persistent initial_energy")
+	var sv_sl := Progression.create_player_save()
+	sv_sl["energy"] = 30
+	sv_sl["mood"] = 50
+	sv_sl["day"] = 1
+	var sh_sl := ChoreEngine.create_shift("kamar_kos", MajikanProfiles.get_profile("ibu_kos_melati"), 100, 30)
+	sh_sl = ChoreEngine.complete_chore(sh_sl, "make_bed", 0.85, 1)["shift"]
+	var res_sl := Progression.settle_shift(sv_sl, sh_sl, MajikanCall.create_state(MajikanProfiles.get_profile("ibu_kos_melati")))
+	_assert_true(int(res_sl["save"]["energy"]) < 30, "settle_shift persists drained energy")
+	_assert_eq(bool(res_sl["save"]["worked_since_sleep"]), true, "settle_shift marks worked_since_sleep")
+	var sl_after_work := ArtLifeRhythm.sleep_in_bed(res_sl["save"], [])
+	_assert_eq(int(sl_after_work["save"]["energy"]), 100, "sleep_in_bed recharges energy to 100")
+	_assert_eq(int(sl_after_work["save"]["day"]), 2, "sleep after shift does not double-increment day")
+	_assert_eq(bool(sl_after_work["save"]["worked_since_sleep"]), false, "sleep clears worked_since_sleep")
+	var sl_rest_only := ArtLifeRhythm.sleep_in_bed(sl_after_work["save"], [])
+	_assert_eq(int(sl_rest_only["save"]["day"]), 3, "rest-only sleep advances day by 1")
+
+	var sv_ram := Progression.create_player_save()
+	sv_ram["day"] = 10
+	sv_ram["balance_rp"] = 30000
+	var sh_ram := ChoreEngine.create_shift("kamar_kos", MajikanProfiles.get_profile("ibu_kos_melati"), 100)
+	sh_ram = ChoreEngine.complete_chore(sh_ram, "make_bed", 0.85, 1)["shift"]
+	var res_ram := Progression.settle_shift(sv_ram, sh_ram, MajikanCall.create_state(MajikanProfiles.get_profile("ibu_kos_melati")))
+	_assert_eq(int(res_ram["meal_cost_rp"]), 0, "Ramadhan daytime waives lunch meal sink")
+
+	var sv_pr := Progression.create_player_save()
+	sv_pr["day"] = 10
+	sv_pr["energy"] = 50
+	sv_pr["mood"] = 60
+	sv_pr["game_minutes"] = 1080
+	var pr1 := ArtLifeRhythm.perform_prayer(sv_pr, "maghrib", 10)
+	_assert_eq(bool(pr1["ok"]), true, "first maghrib prayer succeeds")
+	_assert_eq(int(pr1["save"]["mood"]), 87, "ramadhan maghrib prayer + buka puasa boosts mood (+12 + 15)")
+	_assert_eq(int(pr1["save"]["energy"]), 70, "ramadhan maghrib grants +20 takjil energy once")
+	var pr_dup := ArtLifeRhythm.perform_prayer(pr1["save"], "maghrib", 10)
+	_assert_eq(bool(pr_dup["ok"]), false, "same prayer cannot be farmed twice same day")
+	var tak_dup := ArtLifeRhythm.claim_takjil(pr1["save"], 10)
+	_assert_eq(bool(tak_dup["ok"]), false, "cannot double-dip takjil after ramadhan maghrib")
+
+	var sv_thr := Progression.create_player_save()
+	sv_thr["day"] = 16
+	sv_thr["balance_rp"] = 10000
+	var thr1 := ArtLifeRhythm.claim_thr_if_eligible(sv_thr)
+	_assert_eq(bool(thr1["ok"]), true, "Day 16 Lebaran grants THR bonus")
+	_assert_eq(int(thr1["bonus_rp"]), 150000, "kamar_kos THR is Rp 150,000")
+	var thr_dup := ArtLifeRhythm.claim_thr_if_eligible(thr1["save"])
+	_assert_eq(bool(thr_dup["ok"]), false, "THR cannot be claimed twice in same cycle")
+
+	var sv_lr_rt := SaveStore.deserialize('{"thr_claimed_cycle": -1, "game_minutes": 9999, "energy": -5}')
+	_assert_eq(int(sv_lr_rt["thr_claimed_cycle"]), -1, "SaveStore preserves signed thr_claimed_cycle == -1")
+	_assert_eq(int(sv_lr_rt["game_minutes"]), 1439, "SaveStore clamps game_minutes 0..1439")
+	_assert_eq(int(sv_lr_rt["energy"]), 0, "SaveStore clamps energy >= 0")
 
 	print("GODOT TDD RESULT: %d passed, %d failed" % [_passed, _failed])
 	quit(0 if _failed == 0 else 1)

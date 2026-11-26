@@ -156,6 +156,25 @@ static func sanitize(raw: Variant) -> Dictionary:
 	clean["shift_boost_count"] = _safe_int(d.get("shift_boost_count", 0), 0, 0)
 	clean["calls_answered_count"] = _safe_int(d.get("calls_answered_count", 0), 0, 0)
 
+	var max_e := Progression.get_max_energy(clean)
+	clean["energy"] = clampi(_safe_int(d.get("energy", max_e), max_e, 0), 0, max_e)
+	var raw_ws: Variant = d.get("worked_since_sleep", false)
+	clean["worked_since_sleep"] = bool(raw_ws) if typeof(raw_ws) == TYPE_BOOL else false
+	clean["game_minutes"] = clampi(_safe_int(d.get("game_minutes", 360), 360, 0), 0, 1439)
+	var raw_pr: Variant = d.get("prayer_reminders", true)
+	clean["prayer_reminders"] = bool(raw_pr) if typeof(raw_pr) == TYPE_BOOL else true
+	clean["prayed_day"] = _safe_int(d.get("prayed_day", int(clean["day"])), int(clean["day"]), 1)
+	var clean_prayed: Array = []
+	var raw_pt: Variant = d.get("prayed_today", [])
+	if typeof(raw_pt) == TYPE_ARRAY:
+		for pid in raw_pt:
+			var sp := String(pid)
+			if sp in ["subuh", "dzuhur", "ashar", "maghrib", "isya"] and not (sp in clean_prayed):
+				clean_prayed.append(sp)
+	clean["prayed_today"] = clean_prayed
+	clean["thr_claimed_cycle"] = _safe_int(d.get("thr_claimed_cycle", -1), -1, -1)
+	clean["takjil_claimed_day"] = _safe_int(d.get("takjil_claimed_day", 0), 0, 0)
+
 	clean["daily_log"] = SettingsStore.sanitize_daily_log(d.get("daily_log", []))
 
 	return clean

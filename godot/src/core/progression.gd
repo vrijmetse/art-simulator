@@ -165,6 +165,14 @@ static func create_player_save() -> Dictionary:
 		"unlocked_badges": [],
 		"shift_boost_count": 0,
 		"calls_answered_count": 0,
+		"energy": 100,
+		"worked_since_sleep": false,
+		"game_minutes": 360,
+		"prayer_reminders": true,
+		"prayed_day": 1,
+		"prayed_today": [],
+		"thr_claimed_cycle": -1,
+		"takjil_claimed_day": 0,
 		"daily_log": [],
 	}
 
@@ -326,18 +334,25 @@ static func settle_shift(save: Dictionary, shift: Dictionary, call_state: Dictio
 	var xp_gained := int(floor(float(raw_xp) * 0.5)) if is_fired else raw_xp
 
 	var tier := CareerTiers.get_tier(String(save.get("active_tier_id", "kamar_kos")))
+	var cur_day := maxi(1, int(save.get("day", 1)))
+	var cycle_day := ((cur_day - 1) % 30) + 1
+	var is_ramadhan := (cycle_day >= 10 and cycle_day <= 15)
 	var meal_cost := 0
-	if not is_fired and not bool(tier.get("live_in_room_provided", false)) and int(save.get("day", 1)) >= 3 and (int(save.get("balance_rp", 0)) + total_payout) >= 15000:
+	if not is_fired and not is_ramadhan and not bool(tier.get("live_in_room_provided", false)) and cur_day >= 3 and (int(save.get("balance_rp", 0)) + total_payout) >= 15000:
 		meal_cost = 8000
 
 	var nxt_save := save.duplicate(true)
 	nxt_save["balance_rp"] = maxi(0, int(nxt_save.get("balance_rp", 0)) + total_payout - meal_cost)
 	nxt_save["total_earnings_rp"] = int(nxt_save.get("total_earnings_rp", 0)) + total_payout
 	nxt_save["xp"] = int(nxt_save.get("xp", 0)) + xp_gained
-	nxt_save["day"] = int(nxt_save.get("day", 1)) + 1
+	nxt_save["day"] = cur_day + 1
 	nxt_save["completed_shifts"] = int(nxt_save.get("completed_shifts", 0)) + (0 if is_fired else 1)
 	nxt_save["fired_count"] = int(nxt_save.get("fired_count", 0)) + (1 if is_fired else 0)
 	nxt_save["mood"] = clampi(maxi(45, shift_mood), 25, 100)
+	var max_e := get_max_energy(nxt_save)
+	nxt_save["energy"] = clampi(int(shift.get("energy", max_e)), 0, max_e)
+	nxt_save["worked_since_sleep"] = true
+	nxt_save["game_minutes"] = clampi(int(nxt_save.get("game_minutes", 360)) + 240, 270, 1320)
 
 	var sk: Dictionary = nxt_save.get("skill_xp", {})
 	var earned_sk: Dictionary = shift.get("skill_xp_earned", {})

@@ -85,8 +85,9 @@ const TAP_BOOST_SECONDS := 0.65
 const MAX_TAP_BOOSTS_PER_CHORE := 3
 const TAP_BOOST_BONUS_RP := 1500
 
-static func create_shift(tier_id: String, profile: Dictionary, max_energy: int) -> Dictionary:
+static func create_shift(tier_id: String, profile: Dictionary, max_energy: int, initial_energy: int = -1) -> Dictionary:
 	var clamped_max := maxi(10, max_energy)
+	var start_e := clamped_max if initial_energy < 0 else clampi(initial_energy, 0, clamped_max)
 	var raw_ids: Array = TIER_CHORE_SETS.get(tier_id, TIER_CHORE_SETS["kamar_kos"])
 	var assigned: Array = raw_ids.duplicate()
 	return {
@@ -94,7 +95,7 @@ static func create_shift(tier_id: String, profile: Dictionary, max_energy: int) 
 		"profile_id": String(profile.get("id", "ibu_kos_melati")),
 		"assigned_ids": assigned,
 		"completed_ids": [],
-		"energy": clamped_max,
+		"energy": start_e,
 		"max_energy": clamped_max,
 		"earned_rp": 0,
 		"xp_earned": 0,

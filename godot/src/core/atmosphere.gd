@@ -21,49 +21,62 @@ static func get_weather(day: int, weather_fx: bool) -> String:
 	return "hujan" if posmod(maxi(1, day), 3) == 0 else "cerah"
 
 static func apply_lighting(sun: DirectionalLight3D, bounce: DirectionalLight3D, env: Environment, phase: String, weather: String) -> void:
-	var sun_col := Color(1.0, 0.96, 0.88)
-	var sun_energy := 1.05
-	var bounce_col := Color(0.75, 0.85, 1.0)
-	var bounce_energy := 0.35
-	var amb_col := Color(0.85, 0.88, 0.95)
-	var amb_energy := 0.45
+	var sun_col := Color(1.0, 0.94, 0.80)
+	var sun_energy := 1.08
+	var bounce_col := Color(0.92, 0.82, 0.68)
+	var bounce_energy := 0.20
+	var amb_col := Color(0.76, 0.82, 0.92)
+	var amb_energy := 0.34
+	var adj_sat := 1.24
+	var adj_con := 1.08
+	var sky_top := Color(0.18, 0.56, 0.94)
 
 	match phase:
 		"pagi":
-			sun_col = Color(1.0, 0.93, 0.82)
-			sun_energy = 0.95
-			bounce_col = Color(0.8, 0.88, 1.0)
-			bounce_energy = 0.35
-			amb_col = Color(0.88, 0.9, 0.95)
-			amb_energy = 0.45
+			sun_col = Color(1.0, 0.90, 0.72)
+			sun_energy = 1.06
+			bounce_col = Color(0.92, 0.82, 0.68)
+			bounce_energy = 0.20
+			amb_col = Color(0.78, 0.82, 0.92)
+			amb_energy = 0.34
+			sky_top = Color(0.20, 0.58, 0.94)
 		"siang":
-			sun_col = Color(1.0, 0.98, 0.94)
-			sun_energy = 1.2
-			bounce_col = Color(0.82, 0.9, 1.0)
-			bounce_energy = 0.4
-			amb_col = Color(0.92, 0.94, 0.98)
-			amb_energy = 0.5
+			sun_col = Color(1.0, 0.96, 0.86)
+			sun_energy = 1.22
+			bounce_col = Color(0.88, 0.84, 0.74)
+			bounce_energy = 0.21
+			amb_col = Color(0.72, 0.82, 0.95)
+			amb_energy = 0.35
+			sky_top = Color(0.14, 0.54, 0.96)
 		"sore":
-			sun_col = Color(1.0, 0.72, 0.48)
-			sun_energy = 0.85
-			bounce_col = Color(0.9, 0.68, 0.58)
-			bounce_energy = 0.32
-			amb_col = Color(0.85, 0.72, 0.68)
-			amb_energy = 0.4
-		"malam":
-			sun_col = Color(0.52, 0.62, 0.85)
-			sun_energy = 0.38
-			bounce_col = Color(0.35, 0.45, 0.7)
-			bounce_energy = 0.25
-			amb_col = Color(0.32, 0.38, 0.55)
+			sun_col = Color(1.0, 0.64, 0.36)
+			sun_energy = 0.96
+			bounce_col = Color(0.88, 0.60, 0.46)
+			bounce_energy = 0.19
+			amb_col = Color(0.74, 0.58, 0.68)
 			amb_energy = 0.32
+			adj_sat = 1.26
+			sky_top = Color(0.24, 0.36, 0.74)
+		"malam":
+			sun_col = Color(0.46, 0.58, 0.90)
+			sun_energy = 0.42
+			bounce_col = Color(0.32, 0.42, 0.68)
+			bounce_energy = 0.18
+			amb_col = Color(0.28, 0.34, 0.54)
+			amb_energy = 0.28
+			adj_sat = 1.14
+			adj_con = 1.06
+			sky_top = Color(0.08, 0.14, 0.32)
 
 	if weather == "hujan":
-		sun_energy *= 0.65
-		bounce_energy *= 0.8
-		amb_energy *= 0.8
-		sun_col = sun_col.lerp(Color(0.68, 0.75, 0.85), 0.45)
-		amb_col = amb_col.lerp(Color(0.6, 0.68, 0.78), 0.45)
+		sun_energy *= 0.68
+		bounce_energy *= 0.82
+		amb_energy *= 0.86
+		adj_sat = 1.12
+		adj_con = 1.06
+		sun_col = sun_col.lerp(Color(0.62, 0.72, 0.86), 0.42)
+		amb_col = amb_col.lerp(Color(0.54, 0.64, 0.78), 0.42)
+		sky_top = sky_top.lerp(Color(0.36, 0.46, 0.58), 0.55)
 
 	if sun != null:
 		sun.light_color = sun_col
@@ -74,10 +87,14 @@ static func apply_lighting(sun: DirectionalLight3D, bounce: DirectionalLight3D, 
 	if env != null:
 		env.ambient_light_color = amb_col
 		env.ambient_light_energy = amb_energy
+		env.adjustment_enabled = true
+		env.adjustment_brightness = 1.0
+		env.adjustment_contrast = adj_con
+		env.adjustment_saturation = adj_sat
 		if env.sky != null and env.sky.sky_material is ProceduralSkyMaterial:
 			var sky_mat := env.sky.sky_material as ProceduralSkyMaterial
-			sky_mat.sky_top_color = amb_col.lerp(Color(0.25, 0.48, 0.82), 0.5)
-			sky_mat.sky_horizon_color = sun_col.lerp(Color(0.75, 0.82, 0.9), 0.4)
+			sky_mat.sky_top_color = sky_top
+			sky_mat.sky_horizon_color = sun_col.lerp(Color(0.86, 0.88, 0.92), 0.30)
 
 static func _set_nodes_visible(stage_root: Node, names: Array, is_visible: bool) -> void:
 	for n_name in names:

@@ -19,6 +19,7 @@ const Portraits := preload("res://src/core/portraits.gd")
 const WishlistStory := preload("res://src/core/wishlist_story.gd")
 const StreetPatrols := preload("res://src/core/street_patrols.gd")
 const Retention := preload("res://src/core/retention.gd")
+const LifeRhythm := preload("res://src/core/life_rhythm.gd")
 const PlayerControllerScene := preload("res://src/scenes/player_controller.gd")
 const ChoreHotspotScene := preload("res://src/scenes/chore_hotspot.gd")
 
@@ -90,6 +91,9 @@ var _audio_unlocked := false
 var _pending_story_tier := ""
 var _pending_level_unlocks: Array = []
 var _shift_event: Dictionary = {}
+var _clock_accum := 0.0
+var _late_night_warned_day := 0
+var _last_prayer_id := ""
 
 # HUD nodes
 var _lbl_balance: Label
@@ -431,8 +435,8 @@ func _sync_ambient_audio() -> void:
 
 func _refresh_atmosphere() -> void:
 	var day := int(_save.get("day", 1))
-	var t_elapsed := _shift_elapsed_s if _in_shift else 15.0
-	_cur_phase = Atmosphere.get_phase(_world_mode, day, t_elapsed)
+	var g_min := int(_save.get("game_minutes", 360))
+	_cur_phase = LifeRhythm.get_phase_from_minutes(g_min)
 	_cur_weather = Atmosphere.get_weather(day, bool(_save.get("weather_fx", true)))
 	var env := world_env.environment if world_env != null else null
 	Atmosphere.apply_lighting(sun_light, bounce_light, env, _cur_phase, _cur_weather)
@@ -615,6 +619,9 @@ func _enter_home_mode() -> void:
 	_spawn_npcs(NpcRoster.get_home_npcs(tier_id))
 	_clear_street_traffic()
 	_spawn_portal("exit_street", Vector3(0.45, 0.0, 1.15), Color(0.96, 0.78, 0.24), "Keluar Kamar", "Step Outside")
+	_spawn_portal("sleep_bed", Vector3(-1.15, 0.0, -0.75), Color(0.45, 0.74, 0.96), "Tidur di Kasur", "Sleep to Recharge")
+	if bool(_save.get("prayer_reminders", true)):
+		_spawn_portal("pray_mat", Vector3(1.15, 0.0, -0.75), Color(0.32, 0.84, 0.62), "Sholat / Doa", "Pray")
 	_refresh_atmosphere()
 	_refresh_hud()
 
@@ -658,15 +665,19 @@ func _enter_street_mode(from_mode: String = "home") -> void:
 	_show_toast(_t("Di gang luar — sapa tetangga atau masuk Rumah Majikan.", "Outside on the street — greet neighbors or enter Work Shift."))
 	_refresh_hud()
 
-func _start_shift() -> void:
+func _start_shift(force_low_energy: bool = false) -> void:
+	var max_e := Progression.get_max_energy(_save)
+	var cur_e := clampi(int(_save.get("energy", max_e)), 0, max_e)
+	if not force_low_energy and cur_e < 20:
+		_open_low_energy_modal(cur_e)
+		return
 	if _audio_unlocked:
 		_play_sfx(_wav_door)
 	var tier_id := String(_save.get("active_tier_id", "kamar_kos"))
 	var prof := MajikanProfiles.get_profile(String(_save.get("active_profile_id", "ibu_kos_melati")))
 	if prof.is_empty():
 		prof = MajikanProfiles.get_profile("ibu_kos_melati")
-	var max_e := Progression.get_max_energy(_save)
-	_shift = ChoreEngine.create_shift(tier_id, prof, max_e)
+	_shift = ChoreEngine.create_shift(tier_id, prof, max_e, cur_e)
 	_shift_event = Retention.get_shift_event(int(_save.get("day", 1)), tier_id, _loc())
 	var start_mood := Progression.get_shift_starting_mood(_save)
 	_call_state = MajikanCall.create_state(prof, start_mood)
@@ -903,6 +914,12 @@ func _trigger_world_action() -> void:
 		if pid == "exit_street":
 			_enter_street_mode("home")
 			return
+		elif pid == "sleep_bed":
+			_perform_sleep_recharge()
+			return
+		elif pid == "pray_mat":
+			_trigger_prayer_action()
+			return
 		elif pid == "enter_home":
 			_enter_home_mode()
 			return
@@ -1086,6 +1103,34 @@ func _process(delta: float) -> void:
 		_footstep_cd = 0.36
 		if _step_player != null and _wav_step != null:
 			_step_player.play()
+
+	var modal_busy := (_onboarding_wrap != null and _onboarding_wrap.visible) or (_modal_backdrop != null and _modal_backdrop.visible)
+	if not modal_busy and bool(_save.get("onboarding_done", false)):
+		_clock_accum += delta * 2.0
+		if _clock_accum >= 1.0:
+			var step_m := int(_clock_accum)
+			_clock_accum -= float(step_m)
+			var prev_m := int(_save.get("game_minutes", 360))
+			var cur_m := mini(1439, prev_m + step_m)
+			if cur_m != prev_m:
+				_save["game_minutes"] = cur_m
+				var cur_day := int(_save.get("day", 1))
+				var trig := LifeRhythm.check_prayer_trigger(prev_m, cur_m, int(_save.get("prayed_day", cur_day)), cur_day, _save.get("prayed_today", []), bool(_save.get("prayer_reminders", true)))
+				if bool(trig.get("triggered", false)):
+					_last_prayer_id = String(trig["id"])
+					_play_sfx(_wav_coin)
+					var p_lbl := String(trig["label_en" if _loc() == "en" else "label_id"])
+					if _last_prayer_id == "maghrib" and LifeRhythm.get_season(cur_day) == "ramadhan":
+						_show_toast(_t("Adzan Maghrib! Waktunya Sholat & Buka Puasa Takjil (Menu / Sajadah).", "Maghrib time! Time to pray & break fast (Menu / Prayer Mat)."), "player", "happy")
+					else:
+						_show_toast(_t("Waktu Sholat %s tiba! (+12 Mood lewat Menu/Kamar)" % p_lbl, "%s prayer time! (+12 Mood via Menu/Room)" % p_lbl), "player", "happy")
+				elif LifeRhythm.is_late_night(cur_m) and _late_night_warned_day != cur_day:
+					_late_night_warned_day = cur_day
+					_show_toast(_t("Sudah larut malam (21:30)! Pulang ke kamar & Tidur di Kasur.", "Late night (21:30)! Head back & sleep in your bed."))
+				if LifeRhythm.get_phase_from_minutes(cur_m) != _cur_phase:
+					_refresh_atmosphere()
+				if _lbl_meta != null:
+					_lbl_meta.text = _format_meta_clock()
 
 	# Smooth camera follow (or close-up turntable framing during Onboarding!)
 	if _onboarding_wrap != null and _onboarding_wrap.visible:
@@ -1334,15 +1379,13 @@ func _on_distract(activity_id: String) -> void:
 	_refresh_hud()
 
 func _format_meta_clock() -> String:
-	var base := Progression.format_shift_clock(int(_save.get("day", 1)), _shift_elapsed_s if _in_shift else 0.0, _loc())
-	var ph_map := {
-		"pagi": _t("Pagi", "Morning"),
-		"siang": _t("Siang", "Day"),
-		"sore": _t("Sore", "Afternoon"),
-		"malam": _t("Malam", "Night"),
-	}
+	var cur_day := maxi(1, int(_save.get("day", 1)))
+	var g_min := int(_save.get("game_minutes", 360))
+	var clock_s := LifeRhythm.format_clock(g_min)
+	var season := LifeRhythm.get_season(cur_day)
+	var s_tag := " Puasa" if season == "ramadhan" else (" Lebaran" if season == "lebaran" else "")
 	var w_icon := "🌧" if _cur_weather == "hujan" else ("🌙" if _cur_phase == "malam" else "☀")
-	return "%s • %s %s" % [base, String(ph_map.get(_cur_phase, "Pagi")), w_icon]
+	return "%s%d • %s %s%s" % [_t("H", "D"), cur_day, clock_s, w_icon, s_tag]
 
 func _refresh_hud() -> void:
 	var ob_active := _onboarding_wrap != null and _onboarding_wrap.visible
@@ -1400,11 +1443,13 @@ func _refresh_hud() -> void:
 		_btn_action.text = _t("Kerjakan [E]", "Do Chore [E]")
 	else:
 		var max_e := Progression.get_max_energy(_save)
+		var cur_e := clampi(int(_save.get("energy", max_e)), 0, max_e)
+		var cur_e_pct := int(round(100.0 * float(cur_e) / float(maxi(1, max_e))))
 		var tier_label := String(tier.get("house_type_en", tier.get("house_type", "")) if _loc() == "en" else tier.get("house_type", ""))
 		var h_mood := clampi(int(_save.get("mood", 65)) + Progression.get_mood_bonus(_save), 0, 100)
-		_lbl_energy.text = "%s 100%%" % _t("ENERGI", "ENERGY")
+		_lbl_energy.text = "%s %d%%" % [_t("ENERGI", "ENERGY"), cur_e_pct]
 		_bar_energy.max_value = max_e
-		_bar_energy.value = max_e
+		_bar_energy.value = cur_e
 		if _lbl_mood != null:
 			var h_bonus := _t(" (+15% Siap!)", " (+15% Ready!)") if h_mood >= 80 else ""
 			_lbl_mood.text = "%s %d%%%s" % [_t("SEMANGAT", "MOOD"), h_mood, h_bonus]
@@ -1629,6 +1674,79 @@ func _open_retention_modal() -> void:
 	bd_lbl.add_theme_font_size_override("font_size", 11)
 	bd_lbl.add_theme_color_override("font_color", Color(0.98, 0.84, 0.34))
 	_modal_list.add_child(bd_lbl)
+	_show_modal()
+
+func _perform_sleep_recharge() -> void:
+	var sl := LifeRhythm.sleep_in_bed(_save, _save.get("unlocked_kos_upgrades", []))
+	_save = sl["save"]
+	_last_prayer_id = ""
+	SaveStore.save_to_path(_save)
+	_play_sfx(_wav_fanfare)
+	_refresh_atmosphere()
+	_refresh_hud()
+	var thr := int(sl.get("thr_bonus_rp", 0))
+	var season := String(sl.get("season", "biasa"))
+	if thr > 0:
+		_show_toast(_t("Selamat Lebaran! Dapat THR Majikan +%s & Energi 100%%!" % I18n.format_balance(thr, "id"), "Happy Eid! Employer THR +%s & Energy 100%%!" % I18n.format_balance(thr, "en")), "player", "happy")
+	elif season == "ramadhan":
+		_show_toast(_t("Sahur & Tidur nyenyak! Bulan Ramadhan Hari %d — Energi 100%%." % int(sl["day"]), "Suhoor & rested! Ramadhan Day %d — Energy 100%%." % int(sl["day"])), "player", "happy")
+	else:
+		_show_toast(_t("Tidur nyenyak! Hari %d dimulai — Energi 100%% & Mood segar." % int(sl["day"]), "Well rested! Day %d begins — Energy 100%% & fresh Mood." % int(sl["day"])), "player", "happy")
+
+func _trigger_prayer_action() -> void:
+	var cur_day := maxi(1, int(_save.get("day", 1)))
+	var g_min := int(_save.get("game_minutes", 360))
+	var pid := _last_prayer_id
+	if pid == "":
+		if g_min < 630:
+			pid = "subuh"
+		elif g_min < 870:
+			pid = "dzuhur"
+		elif g_min < 1080:
+			pid = "ashar"
+		elif g_min < 1155:
+			pid = "maghrib"
+		else:
+			pid = "isya"
+	var res := LifeRhythm.perform_prayer(_save, pid, cur_day)
+	if not bool(res["ok"]):
+		_show_toast(_t("Sudah sholat untuk waktu ini — tetap semangat ya!", "Already prayed for this time — stay blessed!"))
+		return
+	_save = res["save"]
+	if _in_shift:
+		_call_state["mood"] = clampi(int(_call_state.get("mood", 60)) + 12, 0, 100)
+	SaveStore.save_to_path(_save)
+	_play_sfx(_wav_coin)
+	_refresh_hud()
+	if bool(res.get("got_takjil", false)):
+		_show_toast(_t("Alhamdulillah Sholat Maghrib & Buka Puasa! (+20 Energi, +27 Mood)", "Maghrib prayer & Iftar! (+20 Energy, +27 Mood)"), "player", "happy")
+	elif _in_shift:
+		_show_toast(_t("Majikan izin sholat sebentar! (+12 Mood, +5 XP)", "Employer gave prayer break! (+12 Mood, +5 XP)"), "player", "happy")
+	else:
+		_show_toast(_t("Hati tenang selesai sholat! (+12 Mood, +5 XP)", "Peaceful after prayer! (+12 Mood, +5 XP)"), "player", "happy")
+
+func _open_low_energy_modal(cur_e: int) -> void:
+	_clear_modal()
+	_modal_title.text = _t("ENERGI MENIPIS (%d%%)" % cur_e, "LOW ENERGY (%d%%)" % cur_e)
+	var lbl := Label.new()
+	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	lbl.text = _t("Energi tinggal %d%%! Sebaiknya pulang ke kamar dan Tidur di Kasur (Gratis, 100%%) sebelum kerja shift baru." % cur_e, "Energy is at %d%%! Head to your room and sleep in bed (Free, 100%%) before starting a shift." % cur_e)
+	_modal_list.add_child(lbl)
+	var b_home := Button.new()
+	b_home.text = _t("Pulang ke Kamar untuk Tidur", "Go Back to Room to Sleep")
+	_style_btn(b_home, Color(0.20, 0.48, 0.56), Color(0.98, 0.84, 0.34))
+	b_home.pressed.connect(func():
+		_modal_backdrop.visible = false
+		_enter_home_mode()
+	)
+	_modal_list.add_child(b_home)
+	var b_go := Button.new()
+	b_go.text = _t("Tetap Mulai Shift Sekarang", "Start Shift Anyway")
+	b_go.pressed.connect(func():
+		_modal_backdrop.visible = false
+		_start_shift(true)
+	)
+	_modal_list.add_child(b_go)
 	_show_modal()
 
 func _open_storybook_modal() -> void:
@@ -2038,6 +2156,27 @@ func _open_settings_modal() -> void:
 	btn_ret.pressed.connect(_open_retention_modal)
 	_modal_list.add_child(btn_ret)
 
+	var pray_on := bool(_save.get("prayer_reminders", true))
+	if pray_on:
+		var btn_pray_now := Button.new()
+		btn_pray_now.text = _t("Sholat / Doa (+12 Mood)" + (" & Buka Puasa" if LifeRhythm.get_season(int(_save.get("day", 1))) == "ramadhan" else ""), "Pray (+12 Mood)" + (" & Break Fast" if LifeRhythm.get_season(int(_save.get("day", 1))) == "ramadhan" else ""))
+		btn_pray_now.pressed.connect(func():
+			_modal_backdrop.visible = false
+			_trigger_prayer_action()
+		)
+		_modal_list.add_child(btn_pray_now)
+
+	var btn_pr_tog := Button.new()
+	btn_pr_tog.text = _t("Pengingat Waktu Sholat: Aktif" if pray_on else "Pengingat Waktu Sholat: Mati", "Prayer Reminders: On" if pray_on else "Prayer Reminders: Off")
+	btn_pr_tog.pressed.connect(func():
+		_save["prayer_reminders"] = not pray_on
+		SaveStore.save_to_path(_save)
+		if _world_mode == "home":
+			_enter_home_mode()
+		_open_settings_modal()
+	)
+	_modal_list.add_child(btn_pr_tog)
+
 	var btn_lang := Button.new()
 	btn_lang.text = _t("Bahasa: Indonesia (Ubah ke EN)", "Language: English (Switch to ID)")
 	btn_lang.pressed.connect(func():
@@ -2169,6 +2308,8 @@ func _build_hud() -> void:
 	tl_v.add_theme_constant_override("separation", 4)
 
 	_lbl_meta = Label.new()
+	_lbl_meta.custom_minimum_size = Vector2(200, 0)
+	_lbl_meta.clip_text = true
 	_lbl_meta.add_theme_font_size_override("font_size", 14)
 	_lbl_meta.add_theme_color_override("font_color", light_ink)
 
