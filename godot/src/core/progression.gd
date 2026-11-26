@@ -114,6 +114,10 @@ static func create_player_save() -> Dictionary:
 		"completed_shifts": 0,
 		"fired_count": 0,
 		"total_earnings_rp": 0,
+		"gfx_quality": "high",
+		"weather_fx": true,
+		"muted": false,
+		"daily_log": [],
 	}
 
 static func resolve_player_model_path(save: Dictionary) -> String:

@@ -12,6 +12,10 @@ const SaveStore := preload("res://src/core/save_store.gd")
 const NpcRoster := preload("res://src/core/npc_roster.gd")
 const PlayerControllerScene := preload("res://src/scenes/player_controller.gd")
 const AudioSynth := preload("res://src/core/audio_synth.gd")
+const ArtAtmosphere := preload("res://src/core/atmosphere.gd")
+const ArtSettings := preload("res://src/core/settings_store.gd")
+const ArtStreetTraffic := preload("res://src/core/street_traffic.gd")
+const ArtPortraits := preload("res://src/core/portraits.gd")
 
 var _failed := 0
 var _passed := 0
@@ -555,6 +559,67 @@ func _initialize() -> void:
 	_assert_eq(int(bad_mood_save["mood"]), 100, "mood clamped <= 100")
 	_assert_eq(String(bad_mood_save["chatted_dates"].get("ibu_sari", "")), "day_2", "valid chatted_dates preserved")
 	_assert_eq(bad_mood_save["chatted_dates"].has("bad"), false, "non-string chatted_dates stripped")
+
+	# 20. All 4 Gaps: Atmosphere + 3D Kos Upgrades, Street Traffic, Portraits + Map, Settings + Daily Log
+	_assert_eq(ArtAtmosphere.get_phase("shift", 1, 10.0), "pagi", "phase pagi at 10s")
+	_assert_eq(ArtAtmosphere.get_phase("shift", 1, 60.0), "siang", "phase siang at 60s")
+	_assert_eq(ArtAtmosphere.get_phase("shift", 1, 125.0), "sore", "phase sore at 125s")
+	_assert_eq(ArtAtmosphere.get_phase("shift", 1, 180.0), "malam", "phase malam at 180s")
+	_assert_eq(ArtAtmosphere.get_weather(3, true), "hujan", "day 3 rainy when weather_fx enabled")
+	_assert_eq(ArtAtmosphere.get_weather(3, false), "cerah", "weather forced cerah when weather_fx disabled")
+
+	var kos_ps: PackedScene = load("res://assets/models/kos_room.glb")
+	_assert_true(kos_ps != null, "kos_room.glb loads for upgrade visual check")
+	if kos_ps != null:
+		var kos_inst := kos_ps.instantiate()
+		root.add_child(kos_inst)
+		ArtAtmosphere.apply_kos_upgrades_visual(kos_inst, [])
+		var ac_node := kos_inst.find_child("IndoorAC", true, false) as Node3D
+		var fan_node := kos_inst.find_child("FanBlade_0", true, false) as Node3D
+		var rc_node := kos_inst.find_child("RiceCookerStand", true, false) as Node3D
+		_assert_true(ac_node != null and not ac_node.visible, "IndoorAC hidden before purchase")
+		_assert_true(fan_node != null and not fan_node.visible, "FanBlade_0 hidden before purchase")
+		_assert_true(rc_node != null and not rc_node.visible, "RiceCookerStand hidden before purchase")
+		ArtAtmosphere.apply_kos_upgrades_visual(kos_inst, ["ac_hemat", "kipas_angin", "magic_com_pro", "rak_sepatu", "kasur_empuk"])
+		_assert_true(ac_node.visible, "IndoorAC visible after ac_hemat purchase")
+		_assert_true(fan_node.visible, "FanBlade_0 visible after kipas_angin purchase")
+		_assert_true(rc_node.visible, "RiceCookerStand visible after magic_com_pro purchase")
+		_assert_true(kos_inst.find_child("RakSepatu", true, false) != null, "RakSepatu spawned after rak_sepatu purchase")
+		root.remove_child(kos_inst)
+		kos_inst.free()
+
+	_assert_eq(ArtStreetTraffic.get_traffic_config("kamar_kos").size(), 0, "kampung_gang spawns 0 vehicles")
+	var t_p36: Array = ArtStreetTraffic.get_traffic_config("perumahan_36")
+	_assert_true(t_p36.size() >= 2, "perumahan_36 spawns cruising traffic")
+	for tv in t_p36:
+		_assert_true(ArtStreetTraffic.is_lane_safe(float(tv["z"])), "vehicle lane safely outside sidewalk: " + String(tv["id"]))
+		_assert_true(ResourceLoader.exists(String(tv["model_path"])), "vehicle model exists: " + String(tv["model_path"]))
+	var t_step := t_p36.duplicate(true)
+	var x0 := float(t_step[0]["x"])
+	ArtStreetTraffic.step_vehicles(t_step, 1.0)
+	_assert_true(float(t_step[0]["x"]) != x0, "step_vehicles moves vehicle x")
+
+	var p_a := ArtPortraits.get_portrait("ibu_melati", "strict")
+	var p_b := ArtPortraits.get_portrait("ibu_melati", "strict")
+	_assert_true(p_a != null and p_a.get_width() == 48 and p_a.get_height() == 48, "portrait is 48x48 ImageTexture")
+	_assert_true(p_a == p_b, "portrait cached in static dictionary")
+	var sv_map := Progression.create_player_save()
+	sv_map["xp"] = 250
+	sv_map["active_tier_id"] = "kampung"
+	var map_nodes := ArtPortraits.get_map_destinations(sv_map, "home")
+	_assert_true(map_nodes.size() >= 8, "map returns places + 5 district tiers")
+	_assert_eq(bool(map_nodes[0]["active"]), true, "kos_room marked active in home mode")
+
+	var sv_log := Progression.create_player_save()
+	for i_log in range(15):
+		sv_log = ArtSettings.append_daily_log(sv_log, {"day": i_log + 1, "kind": "shift", "title_id": "Shift #%d" % (i_log + 1), "title_en": "Shift #%d" % (i_log + 1), "delta_rp": 50000})
+	_assert_eq(ArtSettings.get_daily_log(sv_log).size(), ArtSettings.MAX_DAILY_LOG, "daily_log capped at 12 entries")
+	sv_log["gfx_quality"] = "low"
+	sv_log["weather_fx"] = false
+	var sv_rt := SaveStore.deserialize(SaveStore.serialize(sv_log))
+	_assert_eq(String(sv_rt["gfx_quality"]), "low", "SaveStore preserves gfx_quality")
+	_assert_eq(bool(sv_rt["weather_fx"]), false, "SaveStore preserves weather_fx")
+	_assert_eq(ArtSettings.get_daily_log(sv_rt).size(), ArtSettings.MAX_DAILY_LOG, "SaveStore preserves daily_log")
 
 	print("GODOT TDD RESULT: %d passed, %d failed" % [_passed, _failed])
 	quit(0 if _failed == 0 else 1)

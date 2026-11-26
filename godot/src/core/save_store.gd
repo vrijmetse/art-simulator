@@ -3,6 +3,7 @@ extends RefCounted
 
 const CareerTiers := preload("res://src/core/career_tiers.gd")
 const Progression := preload("res://src/core/progression.gd")
+const SettingsStore := preload("res://src/core/settings_store.gd")
 
 const DEFAULT_PATH := "user://save_v1.json"
 
@@ -85,6 +86,11 @@ static func sanitize(raw: Variant) -> Dictionary:
 		for k in Progression.SKILL_KEYS:
 			clean_sk[k] = _safe_int(raw_sk.get(k, 0), 0, 0)
 	clean["skill_xp"] = clean_sk
+
+	clean["gfx_quality"] = SettingsStore.sanitize_gfx_quality(d.get("gfx_quality", "high"))
+	clean["weather_fx"] = bool(d.get("weather_fx", true))
+	clean["muted"] = bool(d.get("muted", false))
+	clean["daily_log"] = SettingsStore.sanitize_daily_log(d.get("daily_log", []))
 
 	return clean
 

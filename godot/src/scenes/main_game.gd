@@ -11,6 +11,10 @@ const AudioSynth := preload("res://src/core/audio_synth.gd")
 const SceneVisuals := preload("res://src/core/scene_visuals.gd")
 const NpcRoster := preload("res://src/core/npc_roster.gd")
 const Neighborhood := preload("res://src/core/neighborhood.gd")
+const Atmosphere := preload("res://src/core/atmosphere.gd")
+const Settings := preload("res://src/core/settings_store.gd")
+const StreetTraffic := preload("res://src/core/street_traffic.gd")
+const Portraits := preload("res://src/core/portraits.gd")
 const PlayerControllerScene := preload("res://src/scenes/player_controller.gd")
 const ChoreHotspotScene := preload("res://src/scenes/chore_hotspot.gd")
 
@@ -29,6 +33,9 @@ const CHORE_POSITIONS := {
 @onready var cam: Camera3D = $Camera3D
 @onready var sfx: AudioStreamPlayer = $SfxPlayer
 @onready var hud: CanvasLayer = $HUD
+@onready var world_env: WorldEnvironment = $WorldEnvironment
+@onready var sun_light: DirectionalLight3D = $SunLight
+@onready var bounce_light: DirectionalLight3D = $GroundBounceLight
 
 var _save: Dictionary = {}
 var _shift: Dictionary = {}
@@ -38,6 +45,14 @@ var _in_shift := false
 var _street_cfg: Dictionary = {}
 var _street_npcs_data: Array = []
 var _portal_nodes: Array = []
+var _traffic_root: Node3D
+var _traffic_items: Array = []
+var _traffic_nodes: Array = []
+var _fan_blades: Array = []
+var _rain_particles: CPUParticles3D
+var _cur_phase := "pagi"
+var _cur_weather := "cerah"
+var _reset_confirm := false
 var _muted := false
 var _active_chore_id := ""
 var _chore_progress := 0.0
@@ -62,9 +77,8 @@ var _lbl_trust: Label
 var _lbl_tasks_hdr: Label
 var _tasks_list: VBoxContainer
 var _tasks_card: PanelContainer
-var _btn_lang: Button
-var _btn_mute: Button
-var _btn_profile: Button
+var _btn_map: Button
+var _btn_settings: Button
 var _btn_action: Button
 var _btn_shift: Button
 var _btn_phone: Button
@@ -94,6 +108,7 @@ var _ob_style := "cepol"
 var _ob_skin := "#B87A4B"
 var _ob_color := "#4E7D63"
 var _call_banner: PanelContainer
+var _call_portrait: TextureRect
 var _lbl_call_title: Label
 var _bar_call: ProgressBar
 var _btn_answer: Button
@@ -101,6 +116,7 @@ var _chore_bar_wrap: PanelContainer
 var _lbl_chore_prog: Label
 var _bar_chore: ProgressBar
 var _toast_lbl: Label
+var _toast_portrait: TextureRect
 var _toast_panel: PanelContainer
 var _toast_timer := 0.0
 var _world_prompt: PanelContainer
@@ -129,6 +145,12 @@ func _ready() -> void:
 	_npcs_root.name = "NPCs"
 	add_child(_npcs_root)
 
+	_traffic_root = Node3D.new()
+	_traffic_root.name = "StreetTraffic"
+	add_child(_traffic_root)
+
+	_build_rain_particles()
+
 	_wav_coin = AudioSynth.make_coin_chime()
 	_wav_ring = AudioSynth.make_phone_ring()
 	_wav_sweep = AudioSynth.make_broom_sweep()
@@ -155,7 +177,9 @@ func _ready() -> void:
 			_capture_tier = arg.substr("--capture-tier=".length())
 
 	_save = SaveStore.load_from_path()
+	_muted = bool(_save.get("muted", false))
 	_build_hud()
+	Settings.apply_graphics_quality(sun_light, world_env.environment if world_env != null else null, String(_save.get("gfx_quality", "high")))
 
 	if _smoke_mode:
 		_run_headless_smoke_test()
@@ -202,14 +226,82 @@ func _play_sfx(wav: AudioStreamWAV) -> void:
 	sfx.stream = wav
 	sfx.play()
 
-func _show_toast(msg: String) -> void:
+func _show_toast(msg: String, speaker_id: String = "", mood: String = "happy") -> void:
 	if _toast_lbl == null or _toast_panel == null:
 		return
 	_toast_lbl.text = msg
+	if _toast_portrait != null:
+		if speaker_id != "":
+			_toast_portrait.texture = Portraits.get_portrait(speaker_id, mood)
+			_toast_portrait.visible = true
+		else:
+			_toast_portrait.visible = false
 	_toast_panel.visible = true
 	_toast_timer = 3.2
 
+func _build_rain_particles() -> void:
+	_rain_particles = CPUParticles3D.new()
+	_rain_particles.name = "RainParticles"
+	_rain_particles.amount = 85
+	_rain_particles.lifetime = 0.75
+	_rain_particles.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+	_rain_particles.emission_box_extents = Vector3(6.5, 0.2, 4.5)
+	_rain_particles.position = Vector3(0.0, 4.8, 0.5)
+	_rain_particles.direction = Vector3(-0.1, -1.0, 0.0)
+	_rain_particles.spread = 4.0
+	_rain_particles.initial_velocity_min = 6.5
+	_rain_particles.initial_velocity_max = 8.5
+	_rain_particles.emitting = false
+	var drop := BoxMesh.new()
+	drop.size = Vector3(0.018, 0.26, 0.018)
+	var dmat := StandardMaterial3D.new()
+	dmat.albedo_color = Color(0.72, 0.86, 0.98, 0.65)
+	dmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	dmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	drop.material = dmat
+	_rain_particles.mesh = drop
+	add_child(_rain_particles)
+
+func _refresh_atmosphere() -> void:
+	var day := int(_save.get("day", 1))
+	var t_elapsed := _shift_elapsed_s if _in_shift else 15.0
+	_cur_phase = Atmosphere.get_phase(_world_mode, day, t_elapsed)
+	_cur_weather = Atmosphere.get_weather(day, bool(_save.get("weather_fx", true)))
+	var env := world_env.environment if world_env != null else null
+	Atmosphere.apply_lighting(sun_light, bounce_light, env, _cur_phase, _cur_weather)
+	if _rain_particles != null:
+		_rain_particles.emitting = (_world_mode == "street" and _cur_weather == "hujan")
+
+func _clear_street_traffic() -> void:
+	_traffic_items.clear()
+	_traffic_nodes.clear()
+	if _traffic_root == null:
+		return
+	for c in _traffic_root.get_children():
+		c.queue_free()
+
+func _spawn_street_traffic(tier_id: String) -> void:
+	_clear_street_traffic()
+	if _traffic_root == null:
+		return
+	var cfg_list := StreetTraffic.get_traffic_config(tier_id)
+	for item in cfg_list:
+		var mpath := String(item.get("model_path", ""))
+		if not ResourceLoader.exists(mpath):
+			continue
+		var ps: PackedScene = load(mpath)
+		if ps == null:
+			continue
+		var v_inst := ps.instantiate() as Node3D
+		v_inst.position = Vector3(float(item.get("x", 0.0)), 0.0, float(item.get("z", 2.55)))
+		v_inst.rotation.y = 0.0 if int(item.get("dir", 1)) > 0 else PI
+		StreetTraffic.apply_livery(v_inst, item.get("livery_color", Color("#1D84B5")))
+		_traffic_root.add_child(v_inst)
+		_traffic_items.append(item.duplicate(true))
+		_traffic_nodes.append(v_inst)
+
 func _load_stage_glb(glb_path: String) -> void:
+	_fan_blades.clear()
 	for c in stage_root.get_children():
 		c.queue_free()
 	var resolved := glb_path
@@ -220,6 +312,12 @@ func _load_stage_glb(glb_path: String) -> void:
 		var inst := packed.instantiate()
 		stage_root.add_child(inst)
 		SceneVisuals.apply_baked_ao(inst)
+		if "kos_room" in resolved:
+			Atmosphere.apply_kos_upgrades_visual(inst, _save.get("unlocked_kos_upgrades", []))
+			for fb_name in ["FanBlade_0", "FanBlade_1", "FanBlade_2", "FanBlade_3"]:
+				var fb := inst.find_child(fb_name, true, false)
+				if fb is Node3D:
+					_fan_blades.append(fb)
 
 func _sync_player_outfit() -> void:
 	var oid := String(_save.get("equipped_outfit_id", "starter_kasual"))
@@ -338,7 +436,9 @@ func _enter_home_mode() -> void:
 	player.position = Vector3(0.0, 0.0, 0.35)
 	player.cancel_movement()
 	_spawn_npcs(NpcRoster.get_home_npcs(tier_id))
+	_clear_street_traffic()
 	_spawn_portal("exit_street", Vector3(0.45, 0.0, 1.15), Color(0.96, 0.78, 0.24), "Keluar Kamar", "Step Outside")
+	_refresh_atmosphere()
 	_refresh_hud()
 
 func _enter_street_mode(from_mode: String = "home") -> void:
@@ -366,8 +466,10 @@ func _enter_street_mode(from_mode: String = "home") -> void:
 
 	_street_npcs_data = _street_cfg.get("street_npcs", [])
 	_spawn_npcs(_street_npcs_data)
+	_spawn_street_traffic(tier_id)
 	_spawn_portal("enter_home", _street_cfg.get("portal_home", Vector3(-3.9, 0.0, 0.55)), Color(0.96, 0.78, 0.24), "Masuk Kamar", "Enter Room")
 	_spawn_portal("enter_work", _street_cfg.get("portal_work", Vector3(2.9, 0.0, 0.55)), Color(0.28, 0.86, 0.50), "Rumah Majikan", "Work Shift")
+	_refresh_atmosphere()
 	_show_toast(_t("Di gang luar — sapa tetangga atau masuk Rumah Majikan.", "Outside on the street — greet neighbors or enter Work Shift."))
 	_refresh_hud()
 
@@ -406,7 +508,9 @@ func _start_shift() -> void:
 	player.cancel_movement()
 	_spawn_hotspots(work_glb)
 	_spawn_npcs(NpcRoster.get_shift_npcs(tier_id))
-	var emp_lbl := String(prof.get("label_en", prof.get("label_id", "")) if _loc() == "en" else prof.get("label_id", ""))
+	_clear_street_traffic()
+	_refresh_atmosphere()
+	var emp_lbl := String(prof.get("name", prof.get("label_id", "")))
 	_show_toast(_t("Shift di %s dimulai! Kerjakan tugas & jawab panggilan." % emp_lbl, "Shift at %s started! Finish chores & answer calls." % emp_lbl))
 	_refresh_hud()
 
@@ -492,6 +596,14 @@ func _talk_to_street_npc(npc: Dictionary) -> void:
 	_save = res["state"]
 	if bool(res.get("claimed", false)):
 		_save["mood"] = clampi(int(_save.get("mood", 65)) + 12, 0, 100)
+		var tip_rp := int(res.get("tip_rp", 0))
+		_save = Settings.append_daily_log(_save, {
+			"day": int(_save.get("day", 1)),
+			"kind": "chat",
+			"title_id": "Sapa %s" % nname,
+			"title_en": "Chatted w/ %s" % nname,
+			"delta_rp": tip_rp,
+		})
 		SaveStore.save_to_path(_save)
 		_play_sfx(_wav_coin)
 		var greet := _t("Semangat kerja hari ini ya!", "Have a great shift today!")
@@ -499,10 +611,9 @@ func _talk_to_street_npc(npc: Dictionary) -> void:
 			if String(spec.get("id", "")) == nid:
 				greet = String(spec.get("greeting_en" if _loc() == "en" else "greeting_id", greet))
 				break
-		var tip_rp := int(res.get("tip_rp", 0))
-		_show_toast("%s: \"%s\" (+%s, +12 %s)" % [nname, greet, I18n.format_balance(tip_rp, _loc()), _t("Semangat", "Mood")])
+		_show_toast("%s: \"%s\" (+%s, +12 %s)" % [nname, greet, I18n.format_balance(tip_rp, _loc()), _t("Semangat", "Mood")], nid, "happy")
 	else:
-		_show_toast("%s: \"%s\"" % [nname, _t("Semangat kerjanya hari ini ya!", "Have a great shift today!")])
+		_show_toast("%s: \"%s\"" % [nname, _t("Semangat kerjanya hari ini ya!", "Have a great shift today!")], nid, "neutral")
 	_refresh_hud()
 
 func _trigger_world_action() -> void:
@@ -583,11 +694,19 @@ func _finish_shift() -> void:
 		return
 	_save = res["save"]
 	_shift = res["shift"]
-	SaveStore.save_to_path(_save)
 	if bool(res.get("aborted", false)):
+		SaveStore.save_to_path(_save)
 		_enter_street_mode("shift")
 		_show_toast(_t("Belum ada tugas selesai — shift dibatalkan (Rp 0).", "No chores completed — shift cancelled (Rp 0)."))
 		return
+	_save = Settings.append_daily_log(_save, {
+		"day": int(_save.get("day", 1)) - 1,
+		"kind": "fired" if bool(res.get("fired", false)) else "shift",
+		"title_id": "Dipecat di shift" if bool(res.get("fired", false)) else "Shift selesai",
+		"title_en": "Fired on shift" if bool(res.get("fired", false)) else "Shift completed",
+		"delta_rp": int(res.get("payout_rp", 0)),
+	})
+	SaveStore.save_to_path(_save)
 	var new_lv := Progression.level_from_xp(int(_save.get("xp", 0)))
 	if new_lv > prev_lv:
 		_play_sfx(_wav_fanfare)
@@ -628,6 +747,18 @@ func _process(delta: float) -> void:
 	cam.position = cam.position.lerp(cam_target, minf(1.0, delta * 5.0))
 	cam.look_at(player.position + Vector3(0.0, 0.80, -0.35), Vector3.UP)
 
+	if _world_mode == "home" and _fan_blades.size() > 0 and ("kipas_angin" in _save.get("unlocked_kos_upgrades", [])):
+		for fb in _fan_blades:
+			if is_instance_valid(fb):
+				(fb as Node3D).rotate_z(delta * 5.5)
+
+	if _world_mode == "street" and _traffic_items.size() > 0:
+		StreetTraffic.step_vehicles(_traffic_items, delta)
+		for ti in range(mini(_traffic_items.size(), _traffic_nodes.size())):
+			var tn: Node3D = _traffic_nodes[ti]
+			if is_instance_valid(tn):
+				tn.position.x = float(_traffic_items[ti]["x"])
+
 	if not _in_shift:
 		if _world_prompt != null:
 			var np := _nearest_portal()
@@ -659,7 +790,10 @@ func _process(delta: float) -> void:
 		return
 
 	_shift_elapsed_s += delta
-	_lbl_meta.text = Progression.format_shift_clock(int(_save.get("day", 1)), _shift_elapsed_s, _loc())
+	var next_phase := Atmosphere.get_phase(_world_mode, int(_save.get("day", 1)), _shift_elapsed_s)
+	if next_phase != _cur_phase:
+		_refresh_atmosphere()
+	_lbl_meta.text = _format_meta_clock()
 
 	# Highlight nearest chore & float world prompt
 	var near := _nearest_hotspot()
@@ -801,6 +935,17 @@ func _on_distract(activity_id: String) -> void:
 	_show_toast(_t("Semangat +Energi naik! Hati-hati panggilan Majikan.", "Mood + Energy up! Watch for employer calls."))
 	_refresh_hud()
 
+func _format_meta_clock() -> String:
+	var base := Progression.format_shift_clock(int(_save.get("day", 1)), _shift_elapsed_s if _in_shift else 0.0, _loc())
+	var ph_map := {
+		"pagi": _t("Pagi", "Morning"),
+		"siang": _t("Siang", "Day"),
+		"sore": _t("Sore", "Afternoon"),
+		"malam": _t("Malam", "Night"),
+	}
+	var w_icon := "🌧" if _cur_weather == "hujan" else ("🌙" if _cur_phase == "malam" else "☀")
+	return "%s • %s %s" % [base, String(ph_map.get(_cur_phase, "Pagi")), w_icon]
+
 func _refresh_hud() -> void:
 	var ob_active := _onboarding_wrap != null and _onboarding_wrap.visible
 	if _npcs_root != null:
@@ -821,7 +966,7 @@ func _refresh_hud() -> void:
 	var tier := CareerTiers.get_tier(String(_save.get("active_tier_id", "kamar_kos")))
 	var p_name := String(_save.get("player_name", "Mbak Sari"))
 	_lbl_balance.text = "%s %d • %s" % [_t("Lv", "Level"), lv, I18n.format_balance(int(_save.get("balance_rp", 0)), _loc())]
-	_lbl_meta.text = Progression.format_shift_clock(int(_save.get("day", 1)), _shift_elapsed_s if _in_shift else 0.0, _loc())
+	_lbl_meta.text = _format_meta_clock()
 
 	if _in_shift:
 		var e_val := int(_shift.get("energy", 0))
@@ -882,10 +1027,10 @@ func _refresh_hud() -> void:
 		else:
 			_btn_action.text = _t("Keluar Kamar [E]", "Step Outside [E]")
 
-	_btn_lang.text = "EN" if _loc() == "id" else "ID"
-	_btn_mute.text = _t("Mati", "Off") if _muted else _t("Suara", "SFX")
-	if _btn_profile != null:
-		_btn_profile.text = _t("Profil", "Profile")
+	if _btn_map != null:
+		_btn_map.text = _t("Peta", "Map")
+	if _btn_settings != null:
+		_btn_settings.text = _t("Menu", "Menu")
 	_btn_phone.text = "HP"
 	var badge_n := MajikanCall.get_phone_badge_count(_call_state) if _in_shift else 0
 	_lbl_phone_badge.text = str(badge_n)
@@ -909,6 +1054,10 @@ func _refresh_call_banner() -> void:
 		var pers := MajikanProfiles.get_personality(String(_call_state.get("personality", "ramah")))
 		var pat := float(pers.get("call_patience_s", 12.0))
 		var rem := maxf(0.0, pat - float(_call_state.get("call_elapsed_s", 0.0)))
+		if _call_portrait != null:
+			var prof_id := String(_save.get("active_profile_id", "ibu_kos_melati"))
+			var spk := "ibu_melati" if "melati" in prof_id else ("ibu_citra" if "citra" in prof_id else ("pak_hendra" if "hendra" in prof_id else ("pak_budi" if "budi" in prof_id else "ibu_sari")))
+			_call_portrait.texture = Portraits.get_portrait(spk, "strict")
 		_lbl_call_title.text = "%s: %s (%.0fs)" % [_t("MAJIKAN", "EMPLOYER"), String(_call_state.get("call_reason", "")), rem]
 		_bar_call.max_value = pat
 		_bar_call.value = rem
@@ -1006,7 +1155,16 @@ func _open_kos_modal() -> void:
 			var res := Progression.buy_kos_upgrade(_save, uid)
 			if res["ok"]:
 				_save = res["save"]
+				_save = Settings.append_daily_log(_save, {
+					"day": int(_save.get("day", 1)),
+					"kind": "upgrade",
+					"title_id": "Beli %s" % String(u["label_id"]),
+					"title_en": "Bought %s" % String(u["label_en"]),
+					"delta_rp": -int(u["cost_rp"]),
+				})
 				SaveStore.save_to_path(_save)
+				if _world_mode == "home" and stage_root.get_child_count() > 0:
+					Atmosphere.apply_kos_upgrades_visual(stage_root.get_child(0), _save.get("unlocked_kos_upgrades", []))
 				_play_sfx(_wav_coin)
 				call_deferred("_open_kos_modal")
 				_refresh_hud()
@@ -1048,6 +1206,18 @@ func _open_levelup_modal(new_lv: int, res: Dictionary) -> void:
 func _open_rent_modal(res: Dictionary = {}, leveled_up_to: int = 0) -> void:
 	_clear_modal()
 	_modal_title.text = _t("IBU MELATI MENAGIH SEWA KOS", "IBU MELATI: WEEKLY KOS RENT")
+	var hdr_row := HBoxContainer.new()
+	hdr_row.add_theme_constant_override("separation", 10)
+	var p_rect := TextureRect.new()
+	p_rect.texture = Portraits.get_portrait("ibu_melati", "strict")
+	p_rect.custom_minimum_size = Vector2(48, 48)
+	p_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	hdr_row.add_child(p_rect)
+	var quote_lbl := Label.new()
+	quote_lbl.text = _t("\"Waktunya bayar sewa kamar mingguan ya, Neng.\"", "\"Time for your weekly kos room rent.\"")
+	quote_lbl.add_theme_color_override("font_color", Color(0.98, 0.88, 0.65))
+	hdr_row.add_child(quote_lbl)
+	_modal_list.add_child(hdr_row)
 	if leveled_up_to > 0:
 		var lv_lbl := Label.new()
 		lv_lbl.text = _t("★ NAIK KE LEVEL %d!" % leveled_up_to, "★ LEVEL UP TO %d!" % leveled_up_to)
@@ -1078,6 +1248,13 @@ func _open_rent_modal(res: Dictionary = {}, leveled_up_to: int = 0) -> void:
 		var pr := Progression.pay_weekly_rent(_save, true, 120000)
 		if pr["ok"]:
 			_save = pr["save"]
+			_save = Settings.append_daily_log(_save, {
+				"day": int(_save.get("day", 1)),
+				"kind": "rent",
+				"title_id": "Bayar Sewa Kos",
+				"title_en": "Paid Kos Rent",
+				"delta_rp": -rent_rp,
+			})
 			SaveStore.save_to_path(_save)
 			_play_sfx(_wav_coin)
 			_modal_backdrop.visible = false
@@ -1089,12 +1266,207 @@ func _open_rent_modal(res: Dictionary = {}, leveled_up_to: int = 0) -> void:
 	btn_later.pressed.connect(func():
 		var pr := Progression.pay_weekly_rent(_save, false, 120000)
 		_save = pr["save"]
+		_save = Settings.append_daily_log(_save, {
+			"day": int(_save.get("day", 1)),
+			"kind": "rent_late",
+			"title_id": "Tunda Sewa (+Denda)",
+			"title_en": "Deferred Rent (+Fee)",
+			"delta_rp": 0,
+		})
 		SaveStore.save_to_path(_save)
 		_modal_backdrop.visible = false
 		_refresh_hud()
 	)
 	_modal_list.add_child(btn_pay)
 	_modal_list.add_child(btn_later)
+	_modal_backdrop.visible = true
+
+func _open_map_modal() -> void:
+	_clear_modal()
+	_modal_title.text = _t("PETA LINGKUNGAN & WILAYAH KERJA", "NEIGHBORHOOD & DISTRICT MAP")
+	var nodes := Portraits.get_map_destinations(_save, _world_mode)
+	var place_lbl := Label.new()
+	place_lbl.text = _t("Lokasi Saat Ini (Ketuk untuk pindah):", "Nearby Places (Tap to travel):")
+	place_lbl.add_theme_font_size_override("font_size", 12)
+	place_lbl.add_theme_color_override("font_color", Color(0.98, 0.84, 0.34))
+	_modal_list.add_child(place_lbl)
+	var place_row := HBoxContainer.new()
+	place_row.add_theme_constant_override("separation", 8)
+	for node in nodes:
+		if String(node.get("kind", "")) != "place":
+			continue
+		var act := String(node.get("action", "kos"))
+		var is_act := bool(node.get("active", false))
+		var b := Button.new()
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var lbl := String(node["label_en"] if _loc() == "en" else node["label_id"])
+		b.text = ("%s ✓" if is_act else "%s") % lbl
+		_style_btn(b, Color(0.22, 0.58, 0.42) if is_act else Color(0.16, 0.18, 0.22), Color(0.96, 0.78, 0.26))
+		b.disabled = _in_shift and act != "shift"
+		b.pressed.connect(func():
+			_modal_backdrop.visible = false
+			if act == "kos" and not _in_shift:
+				_enter_home_mode()
+			elif act == "street" and not _in_shift:
+				_enter_street_mode(_world_mode)
+			elif act == "shift" and not _in_shift:
+				_start_shift()
+		)
+		place_row.add_child(b)
+	_modal_list.add_child(place_row)
+
+	var dist_lbl := Label.new()
+	dist_lbl.text = _t("Peta Distrik Karier:", "Career District Map:")
+	dist_lbl.add_theme_font_size_override("font_size", 12)
+	dist_lbl.add_theme_color_override("font_color", Color(0.68, 0.88, 0.98))
+	_modal_list.add_child(dist_lbl)
+	for node in nodes:
+		if String(node.get("kind", "")) != "district":
+			continue
+		var tid := String(node.get("tier_id", "kamar_kos"))
+		var unl := bool(node.get("unlocked", false))
+		var is_act := bool(node.get("active", false))
+		var lbl := String(node["label_en"] if _loc() == "en" else node["label_id"])
+		var b := Button.new()
+		b.text = "%s%s (%d XP)%s" % ["📍 " if is_act else ("🔓 " if unl else "🔒 "), lbl, int(node["min_xp"]), _t(" [Aktif]", " [Active]") if is_act else ""]
+		b.disabled = (not unl) or _in_shift
+		b.pressed.connect(func():
+			var res := Progression.select_job_tier(_save, tid)
+			if res["ok"]:
+				_save = res["save"]
+				SaveStore.save_to_path(_save)
+				_modal_backdrop.visible = false
+				if _world_mode == "street":
+					_enter_street_mode("home")
+				else:
+					_enter_home_mode()
+				_refresh_hud()
+		)
+		_modal_list.add_child(b)
+	_modal_backdrop.visible = true
+
+func _open_log_modal() -> void:
+	_clear_modal()
+	_modal_title.text = _t("CATATAN HARIAN ART", "DAILY ART ACTIVITY LOG")
+	var entries := Settings.get_daily_log(_save)
+	if entries.is_empty():
+		var empty_lbl := Label.new()
+		empty_lbl.text = _t("Belum ada catatan hari ini. Sapa tetangga atau mulai shift!", "No activity logged yet. Chat with neighbors or start a shift!")
+		empty_lbl.add_theme_color_override("font_color", Color(0.88, 0.87, 0.83))
+		_modal_list.add_child(empty_lbl)
+	else:
+		for idx in range(entries.size() - 1, -1, -1):
+			var e: Dictionary = entries[idx]
+			var row := Label.new()
+			var title := String(e["title_en"] if _loc() == "en" else e["title_id"])
+			var drp := int(e.get("delta_rp", 0))
+			var rp_txt := ""
+			if drp > 0:
+				rp_txt = "  +%s" % I18n.format_balance(drp, _loc())
+			elif drp < 0:
+				rp_txt = "  -%s" % I18n.format_balance(absi(drp), _loc())
+			row.text = "%s %d • %s%s" % [_t("Hari", "Day"), int(e["day"]), title, rp_txt]
+			row.add_theme_font_size_override("font_size", 12)
+			row.add_theme_color_override("font_color", Color(0.45, 0.94, 0.44) if drp > 0 else (Color(0.96, 0.62, 0.42) if drp < 0 else Color(0.95, 0.94, 0.90)))
+			_modal_list.add_child(row)
+	var btn_back := Button.new()
+	btn_back.text = _t("Kembali ke Menu", "Back to Menu")
+	_style_btn(btn_back, Color(0.16, 0.18, 0.22), Color(0.96, 0.78, 0.26))
+	btn_back.pressed.connect(_open_settings_modal)
+	_modal_list.add_child(btn_back)
+	_modal_backdrop.visible = true
+
+func _open_settings_modal() -> void:
+	_clear_modal()
+	_reset_confirm = false
+	_modal_title.text = _t("MENU, PENGATURAN & CATATAN", "MENU, SETTINGS & LOG")
+
+	var btn_prof := Button.new()
+	btn_prof.text = _t("Edit Profil & Karakter ART", "Edit ART Profile & Look")
+	btn_prof.disabled = _in_shift
+	btn_prof.pressed.connect(func():
+		_modal_backdrop.visible = false
+		_open_onboarding()
+		_refresh_hud()
+	)
+	_modal_list.add_child(btn_prof)
+
+	var btn_log := Button.new()
+	btn_log.text = _t("Catatan Harian ART (%d)" % Settings.get_daily_log(_save).size(), "Daily ART Log (%d)" % Settings.get_daily_log(_save).size())
+	btn_log.pressed.connect(_open_log_modal)
+	_modal_list.add_child(btn_log)
+
+	var btn_lang := Button.new()
+	btn_lang.text = _t("Bahasa: Indonesia (Ubah ke EN)", "Language: English (Switch to ID)")
+	btn_lang.pressed.connect(func():
+		_save["locale"] = "en" if _loc() == "id" else "id"
+		SaveStore.save_to_path(_save)
+		_refresh_hud()
+		_open_settings_modal()
+	)
+	_modal_list.add_child(btn_lang)
+
+	var btn_sfx := Button.new()
+	btn_sfx.text = _t("Efek Suara: Mati" if _muted else "Efek Suara: Aktif", "Sound SFX: Off" if _muted else "Sound SFX: On")
+	btn_sfx.pressed.connect(func():
+		_muted = not _muted
+		_save["muted"] = _muted
+		SaveStore.save_to_path(_save)
+		_open_settings_modal()
+	)
+	_modal_list.add_child(btn_sfx)
+
+	var q_cur := String(_save.get("gfx_quality", "high"))
+	var btn_gfx := Button.new()
+	btn_gfx.text = _t("Grafis: Ringan (HP)" if q_cur == "low" else "Grafis: Tinggi (Bayangan)", "Graphics: Low (Mobile)" if q_cur == "low" else "Graphics: High (Shadows)")
+	btn_gfx.pressed.connect(func():
+		var nxt_q := "low" if q_cur == "high" else "high"
+		_save["gfx_quality"] = nxt_q
+		SaveStore.save_to_path(_save)
+		Settings.apply_graphics_quality(sun_light, world_env.environment if world_env != null else null, nxt_q)
+		_open_settings_modal()
+	)
+	_modal_list.add_child(btn_gfx)
+
+	var w_on := bool(_save.get("weather_fx", true))
+	var btn_wfx := Button.new()
+	btn_wfx.text = _t("Cuaca Hujan: Aktif" if w_on else "Cuaca Hujan: Cerah Saja", "Rain Weather: On" if w_on else "Rain Weather: Always Clear")
+	btn_wfx.pressed.connect(func():
+		_save["weather_fx"] = not w_on
+		SaveStore.save_to_path(_save)
+		_refresh_atmosphere()
+		_refresh_hud()
+		_open_settings_modal()
+	)
+	_modal_list.add_child(btn_wfx)
+
+	var btn_rst := Button.new()
+	btn_rst.text = _t("Mulai Ulang Karier (Reset Save)", "Reset Career Save")
+	btn_rst.disabled = _in_shift
+	_style_btn(btn_rst, Color(0.55, 0.16, 0.16), Color(0.95, 0.65, 0.45))
+	btn_rst.pressed.connect(func():
+		if _in_shift:
+			return
+		if not _reset_confirm:
+			_reset_confirm = true
+			btn_rst.text = _t("Ketuk Sekali Lagi untuk KONFIRMASI RESET", "Tap Again to CONFIRM RESET")
+			return
+		_save = Progression.create_player_save()
+		_muted = bool(_save.get("muted", false))
+		_shift = {}
+		_call_state = {}
+		_active_chore_id = ""
+		_shift_elapsed_s = 0.0
+		_in_shift = false
+		SaveStore.save_to_path(_save)
+		Settings.apply_graphics_quality(sun_light, world_env.environment if world_env != null else null, String(_save.get("gfx_quality", "high")))
+		_modal_backdrop.visible = false
+		_enter_home_mode()
+		_sync_player_outfit()
+		_open_onboarding()
+		_refresh_hud()
+	)
+	_modal_list.add_child(btn_rst)
 	_modal_backdrop.visible = true
 
 func _make_box(bg: Color, border: Color, radius: int = 12, pad_h: int = 12, pad_v: int = 8) -> StyleBoxFlat:
@@ -1188,32 +1560,15 @@ func _build_hud() -> void:
 	_lbl_balance.add_theme_color_override("font_color", Color(0.46, 0.94, 0.44))
 	wallet_pill.add_child(_lbl_balance)
 
-	_btn_profile = Button.new()
-	_btn_lang = Button.new()
-	_btn_mute = Button.new()
-	_style_btn(_btn_profile, Color(0.14, 0.16, 0.20, 0.90), Color(0.95, 0.78, 0.26, 0.85))
-	_style_btn(_btn_lang, Color(0.14, 0.16, 0.20, 0.90), Color(0.95, 0.78, 0.26, 0.85))
-	_style_btn(_btn_mute, Color(0.14, 0.16, 0.20, 0.90), Color(0.95, 0.78, 0.26, 0.85))
-	_btn_profile.pressed.connect(func():
-		if not _in_shift:
-			_open_onboarding()
-			_refresh_hud()
-		else:
-			_show_toast(_t("Selesaikan shift dulu untuk edit profil.", "Finish shift first to edit profile."))
-	)
-	_btn_lang.pressed.connect(func():
-		_save["locale"] = "en" if _loc() == "id" else "id"
-		SaveStore.save_to_path(_save)
-		_refresh_hud()
-	)
-	_btn_mute.pressed.connect(func():
-		_muted = not _muted
-		_refresh_hud()
-	)
+	_btn_map = Button.new()
+	_btn_settings = Button.new()
+	_style_btn(_btn_map, Color(0.14, 0.16, 0.20, 0.90), Color(0.95, 0.78, 0.26, 0.85))
+	_style_btn(_btn_settings, Color(0.14, 0.16, 0.20, 0.90), Color(0.95, 0.78, 0.26, 0.85))
+	_btn_map.pressed.connect(_open_map_modal)
+	_btn_settings.pressed.connect(_open_settings_modal)
 	top_r_row.add_child(wallet_pill)
-	top_r_row.add_child(_btn_profile)
-	top_r_row.add_child(_btn_lang)
-	top_r_row.add_child(_btn_mute)
+	top_r_row.add_child(_btn_map)
+	top_r_row.add_child(_btn_settings)
 	_tr_vbox.add_child(top_r_row)
 
 	_tasks_card = PanelContainer.new()
@@ -1247,6 +1602,10 @@ func _build_hud() -> void:
 	_call_banner.add_theme_stylebox_override("panel", _make_box(Color(0.76, 0.22, 0.18, 0.96), Color(0.98, 0.86, 0.65), 14, 12, 8))
 	var call_h := HBoxContainer.new()
 	call_h.add_theme_constant_override("separation", 10)
+	_call_portrait = TextureRect.new()
+	_call_portrait.custom_minimum_size = Vector2(44, 44)
+	_call_portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	call_h.add_child(_call_portrait)
 	var call_text_v := VBoxContainer.new()
 	call_text_v.add_theme_constant_override("separation", 3)
 	_lbl_call_title = Label.new()
@@ -1269,9 +1628,17 @@ func _build_hud() -> void:
 	_toast_panel = PanelContainer.new()
 	_toast_panel.visible = false
 	_toast_panel.add_theme_stylebox_override("panel", _make_box(Color(0.14, 0.18, 0.16, 0.90), Color(0.84, 0.72, 0.46), 12, 14, 6))
+	var toast_h := HBoxContainer.new()
+	toast_h.add_theme_constant_override("separation", 8)
+	_toast_portrait = TextureRect.new()
+	_toast_portrait.visible = false
+	_toast_portrait.custom_minimum_size = Vector2(34, 34)
+	_toast_portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_toast_lbl = Label.new()
 	_toast_lbl.add_theme_color_override("font_color", light_ink)
-	_toast_panel.add_child(_toast_lbl)
+	toast_h.add_child(_toast_portrait)
+	toast_h.add_child(_toast_lbl)
+	_toast_panel.add_child(toast_h)
 	tc_v.add_child(_toast_panel)
 
 	tc_center.add_child(tc_v)
