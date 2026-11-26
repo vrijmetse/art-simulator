@@ -1328,7 +1328,7 @@ func _open_map_modal() -> void:
 		var is_act := bool(node.get("active", false))
 		var lbl := String(node["label_en"] if _loc() == "en" else node["label_id"])
 		var b := Button.new()
-		b.text = "%s%s (%d XP)%s" % ["📍 " if is_act else ("🔓 " if unl else "🔒 "), lbl, int(node["min_xp"]), _t(" [Aktif]", " [Active]") if is_act else ""]
+		b.text = "%s%s (%d XP)%s" % ["★ " if is_act else ("• " if unl else "[%s] " % _t("Terkunci", "Locked")), lbl, int(node["min_xp"]), _t(" [Aktif]", " [Active]") if is_act else ""]
 		b.disabled = (not unl) or _in_shift
 		b.pressed.connect(func():
 			var res := Progression.select_job_tier(_save, tid)
@@ -1589,8 +1589,8 @@ func _build_hud() -> void:
 	# 3. TOP-CENTER OPEN SKY (Urgent Call Banner + Toast, bounded cleanly between corners!)
 	var tc_center := CenterContainer.new()
 	tc_center.set_anchors_preset(Control.PRESET_TOP_WIDE)
-	tc_center.offset_left = 236
-	tc_center.offset_right = -360
+	tc_center.offset_left = 254
+	tc_center.offset_right = -254
 	tc_center.offset_top = 12
 	tc_center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var tc_v := VBoxContainer.new()
@@ -1635,6 +1635,8 @@ func _build_hud() -> void:
 	_toast_portrait.custom_minimum_size = Vector2(34, 34)
 	_toast_portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_toast_lbl = Label.new()
+	_toast_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_toast_lbl.custom_minimum_size = Vector2(220, 0)
 	_toast_lbl.add_theme_color_override("font_color", light_ink)
 	toast_h.add_child(_toast_portrait)
 	toast_h.add_child(_toast_lbl)
