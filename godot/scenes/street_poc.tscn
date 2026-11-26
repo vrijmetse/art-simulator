@@ -1,0 +1,206 @@
+[gd_scene load_steps=11 format=3]
+
+[ext_resource type="Script" path="res://src/scenes/street_poc.gd" id="1"]
+[ext_resource type="PackedScene" path="res://assets/models/kampung_street.glb" id="2"]
+[ext_resource type="PackedScene" path="res://assets/models/char_art.glb" id="3"]
+[ext_resource type="PackedScene" path="res://assets/models/char_ibu.glb" id="4"]
+[ext_resource type="PackedScene" path="res://assets/models/char_budi.glb" id="5"]
+
+[sub_resource type="ProceduralSkyMaterial" id="SkyMat"]
+sky_top_color = Color(0.45, 0.74, 0.94, 1)
+sky_horizon_color = Color(0.95, 0.91, 0.79, 1)
+ground_bottom_color = Color(0.55, 0.67, 0.49, 1)
+ground_horizon_color = Color(0.84, 0.91, 0.80, 1)
+
+[sub_resource type="Sky" id="SkyRes"]
+sky_material = SubResource("SkyMat")
+
+[sub_resource type="Environment" id="EnvRes"]
+background_mode = 2
+sky = SubResource("SkyRes")
+ambient_light_source = 3
+ambient_light_sky_contribution = 0.55
+tonemap_mode = 3
+tonemap_exposure = 0.88
+ssao_enabled = true
+ssao_radius = 0.7
+ssao_intensity = 1.45
+glow_enabled = true
+glow_intensity = 0.18
+fog_enabled = true
+fog_light_color = Color(0.84, 0.91, 0.86, 1)
+fog_density = 0.006
+
+[sub_resource type="StyleBoxFlat" id="GlassPill"]
+bg_color = Color(0.11, 0.15, 0.22, 0.76)
+corner_radius_top_left = 18
+corner_radius_top_right = 18
+corner_radius_bottom_right = 18
+corner_radius_bottom_left = 18
+content_margin_left = 16
+content_margin_top = 10
+content_margin_right = 16
+content_margin_bottom = 10
+
+[sub_resource type="StyleBoxFlat" id="PinBadge"]
+bg_color = Color(0.95, 0.47, 0.34, 0.95)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
+content_margin_left = 10
+content_margin_top = 4
+content_margin_right = 10
+content_margin_bottom = 4
+
+[node name="StreetPoc" type="Node3D"]
+script = ExtResource("1")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("EnvRes")
+
+[node name="SunLight" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.82, -0.34, 0.46, 0, 0.80, 0.60, -0.57, -0.49, 0.66, 6.0, 9.5, 5.5)
+light_color = Color(1.0, 0.93, 0.80, 1)
+light_energy = 1.05
+shadow_enabled = true
+shadow_blur = 1.8
+directional_shadow_mode = 1
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(0.936, -0.175, 0.305, 0, 0.867, 0.498, -0.352, -0.466, 0.812, 3.6, 5.5, 9.8)
+fov = 46.0
+
+[node name="KampungStreet" parent="." instance=ExtResource("2")]
+
+[node name="Actors" type="Node3D" parent="."]
+
+[node name="PlayerArt" parent="Actors" instance=ExtResource("3")]
+transform = Transform3D(0.68, 0, 0.24, 0, 0.72, 0, -0.24, 0, 0.68, 0.25, 0.0, 1.05)
+
+[node name="IbuSari" parent="Actors" instance=ExtResource("4")]
+transform = Transform3D(0.66, 0, -0.28, 0, 0.72, 0, 0.28, 0, 0.66, -2.15, 0.0, 0.95)
+
+[node name="PakBudi" parent="Actors" instance=ExtResource("5")]
+transform = Transform3D(0.68, 0, -0.24, 0, 0.72, 0, 0.24, 0, 0.68, 2.35, 0.0, 1.15)
+
+[node name="CanvasLayer" type="CanvasLayer" parent="."]
+
+[node name="TopLeftPill" type="PanelContainer" parent="CanvasLayer"]
+offset_left = 18.0
+offset_top = 18.0
+offset_right = 370.0
+offset_bottom = 68.0
+theme_override_styles/panel = SubResource("GlassPill")
+
+[node name="HBox" type="HBoxContainer" parent="CanvasLayer/TopLeftPill"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="RankLabel" type="Label" parent="CanvasLayer/TopLeftPill/HBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.99, 0.96, 0.91, 1)
+theme_override_font_sizes/font_size = 16
+text = "Hari 1 • ART Pemula"
+
+[node name="BalanceLabel" type="Label" parent="CanvasLayer/TopLeftPill/HBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.51, 0.83, 0.66, 1)
+theme_override_font_sizes/font_size = 16
+text = "Rp 0"
+
+[node name="TopRightHBox" type="HBoxContainer" parent="CanvasLayer"]
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -290.0
+offset_top = 18.0
+offset_right = -18.0
+offset_bottom = 64.0
+grow_horizontal = 0
+theme_override_constants/separation = 10
+
+[node name="EnterHouseBtn" type="Button" parent="CanvasLayer/TopRightHBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 15
+text = "🏠 Masuk Rumah"
+
+[node name="RotateBtn" type="Button" parent="CanvasLayer/TopRightHBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 15
+text = "↻ Putar"
+
+[node name="Pins" type="Control" parent="CanvasLayer"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+
+[node name="PinIbu" type="Label" parent="CanvasLayer/Pins"]
+layout_mode = 0
+theme_override_styles/normal = SubResource("PinBadge")
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 13
+text = "❗ Ibu Sari"
+
+[node name="PinBudi" type="Label" parent="CanvasLayer/Pins"]
+layout_mode = 0
+theme_override_styles/normal = SubResource("PinBadge")
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 13
+text = "❗ Pak Budi"
+
+[node name="DialogueBar" type="PanelContainer" parent="CanvasLayer"]
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 24.0
+offset_top = -152.0
+offset_right = -24.0
+offset_bottom = -20.0
+grow_horizontal = 2
+grow_vertical = 0
+theme_override_styles/panel = SubResource("GlassPill")
+
+[node name="Margin" type="MarginContainer" parent="CanvasLayer/DialogueBar"]
+layout_mode = 2
+
+[node name="HBox" type="HBoxContainer" parent="CanvasLayer/DialogueBar/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="VBox" type="VBoxContainer" parent="CanvasLayer/DialogueBar/Margin/HBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="NameLabel" type="Label" parent="CanvasLayer/DialogueBar/Margin/HBox/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.95, 0.80, 0.56, 1)
+theme_override_font_sizes/font_size = 17
+text = "Ibu Sari • Istri / Pemilik Rumah"
+
+[node name="TextLabel" type="Label" parent="CanvasLayer/DialogueBar/Margin/HBox/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.99, 0.96, 0.91, 1)
+theme_override_font_sizes/font_size = 15
+text = "\"Alhamdulillah ruang tamu sudah kinclong.\""
+autowrap_mode = 2
+
+[node name="BtnBox" type="HBoxContainer" parent="CanvasLayer/DialogueBar/Margin/HBox"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="GreetBtn" type="Button" parent="CanvasLayer/DialogueBar/Margin/HBox/BtnBox"]
+layout_mode = 2
+text = "💬 Sapa (+Rp 5.500)"
+
+[node name="CloseBtn" type="Button" parent="CanvasLayer/DialogueBar/Margin/HBox/BtnBox"]
+layout_mode = 2
+text = "Tutup"
+
+[connection signal="pressed" from="CanvasLayer/TopRightHBox/EnterHouseBtn" to="." method="_on_enter_house_pressed"]
+[connection signal="pressed" from="CanvasLayer/TopRightHBox/RotateBtn" to="." method="_on_rotate_pressed"]
+[connection signal="pressed" from="CanvasLayer/DialogueBar/Margin/HBox/BtnBox/GreetBtn" to="." method="_on_greet_pressed"]
+[connection signal="pressed" from="CanvasLayer/DialogueBar/Margin/HBox/BtnBox/CloseBtn" to="." method="_on_close_dialogue"]
