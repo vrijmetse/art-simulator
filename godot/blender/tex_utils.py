@@ -367,8 +367,10 @@ def generate_stylized_face_texture(tex_dir: str, name: str, skin_rgb):
     yy, xx = np.mgrid[0:size, 0:size]
     u = xx / size
     v = yy / size
+    # Convert linear skin_rgb (Blender Principled BSDF base_color) -> sRGB PNG values so FaceSkin matches Neck/Arms seamlessly!
+    skin_srgb = [float(max(0.0, min(1.0, c)) ** (1.0 / 2.2)) for c in skin_rgb]
     rgb = np.zeros((size, size, 3), dtype=np.float32)
-    rgb[:, :] = skin_rgb
+    rgb[:, :] = skin_srgb
 
     def _blend(mask_arr, col_rgb, alpha=1.0):
         nonlocal rgb
@@ -378,31 +380,31 @@ def generate_stylized_face_texture(tex_dir: str, name: str, skin_rgb):
     # Soft rosy cheeks
     for cx in (0.31, 0.69):
         d2 = ((u - cx) / 0.088) ** 2 + ((v - 0.60) / 0.056) ** 2
-        _blend(np.exp(-d2 * 1.8), [0.88, 0.44, 0.40], 0.24)
+        _blend(np.exp(-d2 * 1.8), [0.92, 0.58, 0.54], 0.24)
 
     # Soft anti-aliased eyes (whites + warm dark irises + bright white catchlights) + arched brows
     for cx in (0.36, 0.64):
         eye_r = np.sqrt(((u - cx) / 0.064) ** 2 + ((v - 0.47) / 0.048) ** 2)
-        _blend((1.0 - eye_r) * 6.0, [0.95, 0.94, 0.92])
+        _blend((1.0 - eye_r) * 6.0, [0.96, 0.96, 0.94])
         iris_r = np.sqrt(((u - cx) / 0.040) ** 2 + ((v - 0.474) / 0.042) ** 2)
-        _blend((1.0 - iris_r) * 7.0, [0.14, 0.10, 0.09])
+        _blend((1.0 - iris_r) * 7.0, [0.22, 0.16, 0.14])
         pupil_r = np.sqrt(((u - cx) / 0.020) ** 2 + ((v - 0.476) / 0.022) ** 2)
-        _blend((1.0 - pupil_r) * 8.0, [0.03, 0.03, 0.03])
+        _blend((1.0 - pupil_r) * 8.0, [0.06, 0.05, 0.05])
         spark_r = np.sqrt(((u - (cx + 0.015)) / 0.014) ** 2 + ((v - 0.456) / 0.014) ** 2)
         _blend((1.0 - spark_r) * 6.0, [0.99, 0.99, 0.99])
         lash_d = np.abs(v - (0.426 + 0.018 * ((u - cx) / 0.068) ** 2))
-        lash_m = np.clip((1.0 - lash_d / 0.012) * (1.0 - np.abs(u - cx) / 0.072) * 3.5, 0.0, 1.0)
-        _blend(lash_m, [0.07, 0.05, 0.05])
+        lash_m = np.clip(1.0 - lash_d / 0.012, 0.0, 1.0) * np.clip(1.0 - np.abs(u - cx) / 0.072, 0.0, 1.0)
+        _blend(lash_m, [0.16, 0.12, 0.11])
         brow_v = 0.352 + 0.016 * ((u - cx) / 0.078) ** 2
-        brow_m = np.clip((1.0 - np.abs(v - brow_v) / 0.015) * (1.0 - np.abs(u - cx) / 0.074) * 3.0, 0.0, 1.0)
-        _blend(brow_m, [0.10, 0.08, 0.07])
+        brow_m = np.clip(1.0 - np.abs(v - brow_v) / 0.015, 0.0, 1.0) * np.clip(1.0 - np.abs(u - cx) / 0.074, 0.0, 1.0)
+        _blend(brow_m, [0.20, 0.16, 0.14])
 
     # Subtle nose bridge & tip shadow + warm curved smile
     nose = ((u - 0.50) / 0.024) ** 2 + ((v - 0.57) / 0.022) ** 2
-    _blend(np.exp(-nose * 1.9), [skin_rgb[0] * 0.72, skin_rgb[1] * 0.68, skin_rgb[2] * 0.66], 0.22)
+    _blend(np.exp(-nose * 1.9), [skin_srgb[0] * 0.84, skin_srgb[1] * 0.80, skin_srgb[2] * 0.78], 0.24)
     smile_v = 0.708 - 0.026 * ((u - 0.50) / 0.088) ** 2
-    smile_m = np.clip((1.0 - np.abs(v - smile_v) / 0.012) * (1.0 - np.abs(u - 0.50) / 0.084) * 3.0, 0.0, 1.0)
-    _blend(smile_m, [0.58, 0.26, 0.25], 0.85)
+    smile_m = np.clip(1.0 - np.abs(v - smile_v) / 0.015, 0.0, 1.0) * np.clip(1.0 - np.abs(u - 0.50) / 0.090, 0.0, 1.0)
+    _blend(smile_m, [0.46, 0.14, 0.16], 0.92)
 
     rgba = np.concatenate([np.clip(rgb, 0.0, 1.0), np.ones((size, size, 1), dtype=np.float32)], axis=-1).astype(np.float32)
     return save_rgba_png(name, rgba, tex_dir, False)

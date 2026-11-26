@@ -160,7 +160,7 @@ def bisect_clean_garment_seams(body_mesh, arm, sleeve_frac: float = 0.52, bare_c
 
 
 def assign_body_materials(body_mesh, arm, palette: dict, hb: dict, face_img, batik_img=None, sleeve_frac: float = 0.52,
-                          bare_calves_z=None, long_sleeve: bool = False):
+                          bare_calves_z=None, long_sleeve: bool = False, has_skirt: bool = False):
     ua_l = arm.data.bones.get("upperarm_l")
     sleeve_x = abs(ua_l.head_local.lerp(ua_l.tail_local, sleeve_frac).x) if ua_l else 0.27
 
@@ -198,7 +198,7 @@ def assign_body_materials(body_mesh, arm, palette: dict, hb: dict, face_img, bat
             else:
                 poly.material_index = idx_skin
         elif dom_vg == "neck_01":
-            if c.z >= 1.475 and abs(c.x) < 0.072:
+            if c.z >= 1.495 and (c.x * c.x + (c.y + 0.01) * (c.y + 0.01)) < 0.0056:
                 poly.material_index = idx_skin
             else:
                 poly.material_index = idx_shirt
@@ -250,8 +250,13 @@ def assign_body_materials(body_mesh, arm, palette: dict, hb: dict, face_img, bat
 
     for v in shirt_only_verts - skin_verts:
         v.co += v.normal * 0.0042
-    for v in pants_only_verts - skin_verts - shirt_only_verts:
-        v.co += v.normal * 0.0028
+    if has_skirt:
+        for v in pants_only_verts - skin_verts - shirt_only_verts:
+            if 0.50 <= v.co.z <= 1.02:
+                v.co -= v.normal * 0.012
+    else:
+        for v in pants_only_verts - skin_verts - shirt_only_verts:
+            v.co += v.normal * 0.0028
 
     # Project crisp planar -Y UV onto FaceSkin polygons
     rx_span = max(0.08, hb["rx"] * 1.46)
@@ -265,12 +270,11 @@ def assign_body_materials(body_mesh, arm, palette: dict, hb: dict, face_img, bat
                 v = (co.z - z_bot) / z_span
                 loop[uv_layer].uv = (max(0.02, min(0.98, u)), max(0.02, min(0.98, v)))
 
+    # Project UV smart_project ONLY onto idx_shirt polygons (never overwrite FaceSkin planar UVs!)
+    bpy.ops.mesh.select_all(action='DESELECT')
+    for f in bm.faces:
+        f.select = (f.material_index == idx_shirt)
     bmesh.update_edit_mesh(body_mesh.data)
-    bpy.ops.object.mode_set(mode='OBJECT')
-
-    for p in body_mesh.data.polygons:
-        p.select = (p.material_index == idx_shirt)
-    bpy.ops.object.mode_set(mode='EDIT')
     bpy.ops.uv.smart_project(angle_limit=math.radians(66))
     bpy.ops.object.mode_set(mode='OBJECT')
 
@@ -330,12 +334,12 @@ def build_indonesian_hair_or_hijab(arm, body_mesh, hb: dict, style: str, hair_rg
         bpy.ops.object.select_all(action='DESELECT')
         bpy.ops.mesh.primitive_uv_sphere_add(
             segments=16, ring_count=10, radius=1.0,
-            location=(cx - 0.014, fy + 0.014, hb["z_max"] - 0.042),
+            location=(cx - 0.012, fy + 0.032, hb["z_max"] - 0.040),
             rotation=(math.radians(14), math.radians(-12), 0),
         )
         poni = bpy.context.active_object
         poni.name = "PoniDepan"
-        poni.scale = (rx * 0.80, 0.048, 0.034)
+        poni.scale = (rx * 0.80, 0.028, 0.028)
         apply_subsurf_and_smooth(poni, levels=1)
         attach_to_bone(poni, arm, "head", mat_hair)
 
@@ -382,12 +386,12 @@ def build_indonesian_hair_or_hijab(arm, body_mesh, hb: dict, style: str, hair_rg
         bpy.ops.object.select_all(action='DESELECT')
         bpy.ops.mesh.primitive_uv_sphere_add(
             segments=16, ring_count=10, radius=1.0,
-            location=(cx + 0.012, fy + 0.014, hb["z_max"] - 0.044),
+            location=(cx + 0.012, fy + 0.032, hb["z_max"] - 0.042),
             rotation=(math.radians(14), math.radians(10), 0),
         )
         poni = bpy.context.active_object
         poni.name = "KakakPoni"
-        poni.scale = (rx * 0.80, 0.048, 0.032)
+        poni.scale = (rx * 0.80, 0.028, 0.028)
         apply_subsurf_and_smooth(poni, levels=1)
         attach_to_bone(poni, arm, "head", mat_hair)
         return cap
@@ -410,50 +414,50 @@ def build_indonesian_hair_or_hijab(arm, body_mesh, hb: dict, style: str, hair_rg
 
         fy = sample_face_y(body_mesh, cx, hb["z_max"] - 0.045, 0.03, 0.02)
         bpy.ops.object.select_all(action='DESELECT')
-        bpy.ops.mesh.primitive_uv_sphere_add(segments=16, ring_count=10, radius=1.0, location=(cx - 0.012, fy + 0.015, hb["z_max"] - 0.042), rotation=(math.radians(12), math.radians(-10), 0))
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=16, ring_count=10, radius=1.0, location=(cx - 0.012, fy + 0.032, hb["z_max"] - 0.040), rotation=(math.radians(12), math.radians(-10), 0))
         poni = bpy.context.active_object
         poni.name = "DewiPoni"
-        poni.scale = (rx * 0.78, 0.044, 0.030)
+        poni.scale = (rx * 0.78, 0.028, 0.028)
         apply_subsurf_and_smooth(poni, levels=1)
         attach_to_bone(poni, arm, "head", mat_hair)
         return cap
 
     if style == "peci":
         bpy.ops.object.select_all(action='DESELECT')
-        bpy.ops.mesh.primitive_uv_sphere_add(segments=22, ring_count=14, radius=1.0, location=(cx, cy + 0.015, cz + 0.012))
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=22, ring_count=14, radius=1.0, location=(cx, cy + 0.032, cz + 0.024))
         cap = bpy.context.active_object
         cap.name = "PakRtHairCap"
-        cap.scale = (rx + 0.010, ry + 0.008, rz + 0.012)
+        cap.scale = (rx + 0.008, ry + 0.004, rz + 0.006)
         apply_subsurf_and_smooth(cap, levels=1)
         attach_to_bone(cap, arm, "head", mat_hair)
 
         mat_peci = make_matte_mat("PeciVelvet", (0.06, 0.06, 0.07), 0.88, 0.08)
         bpy.ops.object.select_all(action='DESELECT')
-        bpy.ops.mesh.primitive_cylinder_add(vertices=24, radius=rx + 0.022, depth=0.105, location=(cx, cy + 0.012, hb["z_max"] + 0.015))
+        bpy.ops.mesh.primitive_cylinder_add(vertices=24, radius=rx + 0.008, depth=0.070, location=(cx, cy + 0.016, hb["z_max"] - 0.016), rotation=(math.radians(-6), 0, 0))
         peci = bpy.context.active_object
         peci.name = "PakRtPeci"
-        peci.scale = (0.94, 1.12, 1.0)
-        apply_bevel_and_smooth(peci, width=0.006, segments=2)
+        peci.scale = (0.96, 1.06, 1.0)
+        apply_bevel_and_smooth(peci, width=0.004, segments=2)
         attach_to_bone(peci, arm, "head", mat_peci)
         return peci
 
     if style == "ojek_helmet":
         mat_helmet = make_matte_mat("OjekHelmet", (0.12, 0.60, 0.28), 0.34, 0.28)
         bpy.ops.object.select_all(action='DESELECT')
-        bpy.ops.mesh.primitive_uv_sphere_add(segments=24, ring_count=16, radius=1.0, location=(cx, cy + 0.012, cz + 0.026))
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=24, ring_count=16, radius=1.0, location=(cx, cy + 0.036, cz + 0.042), rotation=(math.radians(-14), 0, 0))
         helm = bpy.context.active_object
         helm.name = "OjekHelmet"
-        helm.scale = (rx + 0.032, ry + 0.028, rz + 0.032)
+        helm.scale = (rx + 0.022, ry + 0.016, rz + 0.016)
         apply_subsurf_and_smooth(helm, levels=1)
         attach_to_bone(helm, arm, "head", mat_helmet)
 
-        mat_visor = make_matte_mat("OjekVisor", (0.10, 0.14, 0.20), 0.18, 0.55)
+        mat_visor = make_matte_mat("OjekVisor", (0.10, 0.14, 0.20), 0.22, 0.45)
         bpy.ops.object.select_all(action='DESELECT')
-        bpy.ops.mesh.primitive_cube_add(size=1.0, location=(cx, hb["y_min"] - 0.020, cz + 0.022))
+        bpy.ops.mesh.primitive_cube_add(size=1.0, location=(cx, hb["y_min"] - 0.024, hb["z_max"] - 0.028), rotation=(math.radians(-16), 0, 0))
         vis = bpy.context.active_object
         vis.name = "OjekVisor"
-        vis.scale = (rx * 1.48, 0.035, 0.056)
-        apply_bevel_and_smooth(vis, width=0.006, segments=2)
+        vis.scale = (rx * 1.38, 0.058, 0.012)
+        apply_bevel_and_smooth(vis, width=0.004, segments=2)
         attach_to_bone(vis, arm, "head", mat_visor)
         return helm
 
@@ -555,9 +559,9 @@ def build_fitted_curved_apron(arm, mat_apron, mat_pocket):
         (0.60, 0.180, -0.228),
         (0.78, 0.172, -0.214),
         (0.96, 0.162, -0.194),
-        (1.08, 0.145, -0.176),
-        (1.24, 0.132, -0.196),
-        (1.37, 0.112, -0.168),
+        (1.08, 0.145, -0.194),
+        (1.24, 0.132, -0.222),
+        (1.37, 0.112, -0.196),
     ]
     cols = 10
     grid = []
@@ -615,27 +619,8 @@ def build_fitted_curved_apron(arm, mat_apron, mat_pocket):
 
 
 def build_collared_placket(arm, mat_collar, mat_placket, prefix: str = "Shirt", with_placket: bool = True):
-    for sx, rot_z in [(-0.064, math.radians(-26)), (0.064, math.radians(26))]:
-        bpy.ops.object.select_all(action='DESELECT')
-        bpy.ops.mesh.primitive_cube_add(
-            size=1.0,
-            location=(sx, -0.095, 1.442),
-            rotation=(math.radians(38), math.radians(-18 if sx < 0 else 18), rot_z),
-        )
-        flap = bpy.context.active_object
-        flap.name = f"{prefix}Collar_{'L' if sx > 0 else 'R'}"
-        flap.scale = (0.092, 0.115, 0.022)
-        apply_bevel_and_smooth(flap, width=0.003)
-        attach_to_bone(flap, arm, "spine_03", mat_collar)
-
-    if with_placket:
-        bpy.ops.object.select_all(action='DESELECT')
-        bpy.ops.mesh.primitive_cube_add(size=1.0, location=(0.0, -0.142, 1.24))
-        placket = bpy.context.active_object
-        placket.name = f"{prefix}Placket"
-        placket.scale = (0.032, 0.010, 0.26)
-        apply_bevel_and_smooth(placket, width=0.002, segments=2)
-        attach_to_bone(placket, arm, "spine_02", mat_placket)
+    # Clean smooth Sims-like neckline without protruding boxy chest slabs
+    return
 
 
 def build_ual_character(
@@ -721,6 +706,7 @@ def build_ual_character(
     assign_body_materials(
         body_mesh, arm, palette, hb, face_img, batik_img=batik_img,
         sleeve_frac=0.52, bare_calves_z=bare_calves_z, long_sleeve=long_sleeve,
+        has_skirt=(skirt_cfg is not None),
     )
 
     build_stylized_indonesian_face(arm, body_mesh, hb, palette["skin"], palette["hair"])
@@ -791,7 +777,7 @@ if __name__ == "__main__":
         batik_cfg={"name": "daster_art_starter", "base": (0.14, 0.36, 0.26), "accent": (0.92, 0.76, 0.38)},
         apron=True, ribbon_rgb=(0.76, 0.24, 0.18), bare_calves_z=0.49,
         skirt_cfg={"name": "DasterSkirt_Batik", "obj_name": "DasterSkirt", "use_batik": True,
-                   "rings": [(0.48, 0.235, 0.195, 0.01), (0.68, 0.225, 0.185, 0.01), (0.88, 0.205, 0.165, 0.01), (1.03, 0.175, 0.145, 0.00)]},
+                   "rings": [(0.48, 0.252, 0.212, 0.01), (0.68, 0.242, 0.202, 0.01), (0.88, 0.222, 0.184, 0.01), (1.03, 0.188, 0.160, 0.00)]},
     )
 
     build_ual_character(
@@ -801,7 +787,7 @@ if __name__ == "__main__":
         batik_cfg={"name": "daster_art_hijab", "base": (0.16, 0.34, 0.42), "accent": (0.90, 0.80, 0.56)},
         apron=True, hijab=(0.14, 0.30, 0.22), long_sleeve=True,
         skirt_cfg={"name": "DasterHijab_Batik", "obj_name": "DasterSkirt", "use_batik": True,
-                   "rings": [(0.26, 0.245, 0.205, 0.02), (0.52, 0.225, 0.185, 0.01), (0.78, 0.215, 0.175, 0.01), (1.03, 0.175, 0.145, 0.00)]},
+                   "rings": [(0.26, 0.258, 0.218, 0.02), (0.52, 0.242, 0.202, 0.01), (0.78, 0.230, 0.190, 0.01), (1.03, 0.188, 0.160, 0.00)]},
     )
 
     build_ual_character(
