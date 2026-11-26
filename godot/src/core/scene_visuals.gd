@@ -1,7 +1,7 @@
 class_name ArtSceneVisuals
 extends RefCounted
 
-static var _contact_tex: GradientTexture2D = null
+static var _contact_tex: ImageTexture = null
 
 static func apply_baked_ao(node: Node) -> void:
 	if node is MeshInstance3D:
@@ -43,22 +43,22 @@ static func apply_character_polish(node: Node) -> void:
 	for child in node.get_children():
 		apply_character_polish(child)
 
-static func _get_contact_shadow_tex() -> GradientTexture2D:
+static func _get_contact_shadow_tex() -> ImageTexture:
 	if _contact_tex == null:
-		var g := Gradient.new()
-		g.offsets = PackedFloat32Array([0.0, 0.55, 1.0])
-		g.colors = PackedColorArray([
-			Color(0.03, 0.04, 0.08, 0.48),
-			Color(0.03, 0.04, 0.08, 0.22),
-			Color(0.03, 0.04, 0.08, 0.0),
-		])
-		_contact_tex = GradientTexture2D.new()
-		_contact_tex.gradient = g
-		_contact_tex.fill = GradientTexture2D.FILL_RADIAL
-		_contact_tex.fill_from = Vector2(0.5, 0.5)
-		_contact_tex.fill_to = Vector2(1.0, 0.5)
-		_contact_tex.width = 64
-		_contact_tex.height = 64
+		var sz := 64
+		var img := Image.create(sz, sz, false, Image.FORMAT_RGBA8)
+		var half := float(sz - 1) * 0.5
+		for y in range(sz):
+			for x in range(sz):
+				var dx := (float(x) - half) / half
+				var dy := (float(y) - half) / half
+				var r := sqrt(dx * dx + dy * dy)
+				var a := 0.0
+				if r < 1.0:
+					var t := 1.0 - r
+					a = t * t * 0.44
+				img.set_pixel(x, y, Color(0.03, 0.04, 0.08, a))
+		_contact_tex = ImageTexture.create_from_image(img)
 	return _contact_tex
 
 static func attach_contact_shadow(target: Node3D, radius: float = 0.36) -> void:
