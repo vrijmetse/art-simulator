@@ -20,6 +20,7 @@ const ArtWishlistStory := preload("res://src/core/wishlist_story.gd")
 const ArtStreetPatrols := preload("res://src/core/street_patrols.gd")
 const ArtRetention := preload("res://src/core/retention.gd")
 const ArtLifeRhythm := preload("res://src/core/life_rhythm.gd")
+const ArtSceneVisuals := preload("res://src/core/scene_visuals.gd")
 
 var _failed := 0
 var _passed := 0
@@ -917,6 +918,31 @@ func _initialize() -> void:
 	var sl_night: Array = ArtAtmosphere.get_street_lights_config("malam")
 	_assert_true(sl_night.size() <= 3 and sl_night.size() >= 2, "street light pool count <= 3 for mobile perf")
 	_assert_true(float(sl_night[0]["energy"]) > float(sl_day[0]["energy"]), "streetlamp glow ramps up at night")
+
+	# 28. Smooth HD Visuals: Character Rim Polish + Idempotent Contact Shadow
+	var sv_char := Node3D.new()
+	var sv_mi := MeshInstance3D.new()
+	var sv_box := BoxMesh.new()
+	var sv_mat := StandardMaterial3D.new()
+	sv_mat.albedo_color = Color(0.2, 0.7, 0.4)
+	sv_box.material = sv_mat
+	sv_mi.mesh = sv_box
+	sv_char.add_child(sv_mi)
+	ArtSceneVisuals.apply_character_polish(sv_char)
+	var polished_mat := sv_mi.get_active_material(0) as StandardMaterial3D
+	_assert_true(polished_mat != null and polished_mat.rim_enabled, "apply_character_polish enables rim light")
+	_assert_true(polished_mat != null and polished_mat.rim >= 0.20, "character rim >= 0.20")
+	ArtSceneVisuals.attach_contact_shadow(sv_char, 0.38)
+	ArtSceneVisuals.attach_contact_shadow(sv_char, 0.38)
+	var cs_count := 0
+	for ch in sv_char.get_children():
+		if ch.name == "_ContactShadow":
+			cs_count += 1
+	_assert_eq(cs_count, 1, "attach_contact_shadow is idempotent (exactly 1 _ContactShadow)")
+	var cs_node := sv_char.find_child("_ContactShadow", false, false) as MeshInstance3D
+	_assert_true(cs_node != null and cs_node.position.y >= 0.025, "contact shadow sits at y >= 0.025 above rugs")
+	_assert_eq(cs_node.cast_shadow, GeometryInstance3D.SHADOW_CASTING_SETTING_OFF, "contact shadow does not cast directional shadow")
+	sv_char.free()
 
 	print("GODOT TDD RESULT: %d passed, %d failed" % [_passed, _failed])
 	quit(0 if _failed == 0 else 1)

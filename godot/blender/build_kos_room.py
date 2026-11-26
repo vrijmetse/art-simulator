@@ -157,7 +157,7 @@ def add_beveled_box(name, size, loc, mat, bevel=0.022, rot=(0.0, 0.0, 0.0), cuts
     if bevel > 0:
         b = obj.modifiers.new("Bevel", 'BEVEL')
         b.width = bevel
-        b.segments = 2
+        b.segments = 3
         bpy.ops.object.modifier_apply(modifier="Bevel")
     if cuts > 0:
         bpy.ops.object.mode_set(mode='EDIT')
@@ -167,6 +167,10 @@ def add_beveled_box(name, size, loc, mat, bevel=0.022, rot=(0.0, 0.0, 0.0), cuts
     bpy.ops.object.shade_smooth()
     obj.data.use_auto_smooth = True
     obj.data.auto_smooth_angle = math.radians(42)
+    if bevel > 0:
+        wn = obj.modifiers.new("WeightedNormal", 'WEIGHTED_NORMAL')
+        wn.keep_sharp = True
+        bpy.ops.object.modifier_apply(modifier="WeightedNormal")
     bpy.ops.object.mode_set(mode='EDIT')
     bpy.ops.mesh.select_all(action='SELECT')
     bpy.ops.uv.cube_project(cube_size=max(size) * 0.6)

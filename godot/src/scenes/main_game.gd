@@ -526,6 +526,8 @@ func _spawn_npcs(npc_list: Array) -> void:
 		var inst := ps.instantiate() as Node3D
 		inst.scale = Vector3(0.84, 0.84, 0.84)
 		holder.add_child(inst)
+		SceneVisuals.apply_character_polish(inst)
+		SceneVisuals.attach_contact_shadow(holder, 0.36)
 
 		var target_anim := String(npc.get("anim", "Idle")).to_lower()
 		var ap := _find_anim_player_recursive(inst)
@@ -1700,12 +1702,17 @@ func _perform_sleep_recharge() -> void:
 	var prev_pos := player.position
 	var prev_rot := player.rotation
 	# Cozy bed-lay pose cleanly atop single bed mattress (Godot -1.62, 0.66, -1.32)
+	var cs_p := player.find_child("_ContactShadow", false, false) as Node3D
+	if cs_p != null:
+		cs_p.visible = false
 	player.position = Vector3(-1.62, 0.66, -1.32)
 	player.rotation = Vector3(-PI * 0.50, 0.0, 0.0)
 	_spawn_float_popup(player.position + Vector3(0.0, 0.45, 0.0), "Zzz...", Color(0.68, 0.88, 1.0))
 	await get_tree().create_timer(0.85).timeout
 	player.rotation = prev_rot
 	player.position = Vector3(-0.95, 0.0, -0.85) if _world_mode == "home" else prev_pos
+	if cs_p != null:
+		cs_p.visible = true
 	player.movement_locked = false
 	_is_sleeping = false
 
@@ -2330,6 +2337,16 @@ func _style_bar(bar: ProgressBar, fill_col: Color, bg_col: Color = Color(0.08, 0
 	bar.add_theme_stylebox_override("fill", fg)
 
 func _build_hud() -> void:
+	var vig := ColorRect.new()
+	vig.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vig.set_anchors_preset(Control.PRESET_FULL_RECT)
+	var v_sh := Shader.new()
+	v_sh.code = "shader_type canvas_item;\nvoid fragment() {\n	float d = length((UV - 0.5) * vec2(1.0, 0.85));\n	float a = smoothstep(0.45, 1.05, d) * 0.22;\n	COLOR = vec4(0.03, 0.04, 0.07, a);\n}\n"
+	var v_mat := ShaderMaterial.new()
+	v_mat.shader = v_sh
+	vig.material = v_mat
+	hud.add_child(vig)
+
 	var obsidian_gold := _make_box(Color(0.08, 0.09, 0.11, 0.88), Color(0.95, 0.78, 0.26, 0.90), 14, 14, 10)
 	var gold_pill := _make_box(Color(0.96, 0.78, 0.24, 1.0), Color(0.99, 0.89, 0.48, 1.0), 10, 14, 7)
 	var dark_ink := Color(0.11, 0.09, 0.06)

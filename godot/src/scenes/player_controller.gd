@@ -1,6 +1,8 @@
 class_name ArtPlayerController
 extends CharacterBody3D
 
+const SceneVisuals := preload("res://src/core/scene_visuals.gd")
+
 signal arrived_at_target
 
 @export var move_speed := 3.4
@@ -69,6 +71,8 @@ func load_outfit(outfit_id: String, model_path: String, color_hex: String, skin_
 			_model_root.scale = Vector3(0.84, 0.84, 0.84)
 			add_child(_model_root)
 			_anim_player = _find_anim_player(_model_root)
+			SceneVisuals.apply_character_polish(_model_root)
+			SceneVisuals.attach_contact_shadow(self, 0.38)
 		_equipped_outfit_id = outfit_id
 		_equipped_model_path = model_path
 
@@ -131,11 +135,11 @@ func _play_anim(target: String) -> void:
 	for a_name in list:
 		if target.to_lower() in a_name.to_lower():
 			if _current_anim != a_name:
-				_anim_player.play(a_name)
+				_anim_player.play(a_name, 0.20)
 				_current_anim = a_name
 			return
 	if _current_anim != list[0]:
-		_anim_player.play(list[0])
+		_anim_player.play(list[0], 0.20)
 		_current_anim = list[0]
 
 func _physics_process(delta: float) -> void:
