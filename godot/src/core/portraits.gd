@@ -116,6 +116,66 @@ const CHARACTER_STYLES := {
 		"glasses": false,
 		"mustache": false,
 	},
+	"pak_agus": {
+		"bg": Color("#334149"),
+		"skin": Color("#C9926E"),
+		"hair": Color("#262626"),
+		"shirt": Color("#5C6B73"),
+		"accent": Color("#D4AF5A"),
+		"headwear": "peci",
+		"glasses": false,
+		"mustache": true,
+	},
+	"kakak_nadine": {
+		"bg": Color("#4B2E3B"),
+		"skin": Color("#E6B89C"),
+		"hair": Color("#2B1F1D"),
+		"shirt": Color("#D97B93"),
+		"accent": Color("#F5E1CE"),
+		"headwear": "hair_bob",
+		"glasses": false,
+		"mustache": false,
+	},
+	"kakak_maya": {
+		"bg": Color("#2B4157"),
+		"skin": Color("#E2B292"),
+		"hair": Color("#241C1A"),
+		"shirt": Color("#5B8FB9"),
+		"accent": Color("#F0D6B8"),
+		"headwear": "hair_bun",
+		"glasses": false,
+		"mustache": false,
+	},
+	"ibu_tini": {
+		"bg": Color("#3D4B34"),
+		"skin": Color("#D49E78"),
+		"hair": Color("#3B6E4C"),
+		"shirt": Color("#6B8E4E"),
+		"accent": Color("#E8C468"),
+		"headwear": "hijab",
+		"glasses": false,
+		"mustache": false,
+	},
+	"mbak_rina": {
+		"bg": Color("#2A4B5C"),
+		"skin": Color("#D8A47F"),
+		"hair": Color("#1E1B18"),
+		"shirt": Color("#3A8C7A"),
+		"accent": Color("#E0B86B"),
+		"headwear": "hair_bun",
+		"glasses": false,
+		"mustache": false,
+	},
+	"adik_bima": {
+		"bg": Color("#2E445A"),
+		"skin": Color("#E6B89C"),
+		"hair": Color("#2B2D42"),
+		"shirt": Color("#4EA8DE"),
+		"accent": Color("#F2C94C"),
+		"headwear": "hair_short",
+		"glasses": false,
+		"mustache": false,
+	},
 }
 
 static func get_portrait(speaker_id: String, mood: String = "neutral") -> ImageTexture:
@@ -127,6 +187,36 @@ static func get_portrait(speaker_id: String, mood: String = "neutral") -> ImageT
 		return _portrait_cache[cache_key]
 
 	var style: Dictionary = CHARACTER_STYLES.get(speaker_id, CHARACTER_STYLES["player"])
+	var tex := _render_portrait_from_style(style, norm_mood)
+	_portrait_cache[cache_key] = tex
+	return tex
+
+static func get_player_portrait(skin_hex: String, shirt_hex: String, ob_style: String, mood: String = "neutral") -> ImageTexture:
+	var norm_mood := mood
+	if norm_mood != "neutral" and norm_mood != "happy" and norm_mood != "strict":
+		norm_mood = "neutral"
+	var cache_key := "player_%s_%s_%s_%s" % [skin_hex, shirt_hex, ob_style, norm_mood]
+	if _portrait_cache.has(cache_key):
+		return _portrait_cache[cache_key]
+
+	var base: Dictionary = CHARACTER_STYLES["player"].duplicate()
+	base["skin"] = Color.from_string(skin_hex, base["skin"])
+	base["shirt"] = Color.from_string(shirt_hex, base["shirt"])
+	match ob_style:
+		"hijab":
+			base["headwear"] = "hijab"
+		"cepol", "bun", "hair_bun":
+			base["headwear"] = "hair_bun"
+		"bob", "hair_bob":
+			base["headwear"] = "hair_bob"
+		_:
+			base["headwear"] = "hair_short"
+
+	var tex := _render_portrait_from_style(base, norm_mood)
+	_portrait_cache[cache_key] = tex
+	return tex
+
+static func _render_portrait_from_style(style: Dictionary, norm_mood: String) -> ImageTexture:
 	var img := Image.create(48, 48, false, Image.FORMAT_RGBA8)
 	var bg: Color = style["bg"]
 	var skin: Color = style["skin"]
@@ -242,7 +332,6 @@ static func get_portrait(speaker_id: String, mood: String = "neutral") -> ImageT
 		_draw_rect(img, 21, 25, 6, 1, mouth_color)
 
 	var tex := ImageTexture.create_from_image(img)
-	_portrait_cache[cache_key] = tex
 	return tex
 
 static func get_map_destinations(save: Dictionary, world_mode: String) -> Array:

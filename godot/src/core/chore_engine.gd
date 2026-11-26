@@ -72,6 +72,19 @@ const TIER_CHORE_SETS := {
 	"cluster_elite": ["make_bed", "sweep_floor", "wash_dishes", "cook_rice", "iron_laundry", "water_plants"],
 }
 
+const CHORE_TOOLS := {
+	"sweep_floor": "broom",
+	"make_bed": "duster",
+	"wash_dishes": "sponge",
+	"cook_rice": "spatula",
+	"iron_laundry": "iron",
+	"water_plants": "watering_can",
+}
+
+const TAP_BOOST_SECONDS := 0.65
+const MAX_TAP_BOOSTS_PER_CHORE := 3
+const TAP_BOOST_BONUS_RP := 1500
+
 static func create_shift(tier_id: String, profile: Dictionary, max_energy: int) -> Dictionary:
 	var clamped_max := maxi(10, max_energy)
 	var raw_ids: Array = TIER_CHORE_SETS.get(tier_id, TIER_CHORE_SETS["kamar_kos"])

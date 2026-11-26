@@ -686,5 +686,54 @@ func _initialize() -> void:
 	_assert_eq(rain_wav.loop_mode, AudioStreamWAV.LOOP_FORWARD, "Rain ambient uses LOOP_FORWARD")
 	_assert_true(rain_wav.loop_end > 22050, "Rain loop_end set to frame count (>1s)")
 
+	# 22. Warung-Life Parity Sprint: Mood Start, Level Tip Bonus, NPC 1:1 IDs, Chore Tools & Tap Boost, Tier 1 Room, Dynamic Portraits, 16s BGM & Tactile SFX
+	var sv_m := Progression.create_player_save()
+	sv_m["balance_rp"] = 500000
+	sv_m["mood"] = 72
+	sv_m = Progression.buy_kos_upgrade(sv_m, "kasur_empuk")["save"] # +8 mood
+	sv_m = Progression.buy_kos_upgrade(sv_m, "kipas_angin")["save"] # +8 mood
+	var start_mood := Progression.get_shift_starting_mood(sv_m)
+	_assert_true(start_mood >= 80, "shift starting mood incorporates save mood + upgrade bonuses (>=80)")
+	var cs_m := MajikanCall.create_state(MajikanProfiles.get_profile("ibu_kos_melati"), start_mood)
+	_assert_eq(int(cs_m["mood"]), start_mood, "MajikanCall.create_state uses passed initial_mood instead of hardcoded 50")
+
+	_assert_true(Progression.get_level_tip_bonus(400) > Progression.get_level_tip_bonus(0), "higher player level increases contract tip multiplier")
+	_assert_eq(int(CareerTiers.get_tier("perumahan_45")["min_level"]), Progression.level_from_xp(int(CareerTiers.get_tier("perumahan_45")["min_xp"])), "perumahan_45 min_level matches level_from_xp")
+	_assert_eq(int(CareerTiers.get_tier("cluster_elite")["min_level"]), Progression.level_from_xp(int(CareerTiers.get_tier("cluster_elite")["min_xp"])), "cluster_elite min_level matches level_from_xp")
+
+	for tier_id in ["kamar_kos", "kampung", "perumahan_36", "perumahan_45", "cluster_elite"]:
+		var sc_t := NpcRoster.get_street_config(tier_id)
+		for sn in sc_t.get("street_npcs", []):
+			var sn_id := String(sn["id"])
+			var found_nb := false
+			for nb in Neighborhood.NEIGHBORS:
+				if String(nb["id"]) == sn_id:
+					found_nb = true
+					break
+			_assert_true(found_nb, "street NPC id exists in Neighborhood.NEIGHBORS: " + sn_id)
+	var shift_react := NpcRoster.get_shift_npc_reaction("ibu_melati", "id")
+	_assert_true(String(shift_react.get("text", "")) != "", "shift NPC has interactive greeting reaction")
+
+	_assert_eq(String(ChoreEngine.CHORE_TOOLS.get("sweep_floor", "")), "broom", "sweep_floor maps to broom tool prop")
+	_assert_true(ChoreEngine.MAX_TAP_BOOSTS_PER_CHORE >= 2 and ChoreEngine.MAX_TAP_BOOSTS_PER_CHORE <= 4, "tap boost per-chore cap prevents instant exploit")
+	_assert_eq(String(MajikanProfiles.get_profile("ibu_kos_melati")["work_interior_scene"]), "res://assets/models/kos_neighbor_room.glb", "Tier 1 shift uses distinct kos_neighbor_room.glb")
+
+	var tp2 := PlayerControllerScene.new()
+	var tool_node := ArtStreetPatrols.sync_chore_tool(tp2, "broom")
+	_assert_true(tool_node != null and tool_node.visible, "chore tool prop attached & visible when cleaning")
+	ArtStreetPatrols.sync_chore_tool(tp2, "")
+	_assert_eq(tool_node.visible, false, "chore tool prop hidden when idle")
+	tp2.free()
+
+	var p_tex := ArtPortraits.get_player_portrait("#C98E66", "#2E7D6B", "hijab", "happy")
+	_assert_true(p_tex != null and p_tex.get_width() == 48, "dynamic player portrait renders 48x48")
+
+	var bgm16 := AudioSynth.make_cozy_bgm_loop()
+	_assert_true(bgm16.loop_end >= 22050 * 14, "cozy BGM extended to >=14s A/B phrase")
+	_assert_true(AudioSynth.make_ui_click().data.size() > 0, "ui click SFX synthesized")
+	_assert_true(AudioSynth.make_door_chime().data.size() > 0, "door chime SFX synthesized")
+	_assert_true(AudioSynth.make_chore_tick().data.size() > 0, "chore tick SFX synthesized")
+	_assert_true(AudioSynth.make_footstep_tick().data.size() > 0, "footstep tick SFX synthesized")
+
 	print("GODOT TDD RESULT: %d passed, %d failed" % [_passed, _failed])
 	quit(0 if _failed == 0 else 1)

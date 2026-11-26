@@ -35,7 +35,7 @@ static func create_runtime_npcs(street_npcs: Array) -> Array:
 	return out
 
 
-static func step_patrols(runtime_npcs: Array, street_cfg: Dictionary, player_pos: Vector3, delta: float) -> void:
+static func step_patrols(runtime_npcs: Array, street_cfg: Dictionary, player_pos: Vector3, delta: float, is_raining: bool = false) -> void:
 	if delta <= 0.0:
 		return
 
@@ -98,6 +98,7 @@ static func step_patrols(runtime_npcs: Array, street_cfg: Dictionary, player_pos
 			node3d.position = pos
 			if walking:
 				node3d.rotation.y = PI * 0.5 if dir > 0 else -PI * 0.5
+			sync_player_umbrella(node3d, is_raining)
 
 		var ap_val: Variant = npc.get("anim_player", null)
 		if ap_val is AnimationPlayer and is_instance_valid(ap_val):
@@ -176,3 +177,89 @@ static func sync_player_umbrella(player_node: Node3D, should_show: bool) -> Node
 
 	umbrella.visible = true
 	return umbrella
+
+
+static func _make_box_part(part_name: String, size: Vector3, pos: Vector3, color_hex: String, roughness: float = 0.65) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	mi.name = part_name
+	var mesh := BoxMesh.new()
+	mesh.size = size
+	mi.mesh = mesh
+	mi.position = pos
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(color_hex)
+	mat.roughness = roughness
+	mi.material_override = mat
+	return mi
+
+
+static func _make_cyl_part(part_name: String, top_r: float, bot_r: float, h: float, pos: Vector3, color_hex: String, roughness: float = 0.65) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	mi.name = part_name
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = top_r
+	mesh.bottom_radius = bot_r
+	mesh.height = h
+	mesh.radial_segments = 8
+	mi.mesh = mesh
+	mi.position = pos
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(color_hex)
+	mat.roughness = roughness
+	mi.material_override = mat
+	return mi
+
+
+static func sync_chore_tool(player_node: Node3D, tool_id: String) -> Node3D:
+	if player_node == null or not is_instance_valid(player_node):
+		return null
+
+	var clean_id := tool_id.strip_edges().to_lower()
+	var prop := player_node.get_node_or_null("ChoreToolProp") as Node3D
+	if clean_id.is_empty():
+		if prop != null:
+			prop.visible = false
+		return prop
+
+	if prop == null:
+		prop = Node3D.new()
+		prop.name = "ChoreToolProp"
+		prop.position = Vector3(0.28, 0.92, 0.14)
+		player_node.add_child(prop)
+
+	if String(prop.get_meta("tool_id", "")) != clean_id:
+		for child in prop.get_children():
+			prop.remove_child(child)
+			child.queue_free()
+		prop.set_meta("tool_id", clean_id)
+		prop.rotation_degrees = Vector3.ZERO
+
+		match clean_id:
+			"broom":
+				prop.rotation_degrees = Vector3(18.0, 0.0, -8.0)
+				prop.add_child(_make_cyl_part("Handle", 0.015, 0.015, 0.92, Vector3(0.0, 0.05, 0.0), "#8D5B32"))
+				prop.add_child(_make_box_part("Head", Vector3(0.24, 0.10, 0.06), Vector3(0.0, -0.44, 0.0), "#D4A359", 0.85))
+			"duster":
+				prop.rotation_degrees = Vector3(25.0, 0.0, 0.0)
+				prop.add_child(_make_cyl_part("Handle", 0.012, 0.012, 0.36, Vector3(0.0, 0.0, 0.0), "#6D4C3D"))
+				prop.add_child(_make_cyl_part("Plume", 0.075, 0.045, 0.24, Vector3(0.0, 0.26, 0.0), "#E76F51", 0.9))
+			"sponge":
+				prop.add_child(_make_box_part("Pad", Vector3(0.14, 0.055, 0.09), Vector3(0.0, 0.0, 0.04), "#F4D35E", 0.85))
+				prop.add_child(_make_box_part("Scrub", Vector3(0.14, 0.02, 0.09), Vector3(0.0, -0.035, 0.04), "#2A9D8F", 0.95))
+			"spatula":
+				prop.rotation_degrees = Vector3(22.0, 0.0, 0.0)
+				prop.add_child(_make_cyl_part("Handle", 0.014, 0.014, 0.24, Vector3(0.0, -0.04, 0.0), "#3D2B1F"))
+				prop.add_child(_make_box_part("Blade", Vector3(0.09, 0.13, 0.012), Vector3(0.0, 0.14, 0.0), "#B8C0C8", 0.3))
+			"iron":
+				prop.add_child(_make_box_part("Sole", Vector3(0.13, 0.035, 0.22), Vector3(0.0, -0.02, 0.06), "#9AA5B1", 0.25))
+				prop.add_child(_make_box_part("Body", Vector3(0.10, 0.06, 0.14), Vector3(0.0, 0.025, 0.04), "#E63946", 0.45))
+			"watering_can":
+				prop.add_child(_make_cyl_part("Body", 0.095, 0.105, 0.19, Vector3(0.0, -0.04, 0.05), "#457B9D", 0.45))
+				var spout := _make_cyl_part("Spout", 0.014, 0.022, 0.18, Vector3(0.0, 0.03, 0.16), "#457B9D", 0.45)
+				spout.rotation_degrees = Vector3(55.0, 0.0, 0.0)
+				prop.add_child(spout)
+			_:
+				prop.add_child(_make_box_part("GenericTool", Vector3(0.08, 0.14, 0.08), Vector3.ZERO, "#A8DADC"))
+
+	prop.visible = true
+	return prop

@@ -46,6 +46,8 @@ var _world_mode := "home"
 var _in_shift := false
 var _street_cfg: Dictionary = {}
 var _street_npcs_data: Array = []
+var _shift_npcs_data: Array = []
+var _chatted_shift_npcs: Dictionary = {}
 var _portal_nodes: Array = []
 var _traffic_root: Node3D
 var _traffic_items: Array = []
@@ -59,6 +61,11 @@ var _muted := false
 var _active_chore_id := ""
 var _chore_progress := 0.0
 var _chore_duration := 3.5
+var _chore_boosts_used := 0
+var _chore_boost_cd := 0.0
+var _pending_auto_chore_id := ""
+var _float_popups: Array = []
+var _footstep_cd := 0.0
 var _call_cooldown := 14.0
 var _shift_elapsed_s := 0.0
 var _phone_open := false
@@ -70,8 +77,13 @@ var _wav_fanfare: AudioStreamWAV
 var _wav_buzz: AudioStreamWAV
 var _wav_bgm: AudioStreamWAV
 var _wav_rain: AudioStreamWAV
+var _wav_click: AudioStreamWAV
+var _wav_door: AudioStreamWAV
+var _wav_chore_tick: AudioStreamWAV
+var _wav_step: AudioStreamWAV
 var _bgm_player: AudioStreamPlayer
 var _rain_player: AudioStreamPlayer
+var _step_player: AudioStreamPlayer
 var _audio_unlocked := false
 var _pending_story_tier := ""
 
@@ -170,6 +182,10 @@ func _ready() -> void:
 	_wav_buzz = AudioSynth.make_warning_buzz()
 	_wav_bgm = AudioSynth.make_cozy_bgm_loop()
 	_wav_rain = AudioSynth.make_rain_loop()
+	_wav_click = AudioSynth.make_ui_click()
+	_wav_door = AudioSynth.make_door_chime()
+	_wav_chore_tick = AudioSynth.make_chore_tick()
+	_wav_step = AudioSynth.make_footstep_tick()
 
 	_bgm_player = AudioStreamPlayer.new()
 	_bgm_player.name = "BgmPlayer"
@@ -182,6 +198,15 @@ func _ready() -> void:
 	_rain_player.stream = _wav_rain
 	_rain_player.volume_db = -22.0
 	add_child(_rain_player)
+
+	_step_player = AudioStreamPlayer.new()
+	_step_player.name = "StepPlayer"
+	_step_player.stream = _wav_step
+	_step_player.volume_db = -14.0
+	add_child(_step_player)
+
+	if player != null and not player.arrived_at_target.is_connected(_on_player_arrived):
+		player.arrived_at_target.connect(_on_player_arrived)
 
 	for arg in OS.get_cmdline_user_args():
 		if arg == "--smoke-test":
@@ -257,18 +282,69 @@ func _play_sfx(wav: AudioStreamWAV) -> void:
 	sfx.stream = wav
 	sfx.play()
 
+func _get_player_portrait_tex(mood: String = "neutral") -> ImageTexture:
+	return Portraits.get_player_portrait(
+		String(_save.get("skin_hex", "#B87A4B")),
+		String(_save.get("outfit_color_hex", "#4E7D63")),
+		String(_save.get("avatar_style", "cepol")),
+		mood
+	)
+
 func _show_toast(msg: String, speaker_id: String = "", mood: String = "happy") -> void:
 	if _toast_lbl == null or _toast_panel == null:
 		return
 	_toast_lbl.text = msg
 	if _toast_portrait != null:
-		if speaker_id != "":
+		if speaker_id == "player":
+			_toast_portrait.texture = _get_player_portrait_tex(mood)
+			_toast_portrait.visible = true
+		elif speaker_id != "":
 			_toast_portrait.texture = Portraits.get_portrait(speaker_id, mood)
 			_toast_portrait.visible = true
 		else:
 			_toast_portrait.visible = false
 	_toast_panel.visible = true
 	_toast_timer = 3.2
+
+func _spawn_float_popup(world_pos: Vector3, text: String, col: Color = Color(0.98, 0.84, 0.28)) -> void:
+	if hud == null or cam == null or _smoke_mode:
+		return
+	var lbl := Label.new()
+	lbl.text = text
+	lbl.add_theme_font_size_override("font_size", 16)
+	lbl.add_theme_color_override("font_color", col)
+	lbl.add_theme_color_override("font_outline_color", Color(0.06, 0.08, 0.10))
+	lbl.add_theme_constant_override("outline_size", 4)
+	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hud.add_child(lbl)
+	var scr := cam.unproject_position(world_pos)
+	lbl.position = scr - Vector2(60, 12)
+	_float_popups.append({"node": lbl, "elapsed": 0.0, "dur": 1.35, "start_y": lbl.position.y})
+
+func _burst_chore_sparkles(world_pos: Vector3) -> void:
+	if _smoke_mode or hotspots_root == null:
+		return
+	var p := CPUParticles3D.new()
+	p.one_shot = true
+	p.explosiveness = 0.92
+	p.amount = 18
+	p.lifetime = 0.65
+	p.position = world_pos + Vector3(0.0, 0.9, 0.0)
+	p.direction = Vector3(0.0, 1.0, 0.0)
+	p.spread = 65.0
+	p.initial_velocity_min = 1.4
+	p.initial_velocity_max = 2.8
+	p.gravity = Vector3(0.0, -3.5, 0.0)
+	var mesh := SphereMesh.new()
+	mesh.radius = 0.035
+	mesh.height = 0.07
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.albedo_color = Color(1.0, 0.86, 0.30)
+	mesh.material = mat
+	p.mesh = mesh
+	hotspots_root.add_child(p)
+	p.emitting = true
 
 func _build_rain_particles() -> void:
 	_rain_particles = CPUParticles3D.new()
@@ -478,11 +554,16 @@ func _spawn_portal(pid: String, pos: Vector3, color: Color, label_id: String, la
 	_portal_nodes.append(holder)
 
 func _enter_home_mode() -> void:
+	if _world_mode != "home" and _audio_unlocked:
+		_play_sfx(_wav_door)
 	_world_mode = "home"
 	_in_shift = false
 	_active_chore_id = ""
+	_pending_auto_chore_id = ""
 	_street_npcs_data = []
+	_shift_npcs_data = []
 	player.set_cleaning(false)
+	StreetPatrols.sync_chore_tool(player, "")
 	if _chore_bar_wrap != null:
 		_chore_bar_wrap.visible = false
 	_clear_hotspots()
@@ -504,10 +585,15 @@ func _enter_home_mode() -> void:
 	_refresh_hud()
 
 func _enter_street_mode(from_mode: String = "home") -> void:
+	if _audio_unlocked:
+		_play_sfx(_wav_door)
 	_world_mode = "street"
 	_in_shift = false
 	_active_chore_id = ""
+	_pending_auto_chore_id = ""
+	_shift_npcs_data = []
 	player.set_cleaning(false)
+	StreetPatrols.sync_chore_tool(player, "")
 	if _chore_bar_wrap != null:
 		_chore_bar_wrap.visible = false
 	_clear_hotspots()
@@ -539,22 +625,29 @@ func _enter_street_mode(from_mode: String = "home") -> void:
 	_refresh_hud()
 
 func _start_shift() -> void:
+	if _audio_unlocked:
+		_play_sfx(_wav_door)
 	var tier_id := String(_save.get("active_tier_id", "kamar_kos"))
 	var prof := MajikanProfiles.get_profile(String(_save.get("active_profile_id", "ibu_kos_melati")))
 	if prof.is_empty():
 		prof = MajikanProfiles.get_profile("ibu_kos_melati")
 	var max_e := Progression.get_max_energy(_save)
 	_shift = ChoreEngine.create_shift(tier_id, prof, max_e)
-	_call_state = MajikanCall.create_state(prof)
-	_call_state["mood"] = clampi(int(_save.get("mood", 65)) + Progression.get_mood_bonus(_save), 25, 100)
+	var start_mood := Progression.get_shift_starting_mood(_save)
+	_call_state = MajikanCall.create_state(prof, start_mood)
 	_world_mode = "shift"
 	_in_shift = true
 	_shift_elapsed_s = 0.0
 	_phone_open = false
 	_call_cooldown = 12.0
 	_active_chore_id = ""
+	_pending_auto_chore_id = ""
+	_chore_boosts_used = 0
+	_chore_boost_cd = 0.0
 	_street_npcs_data = []
+	_chatted_shift_npcs = {}
 	_portal_nodes.clear()
+	StreetPatrols.sync_chore_tool(player, "")
 
 	var work_glb := String(prof.get("work_interior_scene", "res://assets/models/room_majikan_living.glb"))
 	_load_stage_glb(work_glb)
@@ -569,10 +662,11 @@ func _start_shift() -> void:
 		player.position = Vector3(0.0, 0.0, 0.35)
 	else:
 		player.set_walk_bounds(-2.0, 2.0, -1.8, 1.7)
-		player.position = Vector3(0.0, 0.0, -0.5)
+		player.position = Vector3(0.0, 0.0, 0.25)
 	player.cancel_movement()
 	_spawn_hotspots(work_glb)
-	_spawn_npcs(NpcRoster.get_shift_npcs(tier_id))
+	_shift_npcs_data = NpcRoster.get_shift_npcs(tier_id)
+	_spawn_npcs(_shift_npcs_data)
 	_clear_street_traffic()
 	if int(_save.get("tutorial_step", 0)) < 2:
 		_save = WishlistStory.advance_tutorial(_save, 2)
@@ -604,6 +698,12 @@ func _get_chore_positions(work_glb: String) -> Dictionary:
 			"cook_rice": Vector3(1.55, 0.0, -0.55),
 			"iron_laundry": Vector3(1.15, 0.0, 1.15),
 			"water_plants": Vector3(-1.35, 0.0, 0.95),
+		}
+	if "kos_neighbor_room" in work_glb:
+		return {
+			"make_bed": Vector3(0.75, 0.0, -0.88),
+			"sweep_floor": Vector3(-0.20, 0.0, 0.35),
+			"water_plants": Vector3(1.45, 0.0, 0.95),
 		}
 	return CHORE_POSITIONS
 
@@ -684,8 +784,73 @@ func _talk_to_street_npc(npc: Dictionary) -> void:
 		_show_toast("%s: \"%s\"" % [nname, _t("Semangat kerjanya hari ini ya!", "Have a great shift today!")], nid, "neutral")
 	_refresh_hud()
 
+func _nearest_shift_npc(max_dist: float = 1.75) -> Dictionary:
+	if _world_mode != "shift":
+		return {}
+	var best: Dictionary = {}
+	var best_d := max_dist
+	for npc in _shift_npcs_data:
+		var pos: Vector3 = npc.get("pos", Vector3.ZERO)
+		var d := Vector2(player.position.x - pos.x, player.position.z - pos.z).length()
+		if d < best_d:
+			best_d = d
+			best = npc
+	return best
+
+func _talk_to_shift_npc(npc: Dictionary) -> void:
+	var nid := String(npc.get("id", "ibu_melati"))
+	var nname := String(npc.get("label_en") if _loc() == "en" else npc.get("label_id"))
+	var node3d = npc.get("node", null)
+	if node3d != null and is_instance_valid(node3d):
+		var to_p := Vector2(player.position.x - (node3d as Node3D).position.x, player.position.z - (node3d as Node3D).position.z)
+		if to_p.length() > 0.05:
+			(node3d as Node3D).rotation.y = atan2(to_p.x, to_p.y)
+	var react := NpcRoster.get_shift_npc_reaction(nid, _loc())
+	var line := String(react.get("text", _t("Semangat kerjanya ya!", "Keep up the good work!")))
+	if not _chatted_shift_npcs.has(nid):
+		_chatted_shift_npcs[nid] = true
+		_call_state["trust"] = clampi(int(_call_state.get("trust", 60)) + int(react.get("trust", 4)), 0, 100)
+		_call_state["mood"] = clampi(int(_call_state.get("mood", 60)) + int(react.get("mood", 6)), 0, 100)
+		_play_sfx(_wav_coin)
+		_show_toast("%s: \"%s\" (+%d Trust, +%d %s)" % [nname, line, int(react.get("trust", 4)), int(react.get("mood", 6)), _t("Semangat", "Mood")], nid, "happy")
+	else:
+		_play_sfx(_wav_click)
+		_show_toast("%s: \"%s\"" % [nname, line], nid, "neutral")
+	_refresh_hud()
+
+func _on_player_arrived() -> void:
+	if _pending_auto_chore_id != "" and _world_mode == "shift" and _active_chore_id == "":
+		var target_cid := _pending_auto_chore_id
+		_pending_auto_chore_id = ""
+		var near := _nearest_hotspot()
+		if near != null and near.chore_id == target_cid:
+			_begin_nearest_chore()
+
+func _try_tap_boost() -> void:
+	if _active_chore_id == "" or _chore_boost_cd > 0.0:
+		return
+	if _chore_boosts_used >= ChoreEngine.MAX_TAP_BOOSTS_PER_CHORE:
+		return
+	_chore_boosts_used += 1
+	_chore_boost_cd = 0.35
+	_chore_progress += ChoreEngine.TAP_BOOST_SECONDS
+	_play_sfx(_wav_chore_tick)
+
 func _trigger_world_action() -> void:
 	if _world_mode == "shift":
+		if bool(_call_state.get("active_call", false)):
+			_on_answer_call()
+			return
+		if _active_chore_id != "":
+			_try_tap_boost()
+			return
+		if _nearest_hotspot() != null:
+			_begin_nearest_chore()
+			return
+		var sn_shift := _nearest_shift_npc()
+		if not sn_shift.is_empty():
+			_talk_to_shift_npc(sn_shift)
+			return
 		_begin_nearest_chore()
 		return
 	var p := _nearest_portal()
@@ -727,13 +892,17 @@ func _begin_nearest_chore() -> void:
 	_active_chore_id = hs.chore_id
 	_chore_duration = ChoreEngine.effective_duration(hs.chore_id, sk_lvl, cur_mood)
 	_chore_progress = 0.0
+	_chore_boosts_used = 0
+	_chore_boost_cd = 0.0
 	player.set_cleaning(true)
+	StreetPatrols.sync_chore_tool(player, String(ChoreEngine.CHORE_TOOLS.get(_active_chore_id, "broom")))
 	_play_sfx(_wav_sweep)
 
 func _finish_active_chore() -> void:
 	var cid := _active_chore_id
 	_active_chore_id = ""
 	player.set_cleaning(false)
+	StreetPatrols.sync_chore_tool(player, "")
 	var tier := CareerTiers.get_tier(String(_save.get("active_tier_id", "kamar_kos")))
 	var pay_mult := float(tier.get("pay_multiplier", 1.0))
 	var cfg: Dictionary = ChoreEngine.CHORES[cid]
@@ -741,12 +910,26 @@ func _finish_active_chore() -> void:
 	var res := ChoreEngine.complete_chore(_shift, cid, pay_mult, sk_lvl)
 	if res["ok"]:
 		_shift = res["shift"]
+		var boost_rp := 0
+		if _chore_boosts_used >= 2:
+			boost_rp = ChoreEngine.TAP_BOOST_BONUS_RP
+			_shift["earned_rp"] = int(_shift.get("earned_rp", 0)) + boost_rp
 		_call_state = MajikanCall.consume_chore_mood(_call_state, 6)
 		for c in hotspots_root.get_children():
 			if c is ChoreHotspotScene and c.chore_id == cid:
 				c.mark_completed()
 		_play_sfx(_wav_coin)
-		_show_toast("+%s  +%d XP" % [I18n.format_balance(int(res["payout_rp"]), _loc()), int(res["xp_gain"])])
+		var total_c_rp := int(res["payout_rp"]) + boost_rp
+		var popup_txt := "+%s  +%d XP%s" % [I18n.format_balance(total_c_rp, _loc()), int(res["xp_gain"]), " ⚡" if boost_rp > 0 else ""]
+		_spawn_float_popup(player.position + Vector3(0.0, 1.85, 0.0), popup_txt)
+		_burst_chore_sparkles(player.position)
+		_show_toast(popup_txt)
+		for npc in _shift_npcs_data:
+			var n3d = npc.get("node", null)
+			if n3d != null and is_instance_valid(n3d):
+				var to_p := Vector2(player.position.x - (n3d as Node3D).position.x, player.position.z - (n3d as Node3D).position.z)
+				if to_p.length() > 0.05 and to_p.length() < 4.5:
+					(n3d as Node3D).rotation.y = atan2(to_p.x, to_p.y)
 		if ChoreEngine.is_shift_complete(_shift):
 			player.play_celebrate()
 			_play_sfx(_wav_fanfare)
@@ -810,6 +993,30 @@ func _process(delta: float) -> void:
 		if _toast_timer <= 0.0 and _toast_panel != null:
 			_toast_panel.visible = false
 
+	if _chore_boost_cd > 0.0:
+		_chore_boost_cd = maxf(0.0, _chore_boost_cd - delta)
+
+	if _float_popups.size() > 0:
+		for fi in range(_float_popups.size() - 1, -1, -1):
+			var fp: Dictionary = _float_popups[fi]
+			var lbl: Label = fp["node"]
+			fp["elapsed"] = float(fp["elapsed"]) + delta
+			var ratio := float(fp["elapsed"]) / float(fp["dur"])
+			if not is_instance_valid(lbl) or ratio >= 1.0:
+				if is_instance_valid(lbl):
+					lbl.queue_free()
+				_float_popups.remove_at(fi)
+			else:
+				lbl.position.y = float(fp["start_y"]) - ratio * 46.0
+				lbl.modulate.a = clampf(1.0 - ratio * 0.9, 0.0, 1.0)
+
+	if _footstep_cd > 0.0:
+		_footstep_cd = maxf(0.0, _footstep_cd - delta)
+	if not _muted and not _smoke_mode and _audio_unlocked and _active_chore_id == "" and player.velocity.length() > 0.5 and _footstep_cd <= 0.0:
+		_footstep_cd = 0.36
+		if _step_player != null and _wav_step != null:
+			_step_player.play()
+
 	# Smooth camera follow (or close-up turntable framing during Onboarding!)
 	if _onboarding_wrap != null and _onboarding_wrap.visible:
 		var ob_cam_target := player.position + Vector3(0.65, 1.42, 2.55)
@@ -835,7 +1042,7 @@ func _process(delta: float) -> void:
 				tn.position.x = float(_traffic_items[ti]["x"])
 
 	if _world_mode == "street" and _street_npcs_data.size() > 0:
-		StreetPatrols.step_patrols(_street_npcs_data, _street_cfg, player.position, delta)
+		StreetPatrols.step_patrols(_street_npcs_data, _street_cfg, player.position, delta, _cur_weather == "hujan")
 
 	if not _in_shift:
 		if _world_prompt != null:
@@ -885,8 +1092,30 @@ func _process(delta: float) -> void:
 			var scr := cam.unproject_position(near.global_position + Vector3(0.0, 0.45, 0.0))
 			_world_prompt.position = scr - _world_prompt.size * 0.5
 			_world_prompt.visible = true
+			if _btn_action != null:
+				_btn_action.text = _t("Kerjakan [E]", "Do Chore [E]")
+		elif _active_chore_id == "":
+			var sn_sh := _nearest_shift_npc()
+			if not sn_sh.is_empty():
+				var sh_pos: Vector3 = sn_sh.get("pos", Vector3.ZERO)
+				if not cam.is_position_behind(sh_pos):
+					var sh_lbl := String(sn_sh.get("label_en") if _loc() == "en" else sn_sh.get("label_id"))
+					_lbl_world_prompt.text = "[E] %s %s" % [_t("Sapa:", "Greet:"), sh_lbl]
+					var sh_scr := cam.unproject_position(sh_pos + Vector3(0.0, 1.35, 0.0))
+					_world_prompt.position = sh_scr - _world_prompt.size * 0.5
+					_world_prompt.visible = true
+					if _btn_action != null:
+						_btn_action.text = _t("Sapa [E]", "Greet [E]")
+				else:
+					_world_prompt.visible = false
+			else:
+				_world_prompt.visible = false
+				if _btn_action != null:
+					_btn_action.text = _t("Kerjakan [E]", "Do Chore [E]")
 		else:
 			_world_prompt.visible = false
+			if _btn_action != null:
+				_btn_action.text = _t("Ketuk Cepat! (%d/%d)" % [_chore_boosts_used, ChoreEngine.MAX_TAP_BOOSTS_PER_CHORE], "Tap Fast! (%d/%d)" % [_chore_boosts_used, ChoreEngine.MAX_TAP_BOOSTS_PER_CHORE])
 
 	# Active chore progress
 	if _active_chore_id != "":
@@ -895,7 +1124,8 @@ func _process(delta: float) -> void:
 		_bar_chore.max_value = _chore_duration
 		_bar_chore.value = _chore_progress
 		var cfg: Dictionary = ChoreEngine.CHORES[_active_chore_id]
-		_lbl_chore_prog.text = String(cfg["label_en"] if _loc() == "en" else cfg["label_id"])
+		var tap_hint := _t("  [Ketuk E = Cepat!]", "  [Tap E = Boost!]") if _chore_boosts_used < ChoreEngine.MAX_TAP_BOOSTS_PER_CHORE else "  ⚡"
+		_lbl_chore_prog.text = "%s%s" % [String(cfg["label_en"] if _loc() == "en" else cfg["label_id"]), tap_hint]
 		if _chore_progress >= _chore_duration:
 			_chore_bar_wrap.visible = false
 			_finish_active_chore()
@@ -944,6 +1174,14 @@ func _unhandled_input(event: InputEvent) -> void:
 			var t := -from.y / dir.y
 			if t > 0.0 and t < 40.0:
 				var hit := from + dir * t
+				_pending_auto_chore_id = ""
+				if _world_mode == "shift" and _active_chore_id == "":
+					for c in hotspots_root.get_children():
+						if c is ChoreHotspotScene and not c.completed:
+							if Vector2(hit.x - c.position.x, hit.z - c.position.z).length() <= 0.75:
+								_pending_auto_chore_id = c.chore_id
+								hit = Vector3(c.position.x, 0.0, c.position.z)
+								break
 				player.set_tap_target(hit)
 	elif event is InputEventScreenTouch and event.pressed:
 		if _modal_backdrop != null and _modal_backdrop.visible:
@@ -954,6 +1192,14 @@ func _unhandled_input(event: InputEvent) -> void:
 			var t := -from.y / dir.y
 			if t > 0.0 and t < 40.0:
 				var hit := from + dir * t
+				_pending_auto_chore_id = ""
+				if _world_mode == "shift" and _active_chore_id == "":
+					for c in hotspots_root.get_children():
+						if c is ChoreHotspotScene and not c.completed:
+							if Vector2(hit.x - c.position.x, hit.z - c.position.z).length() <= 0.75:
+								_pending_auto_chore_id = c.chore_id
+								hit = Vector3(c.position.x, 0.0, c.position.z)
+								break
 				player.set_tap_target(hit)
 
 func _on_joy_gui_input(event: InputEvent) -> void:
@@ -1230,7 +1476,7 @@ func _open_chapter_modal(ch: Dictionary) -> void:
 	var hdr_row := HBoxContainer.new()
 	hdr_row.add_theme_constant_override("separation", 10)
 	var p_rect := TextureRect.new()
-	p_rect.texture = Portraits.get_portrait("player", "happy")
+	p_rect.texture = _get_player_portrait_tex("happy")
 	p_rect.custom_minimum_size = Vector2(48, 48)
 	p_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	hdr_row.add_child(p_rect)
@@ -1778,9 +2024,9 @@ func _build_hud() -> void:
 	# 3. TOP-CENTER OPEN SKY (Urgent Call Banner + Toast, bounded cleanly between corners!)
 	var tc_center := CenterContainer.new()
 	tc_center.set_anchors_preset(Control.PRESET_TOP_WIDE)
-	tc_center.offset_left = 254
-	tc_center.offset_right = -254
-	tc_center.offset_top = 12
+	tc_center.offset_left = 220
+	tc_center.offset_right = -220
+	tc_center.offset_top = 10
 	tc_center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var tc_v := VBoxContainer.new()
 	tc_v.add_theme_constant_override("separation", 8)
@@ -1801,7 +2047,7 @@ func _build_hud() -> void:
 	_lbl_call_title.add_theme_font_size_override("font_size", 13)
 	_lbl_call_title.add_theme_color_override("font_color", light_ink)
 	_bar_call = ProgressBar.new()
-	_bar_call.custom_minimum_size = Vector2(210, 10)
+	_bar_call.custom_minimum_size = Vector2(132, 10)
 	_bar_call.show_percentage = false
 	_style_bar(_bar_call, Color(0.98, 0.80, 0.30), Color(0.32, 0.10, 0.08, 0.7))
 	call_text_v.add_child(_lbl_call_title)
@@ -1946,7 +2192,7 @@ func _build_hud() -> void:
 
 	var dock := HBoxContainer.new()
 	dock.alignment = BoxContainer.ALIGNMENT_END
-	dock.add_theme_constant_override("separation", 8)
+	dock.add_theme_constant_override("separation", 5)
 	_btn_action = Button.new()
 	_style_btn(_btn_action, Color(0.22, 0.66, 0.40), Color(0.95, 0.78, 0.26))
 	_btn_action.pressed.connect(_trigger_world_action)

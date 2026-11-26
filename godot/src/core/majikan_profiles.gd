@@ -37,7 +37,7 @@ const PROFILES := [
 		"kamar_art_variant": "none",
 		"kamar_art_scene": "res://assets/models/kos_room.glb",
 		"work_scene": "res://assets/models/kos_room.glb",
-		"work_interior_scene": "res://assets/models/kos_room.glb",
+		"work_interior_scene": "res://assets/models/kos_neighbor_room.glb",
 		"base_pay_rp": 35000,
 		"initial_trust": 65,
 		"fire_threshold": 20,

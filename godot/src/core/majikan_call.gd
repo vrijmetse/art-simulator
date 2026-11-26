@@ -12,14 +12,14 @@ const ACTIVITIES := {
 	"calling_boyfriend": {"mood_delta": 18, "reaction_delay_s": 2.5, "label_id": "teleponan sama pacar", "label_en": "chatting on the phone"},
 }
 
-static func create_state(profile: Dictionary) -> Dictionary:
+static func create_state(profile: Dictionary, initial_mood: int = 50) -> Dictionary:
 	return {
 		"profile_id": String(profile.get("id", "ibu_kos_melati")),
 		"personality": String(profile.get("personality", "ramah")),
 		"base_pay_rp": int(profile.get("base_pay_rp", 35000)),
 		"trust": clampi(int(profile.get("initial_trust", 60)), 0, 100),
 		"fire_threshold": int(profile.get("fire_threshold", 20)),
-		"mood": 50,
+		"mood": clampi(initial_mood, 0, 100),
 		"distractions_used": 0,
 		"activity": "working",
 		"active_call": false,

@@ -192,8 +192,14 @@ static func get_mood_bonus(save: Dictionary) -> int:
 	bonus += WishlistStory.get_wishlist_mood_bonus(save)
 	return bonus
 
+static func get_shift_starting_mood(save: Dictionary) -> int:
+	return clampi(int(save.get("mood", 60)) + get_mood_bonus(save), 35, 100)
+
+static func get_level_tip_bonus(xp: int) -> float:
+	return minf(0.32, float(maxi(0, level_from_xp(xp) - 1)) * 0.04)
+
 static func get_tip_bonus_multiplier(save: Dictionary) -> float:
-	var bonus := 1.0
+	var bonus := 1.0 + get_level_tip_bonus(int(save.get("xp", 0)))
 	var ups: Array = save.get("unlocked_kos_upgrades", [])
 	for uid in ups:
 		if KOS_UPGRADES.has(uid):
@@ -283,7 +289,7 @@ static func settle_shift(save: Dictionary, shift: Dictionary, call_state: Dictio
 	nxt_save["day"] = int(nxt_save.get("day", 1)) + 1
 	nxt_save["completed_shifts"] = int(nxt_save.get("completed_shifts", 0)) + (0 if is_fired else 1)
 	nxt_save["fired_count"] = int(nxt_save.get("fired_count", 0)) + (1 if is_fired else 0)
-	nxt_save["mood"] = clampi(maxi(45, shift_mood) + get_mood_bonus(nxt_save), 25, 100)
+	nxt_save["mood"] = clampi(maxi(45, shift_mood), 25, 100)
 
 	var sk: Dictionary = nxt_save.get("skill_xp", {})
 	var earned_sk: Dictionary = shift.get("skill_xp_earned", {})

@@ -111,21 +111,29 @@ static func _append_kalimba(buf: PackedFloat32Array, start_idx: int, freq: float
 		buf[idx] += sample * amp * env
 
 static func make_cozy_bgm_loop() -> AudioStreamWAV:
-	var total := 8 * SAMPLE_RATE
+	var total := 16 * SAMPLE_RATE
 	var buf := PackedFloat32Array()
 	buf.resize(total)
 
 	# Warm Indonesian pentatonic (Slendro/Pelog-inspired C major pentatonic)
-	# C4, D4, E4, G4, A4, C5, D5, E5
+	# 16-second A/B phrase (64 steps at 0.25s/step)
 	var melody := [
+		# Phrase A (0-8s)
 		523.25, 0.0, 392.00, 440.00, 523.25, 0.0, 659.25, 587.33,
 		523.25, 440.00, 392.00, 0.0, 329.63, 392.00, 440.00, 0.0,
 		587.33, 0.0, 523.25, 440.00, 392.00, 0.0, 329.63, 293.66,
 		261.63, 329.63, 392.00, 0.0, 440.00, 392.00, 329.63, 0.0,
+		# Phrase B (8-16s)
+		659.25, 0.0, 587.33, 523.25, 440.00, 0.0, 523.25, 587.33,
+		659.25, 523.25, 440.00, 0.0, 392.00, 440.00, 523.25, 0.0,
+		587.33, 523.25, 440.00, 392.00, 329.63, 0.0, 392.00, 440.00,
+		392.00, 329.63, 293.66, 0.0, 261.63, 329.63, 392.00, 0.0,
 	]
 	var bass := [
 		130.81, 196.00, 164.81, 196.00,
 		146.83, 220.00, 196.00, 130.81,
+		164.81, 220.00, 196.00, 146.83,
+		130.81, 164.81, 196.00, 130.81,
 	]
 
 	var step_s := 0.25
@@ -159,3 +167,44 @@ static func make_rain_loop() -> AudioStreamWAV:
 
 	_apply_loop_fade(buf, int(0.06 * SAMPLE_RATE))
 	return _build_wav(buf, true)
+
+
+static func make_ui_click() -> AudioStreamWAV:
+	var total := int(0.06 * SAMPLE_RATE)
+	var buf := PackedFloat32Array()
+	buf.resize(total)
+	_append_tone(buf, 0, 880.0, 0.045, 0.25)
+	return _build_wav(buf)
+
+
+static func make_door_chime() -> AudioStreamWAV:
+	var total := int(0.36 * SAMPLE_RATE)
+	var buf := PackedFloat32Array()
+	buf.resize(total)
+	_append_kalimba(buf, 0, 659.25, 0.20, 0.30)
+	_append_kalimba(buf, int(0.11 * SAMPLE_RATE), 783.99, 0.24, 0.32)
+	return _build_wav(buf)
+
+
+static func make_chore_tick() -> AudioStreamWAV:
+	var total := int(0.08 * SAMPLE_RATE)
+	var buf := PackedFloat32Array()
+	buf.resize(total)
+	_append_tone(buf, 0, 587.33, 0.06, 0.22)
+	return _build_wav(buf)
+
+
+static func make_footstep_tick() -> AudioStreamWAV:
+	var total := int(0.07 * SAMPLE_RATE)
+	var buf := PackedFloat32Array()
+	buf.resize(total)
+	var seed_val := 54321
+	var lp := 0.0
+	for i in range(total):
+		seed_val = (seed_val * 1103515245 + 12345) & 0x7FFFFFFF
+		var noise := (float(seed_val % 2000) / 1000.0) - 1.0
+		lp = lp * 0.85 + noise * 0.15
+		var t := float(i) / float(total)
+		var env := exp(-t * 10.0)
+		buf[i] = lp * 0.25 * env
+	return _build_wav(buf)

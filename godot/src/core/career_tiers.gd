@@ -47,7 +47,7 @@ const TIERS := [
 	{
 		"id": "perumahan_45",
 		"min_xp": 600,
-		"min_level": 5,
+		"min_level": 4,
 		"house_type": "Tipe 45/90",
 		"house_type_en": "Type 45/90 House",
 		"label_id": "Perumahan Tipe 45/90 (Klaster Menengah)",
@@ -61,7 +61,7 @@ const TIERS := [
 	{
 		"id": "cluster_elite",
 		"min_xp": 1400,
-		"min_level": 7,
+		"min_level": 6,
 		"house_type": "Tipe 120+ (2 Lantai)",
 		"house_type_en": "Elite Type 120+ (2-Story)",
 		"label_id": "Cluster Elite Tipe 120+ (Rumah Mewah)",
