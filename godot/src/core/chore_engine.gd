@@ -89,12 +89,18 @@ static func create_shift(tier_id: String, profile: Dictionary, max_energy: int) 
 		"settled": false,
 	}
 
-static func effective_duration(chore_id: String, skill_level: int) -> float:
+static func effective_duration(chore_id: String, skill_level: int, mood: int = 60) -> float:
 	if not CHORES.has(chore_id):
 		return 4.0
 	var lvl := maxi(1, skill_level)
 	var base_dur := float(CHORES[chore_id]["base_duration"])
-	return base_dur * maxf(0.55, 1.0 - float(lvl - 1) * 0.10)
+	var skill_mult := maxf(0.55, 1.0 - float(lvl - 1) * 0.10)
+	var mood_mult := 1.0
+	if mood >= 80:
+		mood_mult = 0.85
+	elif mood <= 25:
+		mood_mult = 1.15
+	return base_dur * skill_mult * mood_mult
 
 static func complete_chore(shift: Dictionary, chore_id: String, pay_multiplier: float, skill_level: int) -> Dictionary:
 	if not CHORES.has(chore_id):

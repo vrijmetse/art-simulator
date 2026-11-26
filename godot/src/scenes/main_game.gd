@@ -10,6 +10,7 @@ const SaveStore := preload("res://src/core/save_store.gd")
 const AudioSynth := preload("res://src/core/audio_synth.gd")
 const SceneVisuals := preload("res://src/core/scene_visuals.gd")
 const NpcRoster := preload("res://src/core/npc_roster.gd")
+const Neighborhood := preload("res://src/core/neighborhood.gd")
 const PlayerControllerScene := preload("res://src/scenes/player_controller.gd")
 const ChoreHotspotScene := preload("res://src/scenes/chore_hotspot.gd")
 
@@ -32,7 +33,11 @@ const CHORE_POSITIONS := {
 var _save: Dictionary = {}
 var _shift: Dictionary = {}
 var _call_state: Dictionary = {}
+var _world_mode := "home"
 var _in_shift := false
+var _street_cfg: Dictionary = {}
+var _street_npcs_data: Array = []
+var _portal_nodes: Array = []
 var _muted := false
 var _active_chore_id := ""
 var _chore_progress := 0.0
@@ -52,6 +57,7 @@ var _lbl_balance: Label
 var _lbl_meta: Label
 var _lbl_energy: Label
 var _bar_energy: ProgressBar
+var _lbl_mood: Label
 var _lbl_trust: Label
 var _lbl_tasks_hdr: Label
 var _tasks_list: VBoxContainer
@@ -110,6 +116,7 @@ var _joy_active := false
 
 var _capture_path := ""
 var _capture_shift := false
+var _capture_street := false
 var _capture_onboarding := false
 var _capture_tier := ""
 var _skip_onboarding := false
@@ -138,6 +145,9 @@ func _ready() -> void:
 		elif arg.begins_with("--capture-shift="):
 			_capture_path = arg.substr("--capture-shift=".length())
 			_capture_shift = true
+		elif arg.begins_with("--capture-street="):
+			_capture_path = arg.substr("--capture-street=".length())
+			_capture_street = true
 		elif arg.begins_with("--capture-onboarding="):
 			_capture_path = arg.substr("--capture-onboarding=".length())
 			_capture_onboarding = true
@@ -161,6 +171,16 @@ func _ready() -> void:
 		_sync_player_outfit()
 		_start_shift()
 		_call_state = MajikanCall.start_call(_call_state, _t("Tolong bantu cek pintu depan!", "Please check the front gate!"))
+		_refresh_hud()
+		return
+
+	if _capture_street:
+		_save["onboarding_done"] = true
+		if _capture_tier != "":
+			_save["xp"] = 2000
+			_save = Progression.select_job_tier(_save, _capture_tier)["save"]
+		_sync_player_outfit()
+		_enter_street_mode()
 		_refresh_hud()
 		return
 
@@ -261,13 +281,52 @@ func _find_anim_player_recursive(node: Node) -> AnimationPlayer:
 			return f
 	return null
 
+func _spawn_portal(pid: String, pos: Vector3, color: Color, label_id: String, label_en: String) -> void:
+	var holder := Node3D.new()
+	holder.position = pos
+	holder.set_meta("portal_id", pid)
+	holder.set_meta("label_id", label_id)
+	holder.set_meta("label_en", label_en)
+
+	var ring := MeshInstance3D.new()
+	var tm := TorusMesh.new()
+	tm.inner_radius = 0.30
+	tm.outer_radius = 0.38
+	ring.mesh = tm
+	ring.scale = Vector3(1.0, 0.35, 1.0)
+	ring.position.y = 0.02
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = color
+	mat.emission_enabled = true
+	mat.emission = color
+	mat.emission_energy_multiplier = 0.85
+	ring.material_override = mat
+	holder.add_child(ring)
+
+	var badge := Label3D.new()
+	badge.text = label_en if _loc() == "en" else label_id
+	badge.position = Vector3(0.0, 0.90, 0.0)
+	badge.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	badge.font_size = 22
+	badge.pixel_size = 0.0032
+	badge.modulate = color.lightened(0.25)
+	badge.outline_modulate = Color(0.06, 0.07, 0.09)
+	badge.outline_size = 6
+	holder.add_child(badge)
+
+	hotspots_root.add_child(holder)
+	_portal_nodes.append(holder)
+
 func _enter_home_mode() -> void:
+	_world_mode = "home"
 	_in_shift = false
 	_active_chore_id = ""
+	_street_npcs_data = []
 	player.set_cleaning(false)
 	if _chore_bar_wrap != null:
 		_chore_bar_wrap.visible = false
 	_clear_hotspots()
+	_portal_nodes.clear()
 	var tier_id := String(_save.get("active_tier_id", "kamar_kos"))
 	var tier := CareerTiers.get_tier(tier_id)
 	var prof := MajikanProfiles.get_profile(String(_save.get("active_profile_id", "ibu_kos_melati")))
@@ -279,6 +338,37 @@ func _enter_home_mode() -> void:
 	player.position = Vector3(0.0, 0.0, 0.35)
 	player.cancel_movement()
 	_spawn_npcs(NpcRoster.get_home_npcs(tier_id))
+	_spawn_portal("exit_street", Vector3(0.45, 0.0, 1.15), Color(0.96, 0.78, 0.24), "Keluar Kamar", "Step Outside")
+	_refresh_hud()
+
+func _enter_street_mode(from_mode: String = "home") -> void:
+	_world_mode = "street"
+	_in_shift = false
+	_active_chore_id = ""
+	player.set_cleaning(false)
+	if _chore_bar_wrap != null:
+		_chore_bar_wrap.visible = false
+	_clear_hotspots()
+	_portal_nodes.clear()
+
+	var tier_id := String(_save.get("active_tier_id", "kamar_kos"))
+	_street_cfg = NpcRoster.get_street_config(tier_id)
+	_load_stage_glb(String(_street_cfg.get("street_scene", "res://assets/models/kampung_gang.glb")))
+
+	var wrect: Rect2 = _street_cfg.get("walk_rect", Rect2(-5.2, 0.35, 10.4, 1.70))
+	player.set_walk_bounds(wrect.position.x, wrect.end.x, wrect.position.y, wrect.end.y)
+	var spawn_pos: Vector3 = _street_cfg.get("player_spawn", Vector3(-1.4, 0.0, 1.25))
+	if from_mode == "shift":
+		var pw: Vector3 = _street_cfg.get("portal_work", spawn_pos)
+		spawn_pos = Vector3(pw.x, 0.0, minf(wrect.end.y - 0.15, pw.z + 0.65))
+	player.position = spawn_pos
+	player.cancel_movement()
+
+	_street_npcs_data = _street_cfg.get("street_npcs", [])
+	_spawn_npcs(_street_npcs_data)
+	_spawn_portal("enter_home", _street_cfg.get("portal_home", Vector3(-3.9, 0.0, 0.55)), Color(0.96, 0.78, 0.24), "Masuk Kamar", "Enter Room")
+	_spawn_portal("enter_work", _street_cfg.get("portal_work", Vector3(2.9, 0.0, 0.55)), Color(0.28, 0.86, 0.50), "Rumah Majikan", "Work Shift")
+	_show_toast(_t("Di gang luar — sapa tetangga atau masuk Rumah Majikan.", "Outside on the street — greet neighbors or enter Work Shift."))
 	_refresh_hud()
 
 func _start_shift() -> void:
@@ -289,11 +379,15 @@ func _start_shift() -> void:
 	var max_e := Progression.get_max_energy(_save)
 	_shift = ChoreEngine.create_shift(tier_id, prof, max_e)
 	_call_state = MajikanCall.create_state(prof)
+	_call_state["mood"] = clampi(int(_save.get("mood", 65)) + Progression.get_mood_bonus(_save), 25, 100)
+	_world_mode = "shift"
 	_in_shift = true
 	_shift_elapsed_s = 0.0
 	_phone_open = false
 	_call_cooldown = 12.0
 	_active_chore_id = ""
+	_street_npcs_data = []
+	_portal_nodes.clear()
 
 	var work_glb := String(prof.get("work_interior_scene", "res://assets/models/room_majikan_living.glb"))
 	_load_stage_glb(work_glb)
@@ -312,7 +406,8 @@ func _start_shift() -> void:
 	player.cancel_movement()
 	_spawn_hotspots(work_glb)
 	_spawn_npcs(NpcRoster.get_shift_npcs(tier_id))
-	_show_toast(_t("Shift dimulai! Kerjakan tugas & dengarkan panggilan Majikan.", "Shift started! Finish chores & answer employer calls."))
+	var emp_lbl := String(prof.get("label_en", prof.get("label_id", "")) if _loc() == "en" else prof.get("label_id", ""))
+	_show_toast(_t("Shift di %s dimulai! Kerjakan tugas & jawab panggilan." % emp_lbl, "Shift at %s started! Finish chores & answer calls." % emp_lbl))
 	_refresh_hud()
 
 func _clear_hotspots() -> void:
@@ -365,6 +460,76 @@ func _nearest_hotspot() -> ChoreHotspotScene:
 				best = c
 	return best
 
+func _nearest_portal() -> Node3D:
+	var best: Node3D = null
+	var best_d := 1.45
+	for p in _portal_nodes:
+		if is_instance_valid(p):
+			var d := player.position.distance_to(p.position)
+			if d < best_d:
+				best_d = d
+				best = p
+	return best
+
+func _nearest_street_npc() -> Dictionary:
+	if _world_mode != "street":
+		return {}
+	var best: Dictionary = {}
+	var best_d := 1.75
+	for npc in _street_npcs_data:
+		var np: Vector3 = npc.get("pos", Vector3.ZERO)
+		var d := player.position.distance_to(np)
+		if d < best_d:
+			best_d = d
+			best = npc
+	return best
+
+func _talk_to_street_npc(npc: Dictionary) -> void:
+	var nid := String(npc.get("id", "ibu_sari"))
+	var nname := String(npc.get("label_en") if _loc() == "en" else npc.get("label_id"))
+	var date_key := "day_%d" % int(_save.get("day", 1))
+	var res := Neighborhood.claim_tip(_save, nid, date_key)
+	_save = res["state"]
+	if bool(res.get("claimed", false)):
+		_save["mood"] = clampi(int(_save.get("mood", 65)) + 12, 0, 100)
+		SaveStore.save_to_path(_save)
+		_play_sfx(_wav_coin)
+		var greet := _t("Semangat kerja hari ini ya!", "Have a great shift today!")
+		for spec in Neighborhood.NEIGHBORS:
+			if String(spec.get("id", "")) == nid:
+				greet = String(spec.get("greeting_en" if _loc() == "en" else "greeting_id", greet))
+				break
+		var tip_rp := int(res.get("tip_rp", 0))
+		_show_toast("%s: \"%s\" (+%s, +12 %s)" % [nname, greet, I18n.format_balance(tip_rp, _loc()), _t("Semangat", "Mood")])
+	else:
+		_show_toast("%s: \"%s\"" % [nname, _t("Semangat kerjanya hari ini ya!", "Have a great shift today!")])
+	_refresh_hud()
+
+func _trigger_world_action() -> void:
+	if _world_mode == "shift":
+		_begin_nearest_chore()
+		return
+	var p := _nearest_portal()
+	if p != null:
+		var pid := String(p.get_meta("portal_id", ""))
+		if pid == "exit_street":
+			_enter_street_mode("home")
+			return
+		elif pid == "enter_home":
+			_enter_home_mode()
+			return
+		elif pid == "enter_work":
+			_start_shift()
+			return
+	if _world_mode == "street":
+		var snpc := _nearest_street_npc()
+		if not snpc.is_empty():
+			_talk_to_street_npc(snpc)
+			return
+		_enter_home_mode()
+	elif _world_mode == "home":
+		_enter_street_mode("home")
+
 func _begin_nearest_chore() -> void:
 	if not _in_shift or _active_chore_id != "":
 		return
@@ -379,8 +544,9 @@ func _begin_nearest_chore() -> void:
 	var skill_key := String(cfg["skill"])
 	var sk_xp := int(_save.get("skill_xp", {}).get(skill_key, 0))
 	var sk_lvl := Progression.skill_level_from_xp(sk_xp)
+	var cur_mood := int(_call_state.get("mood", 60))
 	_active_chore_id = hs.chore_id
-	_chore_duration = ChoreEngine.effective_duration(hs.chore_id, sk_lvl)
+	_chore_duration = ChoreEngine.effective_duration(hs.chore_id, sk_lvl, cur_mood)
 	_chore_progress = 0.0
 	player.set_cleaning(true)
 	_play_sfx(_wav_sweep)
@@ -396,6 +562,7 @@ func _finish_active_chore() -> void:
 	var res := ChoreEngine.complete_chore(_shift, cid, pay_mult, sk_lvl)
 	if res["ok"]:
 		_shift = res["shift"]
+		_call_state = MajikanCall.consume_chore_mood(_call_state, 6)
 		for c in hotspots_root.get_children():
 			if c is ChoreHotspotScene and c.chore_id == cid:
 				c.mark_completed()
@@ -417,6 +584,10 @@ func _finish_shift() -> void:
 	_save = res["save"]
 	_shift = res["shift"]
 	SaveStore.save_to_path(_save)
+	if bool(res.get("aborted", false)):
+		_enter_street_mode("shift")
+		_show_toast(_t("Belum ada tugas selesai — shift dibatalkan (Rp 0).", "No chores completed — shift cancelled (Rp 0)."))
+		return
 	var new_lv := Progression.level_from_xp(int(_save.get("xp", 0)))
 	if new_lv > prev_lv:
 		_play_sfx(_wav_fanfare)
@@ -425,11 +596,13 @@ func _finish_shift() -> void:
 	_enter_home_mode()
 	var tier := CareerTiers.get_tier(String(_save.get("active_tier_id", "kamar_kos")))
 	if Progression.should_collect_weekly_rent(_save, tier):
-		_open_rent_modal(res)
+		_open_rent_modal(res, new_lv if new_lv > prev_lv else 0)
 	elif new_lv > prev_lv:
 		_open_levelup_modal(new_lv, res)
 	else:
 		_open_summary_modal(res)
+	if not bool(tier.get("live_in_room_provided", false)) and int(_save.get("day", 1)) in [5, 6]:
+		_show_toast(_t("Ingat: Sewa kos Rp 120.000 jatuh tempo Hari 7!", "Reminder: Rp 120,000 kos rent due on Day 7!"))
 
 func _process(delta: float) -> void:
 	if _capture_path != "" and not _captured:
@@ -450,13 +623,39 @@ func _process(delta: float) -> void:
 		cam.look_at(player.position + Vector3(0.62, 0.92, 0.0), Vector3.UP)
 		return
 
-	var cam_target := player.position + Vector3(3.4, 3.5, 3.8)
+	var cam_offset := Vector3(2.2, 4.3, 5.4) if _world_mode == "street" else Vector3(3.4, 3.5, 3.8)
+	var cam_target := player.position + cam_offset
 	cam.position = cam.position.lerp(cam_target, minf(1.0, delta * 5.0))
-	cam.look_at(player.position + Vector3(0.0, 0.75, -0.2), Vector3.UP)
+	cam.look_at(player.position + Vector3(0.0, 0.80, -0.35), Vector3.UP)
 
 	if not _in_shift:
 		if _world_prompt != null:
-			_world_prompt.visible = false
+			var np := _nearest_portal()
+			var sn := _nearest_street_npc()
+			if np != null and not cam.is_position_behind(np.global_position):
+				var p_lbl := String(np.get_meta("label_en" if _loc() == "en" else "label_id", ""))
+				_lbl_world_prompt.text = "[E] %s" % p_lbl
+				var p_scr := cam.unproject_position(np.global_position + Vector3(0.0, 0.55, 0.0))
+				_world_prompt.position = p_scr - _world_prompt.size * 0.5
+				_world_prompt.visible = true
+				if _btn_action != null:
+					_btn_action.text = p_lbl
+			elif not sn.is_empty():
+				var npos: Vector3 = sn.get("pos", Vector3.ZERO)
+				if not cam.is_position_behind(npos):
+					var n_lbl := String(sn.get("label_en") if _loc() == "en" else sn.get("label_id"))
+					_lbl_world_prompt.text = "[E] %s %s" % [_t("Ngobrol:", "Chat:"), n_lbl]
+					var n_scr := cam.unproject_position(npos + Vector3(0.0, 1.35, 0.0))
+					_world_prompt.position = n_scr - _world_prompt.size * 0.5
+					_world_prompt.visible = true
+					if _btn_action != null:
+						_btn_action.text = _t("Ngobrol [E]", "Chat [E]")
+				else:
+					_world_prompt.visible = false
+			else:
+				_world_prompt.visible = false
+				if _btn_action != null:
+					_btn_action.text = _t("Masuk Kamar", "Enter Room") if _world_mode == "street" else _t("Keluar Kamar [E]", "Step Outside [E]")
 		return
 
 	_shift_elapsed_s += delta
@@ -518,8 +717,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and event.keycode in [KEY_E, KEY_SPACE]:
 		if _in_shift and bool(_call_state.get("active_call", false)):
 			_on_answer_call()
-		elif _in_shift:
-			_begin_nearest_chore()
+		else:
+			_trigger_world_action()
 	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		if _modal_backdrop != null and _modal_backdrop.visible:
 			return
@@ -592,9 +791,12 @@ func _on_distract(activity_id: String) -> void:
 	if not _in_shift:
 		_show_toast(_t("Mulai shift dulu sebelum main HP.", "Start a shift first."))
 		return
+	if int(_call_state.get("distractions_used", 0)) >= MajikanCall.MAX_DISTRACTIONS_PER_SHIFT:
+		_show_toast(_t("HP dipakai maksimal 2x per shift agar tidak ketahuan Majikan!", "Phone limit reached (2x per shift)!"))
+		return
 	_call_state = MajikanCall.apply_distraction(_call_state, activity_id)
 	_shift = ChoreEngine.rest_recover(_shift, 8)
-	_show_toast(_t("Mood +Energi naik! Hati-hati panggilan Majikan.", "Mood + Energy up! Watch for employer calls."))
+	_show_toast(_t("Semangat +Energi naik! Hati-hati panggilan Majikan.", "Mood + Energy up! Watch for employer calls."))
 	_refresh_hud()
 
 func _refresh_hud() -> void:
@@ -614,7 +816,7 @@ func _refresh_hud() -> void:
 	var lv := Progression.level_from_xp(xp)
 	var tier := CareerTiers.get_tier(String(_save.get("active_tier_id", "kamar_kos")))
 	var p_name := String(_save.get("player_name", "Mbak Sari"))
-	_lbl_balance.text = "LV %d • %s" % [lv, I18n.format_balance(int(_save.get("balance_rp", 0)), _loc())]
+	_lbl_balance.text = "%s %d • %s" % [_t("Lv", "Level"), lv, I18n.format_balance(int(_save.get("balance_rp", 0)), _loc())]
 	_lbl_meta.text = Progression.format_shift_clock(int(_save.get("day", 1)), _shift_elapsed_s if _in_shift else 0.0, _loc())
 
 	if _in_shift:
@@ -622,9 +824,14 @@ func _refresh_hud() -> void:
 		var e_max := maxi(1, int(_shift.get("max_energy", 100)))
 		var e_pct := int(round(100.0 * float(e_val) / float(e_max)))
 		var t_val := int(_call_state.get("trust", 60))
+		var m_val := int(_call_state.get("mood", 60))
 		_lbl_energy.text = "%s %d%%" % [_t("ENERGI", "ENERGY"), e_pct]
 		_bar_energy.max_value = e_max
 		_bar_energy.value = e_val
+		if _lbl_mood != null:
+			var bonus_tag := _t(" (+15% Bonus!)", " (+15% Bonus!)") if m_val >= 80 else (_t(" (Lelah)", " (Tired)") if m_val <= 25 else "")
+			_lbl_mood.text = "%s %d%%%s" % [_t("SEMANGAT", "MOOD"), m_val, bonus_tag]
+			_lbl_mood.add_theme_color_override("font_color", Color(0.98, 0.84, 0.34) if m_val >= 80 else (Color(0.96, 0.56, 0.34) if m_val <= 25 else Color(0.68, 0.88, 0.98)))
 		_lbl_trust.text = "%s • %s" % [p_name, Progression.trust_to_stars(t_val)]
 
 		var done_n := (_shift.get("completed_ids", []) as Array).size()
@@ -641,19 +848,35 @@ func _refresh_hud() -> void:
 			_tasks_list.add_child(row)
 		_tasks_card.visible = true
 
-		_btn_shift.text = _t("Selesai Shift", "End Shift")
+		_btn_shift.text = _t("Selesai Shift", "End Shift") if done_n >= tot_n else (_t("Pulang Cepat", "Leave Early") if done_n > 0 else _t("Batal Shift", "Cancel Shift"))
 		_btn_action.visible = true
 		_btn_action.text = _t("Kerjakan [E]", "Do Chore [E]")
 	else:
 		var max_e := Progression.get_max_energy(_save)
 		var tier_label := String(tier.get("house_type_en", tier.get("house_type", "")) if _loc() == "en" else tier.get("house_type", ""))
+		var h_mood := clampi(int(_save.get("mood", 65)) + Progression.get_mood_bonus(_save), 0, 100)
 		_lbl_energy.text = "%s 100%%" % _t("ENERGI", "ENERGY")
 		_bar_energy.max_value = max_e
 		_bar_energy.value = max_e
+		if _lbl_mood != null:
+			var h_bonus := _t(" (+15% Siap!)", " (+15% Ready!)") if h_mood >= 80 else ""
+			_lbl_mood.text = "%s %d%%%s" % [_t("SEMANGAT", "MOOD"), h_mood, h_bonus]
+			_lbl_mood.add_theme_color_override("font_color", Color(0.98, 0.84, 0.34) if h_mood >= 80 else Color(0.68, 0.88, 0.98))
 		_lbl_trust.text = "%s • %s" % [p_name, tier_label]
 		_tasks_card.visible = false
 		_btn_shift.text = _t("Mulai Shift", "Start Shift")
-		_btn_action.visible = false
+		_btn_action.visible = true
+		if _world_mode == "street":
+			var near_p := _nearest_portal()
+			var near_n := _nearest_street_npc()
+			if near_p != null:
+				_btn_action.text = String(near_p.get_meta("label_en" if _loc() == "en" else "label_id", _t("Masuk", "Enter")))
+			elif not near_n.is_empty():
+				_btn_action.text = _t("Ngobrol [E]", "Chat [E]")
+			else:
+				_btn_action.text = _t("Masuk Kamar", "Enter Room")
+		else:
+			_btn_action.text = _t("Keluar Kamar [E]", "Step Outside [E]")
 
 	_btn_lang.text = "EN" if _loc() == "id" else "ID"
 	_btn_mute.text = _t("Mati", "Off") if _muted else _t("Suara", "SFX")
@@ -694,6 +917,18 @@ func _clear_modal() -> void:
 func _open_career_modal() -> void:
 	_clear_modal()
 	_modal_title.text = _t("Papan Lowongan & Tingkatan Karier", "Career Tiers & Job Board")
+	var sk: Dictionary = _save.get("skill_xp", {})
+	var sk_lbl := Label.new()
+	sk_lbl.text = "%s: %s Lv.%d • %s Lv.%d • %s Lv.%d • %s Lv.%d" % [
+		_t("Keahlian", "Skills"),
+		_t("Menyapu", "Sweep"), Progression.skill_level_from_xp(int(sk.get("sweeping", 0))),
+		_t("Rapikan", "Tidy"), Progression.skill_level_from_xp(int(sk.get("tidiness", 0))),
+		_t("Masak", "Cook"), Progression.skill_level_from_xp(int(sk.get("cooking", 0))),
+		_t("Setrika", "Iron"), Progression.skill_level_from_xp(int(sk.get("laundry", 0))),
+	]
+	sk_lbl.add_theme_font_size_override("font_size", 12)
+	sk_lbl.add_theme_color_override("font_color", Color(0.98, 0.84, 0.34))
+	_modal_list.add_child(sk_lbl)
 	var xp := int(_save.get("xp", 0))
 	var cur_id := String(_save.get("active_tier_id", "kamar_kos"))
 	for t in CareerTiers.get_all_tiers():
@@ -806,9 +1041,14 @@ func _open_levelup_modal(new_lv: int, res: Dictionary) -> void:
 	_modal_list.add_child(pay_lbl)
 	_modal_backdrop.visible = true
 
-func _open_rent_modal(res: Dictionary = {}) -> void:
+func _open_rent_modal(res: Dictionary = {}, leveled_up_to: int = 0) -> void:
 	_clear_modal()
-	_modal_title.text = _t("IBU MELATI MENAGIH SEWA KOS", "MRS. MELATI: WEEKLY KOS RENT")
+	_modal_title.text = _t("IBU MELATI MENAGIH SEWA KOS", "IBU MELATI: WEEKLY KOS RENT")
+	if leveled_up_to > 0:
+		var lv_lbl := Label.new()
+		lv_lbl.text = _t("★ NAIK KE LEVEL %d!" % leveled_up_to, "★ LEVEL UP TO %d!" % leveled_up_to)
+		lv_lbl.add_theme_color_override("font_color", Color(0.98, 0.84, 0.34))
+		_modal_list.add_child(lv_lbl)
 	if not res.is_empty():
 		var sum_lbl := Label.new()
 		var st_txt := _t("Dipecat" if bool(res.get("fired", false)) else "Shift Bagus", "Fired" if bool(res.get("fired", false)) else "Great Shift")
@@ -913,11 +1153,15 @@ func _build_hud() -> void:
 	_bar_energy.custom_minimum_size = Vector2(200, 10)
 	_bar_energy.show_percentage = false
 	_style_bar(_bar_energy, Color(0.32, 0.86, 0.36))
+	_lbl_mood = Label.new()
+	_lbl_mood.add_theme_font_size_override("font_size", 11)
+	_lbl_mood.add_theme_color_override("font_color", Color(0.68, 0.88, 0.98))
 
 	tl_v.add_child(_lbl_meta)
 	tl_v.add_child(_lbl_trust)
 	tl_v.add_child(_lbl_energy)
 	tl_v.add_child(_bar_energy)
+	tl_v.add_child(_lbl_mood)
 	_tl_card.add_child(tl_v)
 	hud.add_child(_tl_card)
 
@@ -1121,7 +1365,7 @@ func _build_hud() -> void:
 	dock.add_theme_constant_override("separation", 8)
 	_btn_action = Button.new()
 	_style_btn(_btn_action, Color(0.22, 0.66, 0.40), Color(0.95, 0.78, 0.26))
-	_btn_action.pressed.connect(_begin_nearest_chore)
+	_btn_action.pressed.connect(_trigger_world_action)
 	_btn_shift = Button.new()
 	_style_btn(_btn_shift, Color(0.96, 0.78, 0.24), Color(0.99, 0.89, 0.48), dark_ink)
 	_btn_shift.pressed.connect(func():
@@ -1362,11 +1606,23 @@ func _finish_onboarding() -> void:
 		_onboarding_wrap.visible = false
 	_sync_player_outfit()
 	_play_sfx(_wav_fanfare)
-	_show_toast(_t("Selamat datang %s! Ketuk Mulai Shift untuk bekerja." % String(_save["player_name"]), "Welcome %s! Tap Start Shift to work." % String(_save["player_name"])))
+	_show_toast(_t("Selamat datang %s! Ketuk Keluar Kamar untuk keluar ke gang atau Mulai Shift." % String(_save["player_name"]), "Welcome %s! Tap Step Outside to explore the street or Start Shift." % String(_save["player_name"])))
 	_refresh_hud()
 
 func _run_headless_smoke_test() -> void:
 	_save = Progression.create_player_save()
+	_enter_home_mode()
+	assert(_world_mode == "home")
+	_enter_street_mode("home")
+	assert(_world_mode == "street")
+	assert(_street_npcs_data.size() >= 2)
+	_talk_to_street_npc(_street_npcs_data[0])
+	assert(int(_save["mood"]) == 77)
+	var bal_before_abort := int(_save["balance_rp"])
+	_start_shift()
+	assert(_in_shift)
+	_finish_shift()
+	assert(int(_save["balance_rp"]) == bal_before_abort)
 	_start_shift()
 	assert(_in_shift)
 	_on_distract("playing_game")
@@ -1380,7 +1636,7 @@ func _run_headless_smoke_test() -> void:
 	assert(int(_save["balance_rp"]) > 0)
 	assert(int(_save["xp"]) > 0)
 	SaveStore.save_to_path(_save, "user://smoke_test_v1.json")
-	print("MAIN_GAME SMOKE TEST PASS: balance=%d xp=%d" % [int(_save["balance_rp"]), int(_save["xp"])])
+	print("MAIN_GAME SMOKE TEST PASS: balance=%d xp=%d mood=%d" % [int(_save["balance_rp"]), int(_save["xp"]), int(_save["mood"])])
 	get_tree().quit(0)
 
 func _do_capture() -> void:

@@ -83,7 +83,7 @@ static func get_shift_npcs(tier_id: String) -> Array:
 					"id": "kakak_nadine",
 					"role": "kakak2",
 					"label_id": "Kakak Nadine",
-					"label_en": "Sis Nadine",
+					"label_en": "Kakak Nadine",
 					"model_path": "res://assets/models/char_kakak.glb",
 					"pos": Vector3(1.15, 0.0, 0.35),
 					"rot_y": 1.15,
@@ -93,7 +93,7 @@ static func get_shift_npcs(tier_id: String) -> Array:
 					"id": "mbak_rina",
 					"role": "mba2",
 					"label_id": "Mbak Rina",
-					"label_en": "Maid Rina",
+					"label_en": "Mbak Rina",
 					"model_path": "res://assets/models/char_art_pro.glb",
 					"pos": Vector3(2.15, 0.0, 0.55),
 					"rot_y": -1.35,
@@ -126,7 +126,7 @@ static func get_shift_npcs(tier_id: String) -> Array:
 					"id": "kakak_maya",
 					"role": "kakak2",
 					"label_id": "Kakak Maya",
-					"label_en": "Sis Maya",
+					"label_en": "Kakak Maya",
 					"model_path": "res://assets/models/char_kakak.glb",
 					"pos": Vector3(0.45, 0.0, 1.45),
 					"rot_y": 2.65,
@@ -170,29 +170,48 @@ static func get_shift_npcs(tier_id: String) -> Array:
 				},
 			]
 
-static func get_home_npcs(tier_id: String) -> Array:
-	if tier_id in ["perumahan_45", "cluster_elite"]:
-		return [
-			{
-				"id": "kakak_teman",
-				"role": "kakak2",
-				"label_id": "Kakak Maya",
-				"label_en": "Sis Maya",
-				"model_path": "res://assets/models/char_kakak.glb",
-				"pos": Vector3(0.95, 0.0, 1.15),
-				"rot_y": -2.45,
-				"anim": "Idle",
-			},
-		]
-	return [
-		{
-			"id": "mbak_dewi",
-			"role": "mba2",
-			"label_id": "Mbak Dewi",
-			"label_en": "Maid Dewi",
-			"model_path": "res://assets/models/char_art.glb",
-			"pos": Vector3(0.95, 0.0, 1.15),
-			"rot_y": -2.45,
-			"anim": "Idle",
-		},
-	]
+static func get_home_npcs(_tier_id: String) -> Array:
+	# Private bedroom belongs solely to the player; neighbors & fellow ARTs live outside on the street!
+	return []
+
+static func get_street_config(tier_id: String) -> Dictionary:
+	match tier_id:
+		"cluster_elite":
+			return {
+				"street_scene": "res://assets/models/cluster_elite_street.glb",
+				"walk_rect": Rect2(-6.0, -0.45, 12.0, 1.55),
+				"player_spawn": Vector3(-1.4, 0.0, 0.45),
+				"portal_home": Vector3(-4.8, 0.0, -0.15),
+				"portal_work": Vector3(4.8, 0.0, -0.15),
+				"street_npcs": [
+					{"id": "ibu_sari", "label_id": "Ibu Citra", "label_en": "Ibu Citra", "model_path": "res://assets/models/char_ibu.glb", "pos": Vector3(2.4, 0.0, 0.35), "rot_y": -0.45, "anim": "Idle"},
+					{"id": "pak_budi", "label_id": "Pak Hendra", "label_en": "Pak Hendra", "model_path": "res://assets/models/char_budi.glb", "pos": Vector3(0.3, 0.0, 0.70), "rot_y": 0.30, "anim": "Idle"},
+					{"id": "adik_bima", "label_id": "Kakak Nadine", "label_en": "Kakak Nadine", "model_path": "res://assets/models/char_kakak.glb", "pos": Vector3(-3.1, 0.0, 0.65), "rot_y": 0.55, "anim": "Idle"},
+				],
+			}
+		"perumahan_36", "perumahan_45":
+			return {
+				"street_scene": "res://assets/models/kampung_street.glb",
+				"walk_rect": Rect2(-5.2, 0.35, 10.4, 1.45),
+				"player_spawn": Vector3(-1.6, 0.0, 1.15),
+				"portal_home": Vector3(-4.2, 0.0, 0.55),
+				"portal_work": Vector3(3.1, 0.0, 0.55),
+				"street_npcs": [
+					{"id": "ibu_sari", "label_id": "Ibu Sari", "label_en": "Ibu Sari", "model_path": "res://assets/models/char_ibu.glb", "pos": Vector3(1.5, 0.0, 0.85), "rot_y": -0.35, "anim": "Idle"},
+					{"id": "pak_budi", "label_id": "Pak Budi", "label_en": "Pak Budi", "model_path": "res://assets/models/char_budi.glb", "pos": Vector3(4.6, 0.0, 1.25), "rot_y": -0.75, "anim": "Idle"},
+					{"id": "adik_bima", "label_id": "Kakak Maya", "label_en": "Kakak Maya", "model_path": "res://assets/models/char_kakak.glb", "pos": Vector3(-0.1, 0.0, 1.45), "rot_y": 0.25, "anim": "Idle"},
+				],
+			}
+		_:
+			return {
+				"street_scene": "res://assets/models/kampung_gang.glb",
+				"walk_rect": Rect2(-5.2, 0.35, 10.4, 1.70),
+				"player_spawn": Vector3(-1.4, 0.0, 1.25),
+				"portal_home": Vector3(-3.9, 0.0, 0.55),
+				"portal_work": Vector3(2.9, 0.0, 0.55),
+				"street_npcs": [
+					{"id": "ibu_sari", "label_id": "Ibu Melati", "label_en": "Ibu Melati", "model_path": "res://assets/models/char_ibu.glb", "pos": Vector3(0.45, 0.0, 1.40), "rot_y": -0.35, "anim": "Idle"},
+					{"id": "adik_bima", "label_id": "Mbak Dewi", "label_en": "Mbak Dewi", "model_path": "res://assets/models/char_art.glb", "pos": Vector3(-2.6, 0.0, 1.60), "rot_y": 0.45, "anim": "Idle"},
+					{"id": "pak_budi", "label_id": "Pak Agus", "label_en": "Pak Agus", "model_path": "res://assets/models/char_budi.glb", "pos": Vector3(4.2, 0.0, 1.45), "rot_y": -0.75, "anim": "Idle"},
+				],
+			}

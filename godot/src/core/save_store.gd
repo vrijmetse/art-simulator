@@ -41,6 +41,16 @@ static func sanitize(raw: Variant) -> Dictionary:
 	clean["skin_hex"] = raw_skin if Color.html_is_valid(raw_skin) else "#C68B59"
 	clean["last_rent_day"] = _safe_int(d.get("last_rent_day", 0), 0, 0)
 	clean["pending_rent_rp"] = _safe_int(d.get("pending_rent_rp", 0), 0, 0)
+	clean["mood"] = clampi(_safe_int(d.get("mood", 65), 65, 0), 0, 100)
+	var clean_chatted := {}
+	var raw_chatted: Variant = d.get("chatted_dates", {})
+	if typeof(raw_chatted) == TYPE_DICTIONARY:
+		for raw_ck in (raw_chatted as Dictionary).keys():
+			var ck := String(raw_ck)
+			var cv: Variant = (raw_chatted as Dictionary)[raw_ck]
+			if typeof(cv) == TYPE_STRING and not ck.is_empty():
+				clean_chatted[ck] = String(cv).left(32)
+	clean["chatted_dates"] = clean_chatted
 
 	var xp := int(clean["xp"])
 	var req_tier := String(d.get("active_tier_id", "kamar_kos"))

@@ -3,6 +3,8 @@ extends RefCounted
 
 const Profiles := preload("res://src/core/majikan_profiles.gd")
 
+const MAX_DISTRACTIONS_PER_SHIFT := 2
+
 const ACTIVITIES := {
 	"working": {"mood_delta": 0, "reaction_delay_s": 0.0, "label_id": "sedang beres-beres", "label_en": "tidying up"},
 	"resting": {"mood_delta": 6, "reaction_delay_s": 0.0, "label_id": "istirahat sebentar", "label_en": "taking a quick rest"},
@@ -18,6 +20,7 @@ static func create_state(profile: Dictionary) -> Dictionary:
 		"trust": clampi(int(profile.get("initial_trust", 60)), 0, 100),
 		"fire_threshold": int(profile.get("fire_threshold", 20)),
 		"mood": 50,
+		"distractions_used": 0,
 		"activity": "working",
 		"active_call": false,
 		"call_reason": "",
@@ -34,9 +37,18 @@ static func apply_distraction(state: Dictionary, activity_id: String) -> Diction
 	var nxt: Dictionary = state.duplicate(true)
 	if nxt.get("fired", false) or not ACTIVITIES.has(activity_id):
 		return nxt
+	var used := int(nxt.get("distractions_used", 0))
+	if used >= MAX_DISTRACTIONS_PER_SHIFT:
+		return nxt
 	var act: Dictionary = ACTIVITIES[activity_id]
 	nxt["activity"] = activity_id
+	nxt["distractions_used"] = used + 1
 	nxt["mood"] = clampi(int(nxt["mood"]) + int(act["mood_delta"]), 0, 100)
+	return nxt
+
+static func consume_chore_mood(state: Dictionary, delta: int = 6) -> Dictionary:
+	var nxt: Dictionary = state.duplicate(true)
+	nxt["mood"] = clampi(int(nxt.get("mood", 60)) - maxi(0, delta), 0, 100)
 	return nxt
 
 static func start_call(state: Dictionary, reason: String) -> Dictionary:

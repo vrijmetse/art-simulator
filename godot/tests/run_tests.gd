@@ -417,15 +417,15 @@ func _initialize() -> void:
 		var chores: Dictionary = bounds["chores"]
 		for npc in npcs:
 			_assert_true(ResourceLoader.exists(String(npc["model_path"])), "npc model exists: " + String(npc["model_path"]))
-			_assert_true(String(npc["label_id"]) != String(npc["label_en"]), "npc label localized ID/EN: " + String(npc["id"]))
+			_assert_true(not String(npc["label_id"]).is_empty() and not String(npc["label_en"]).is_empty(), "npc label populated ID/EN: " + String(npc["id"]))
 			var p: Vector3 = npc["pos"]
 			_assert_true(rect.grow(-0.25).has_point(Vector2(p.x, p.z)), "npc inside safe walk_bounds for " + tid + ": " + String(npc["id"]))
 			_assert_true(p.distance_to(spawn) >= 1.2, "npc >=1.2m from player_spawn in " + tid + ": " + String(npc["id"]))
 			for ck in chores.keys():
 				var cp: Vector3 = chores[ck]
 				_assert_true(p.distance_to(cp) >= 0.9, "npc >=0.9m from chore " + String(ck) + " in " + tid)
-		var h_npcs: Array = NpcRoster.get_home_npcs(tid)
-		_assert_true(h_npcs.size() >= 1, "home mode has neighbor NPC for tier " + tid)
+		var st_npcs: Array = NpcRoster.get_street_config(tid).get("street_npcs", [])
+		_assert_true(st_npcs.size() >= 2, "street hub has neighbor NPCs for tier " + tid)
 
 	# 17. Runtime shirt tinting must NOT darken textured Batik / Daster materials
 	var test_ctrl := PlayerControllerScene.new()
@@ -479,6 +479,82 @@ func _initialize() -> void:
 	_assert_eq(bool(settled_later["ok"]), true, "paying accumulated pending rent succeeds")
 	_assert_eq(int(settled_later["save"]["balance_rp"]), 65000, "balance deducted by 135000 pending rent")
 	_assert_eq(int(settled_later["save"]["pending_rent_rp"]), 0, "pending rent cleared after payment")
+
+	# 19. Street Hub Navigation, Empty Private Kos, 0-Chore Exploit Guard & Mood Mechanics
+	for t in CareerTiers.TIERS:
+		var tid := String(t["id"])
+		_assert_eq(NpcRoster.get_home_npcs(tid).size(), 0, "private room has 0 uninvited NPCs for " + tid)
+		var scfg: Dictionary = NpcRoster.get_street_config(tid)
+		_assert_true(ResourceLoader.exists(String(scfg.get("street_scene", ""))), "street scene exists for " + tid)
+		var srect: Rect2 = scfg.get("walk_rect", Rect2())
+		var sspawn: Vector3 = scfg.get("player_spawn", Vector3.ZERO)
+		var phome: Vector3 = scfg.get("portal_home", Vector3.ZERO)
+		var pwork: Vector3 = scfg.get("portal_work", Vector3.ZERO)
+		_assert_true(srect.has_point(Vector2(sspawn.x, sspawn.z)), "street spawn inside walk_rect for " + tid)
+		_assert_true(srect.has_point(Vector2(phome.x, phome.z)), "portal_home inside walk_rect for " + tid)
+		_assert_true(srect.has_point(Vector2(pwork.x, pwork.z)), "portal_work inside walk_rect for " + tid)
+		_assert_true(phome.distance_to(pwork) >= 2.0, "street portals separated >=2m for " + tid)
+		var snpcs: Array = scfg.get("street_npcs", [])
+		_assert_true(snpcs.size() >= 2, "street has >=2 neighbors for " + tid)
+		for snpc in snpcs:
+			var sp: Vector3 = snpc["pos"]
+			_assert_true(srect.has_point(Vector2(sp.x, sp.z)), "street npc inside walk_rect: " + String(snpc["id"]))
+			_assert_true(sp.distance_to(sspawn) >= 1.2, "street npc >=1.2m from spawn: " + String(snpc["id"]))
+			_assert_true(sp.distance_to(phome) >= 1.0, "street npc >=1.0m from portal_home: " + String(snpc["id"]))
+			_assert_true(sp.distance_to(pwork) >= 1.0, "street npc >=1.0m from portal_work: " + String(snpc["id"]))
+			_assert_true(not ("Maid " in String(snpc.get("label_en", ""))), "no 'Maid' translation in EN: " + String(snpc["id"]))
+
+	# 0-chore instant-exit exploit blocked (and fired 0-chore still penalizes!)
+	var sv_exp := Progression.create_player_save()
+	sv_exp["day"] = 3
+	var sh_zero := ChoreEngine.create_shift("kamar_kos", MajikanProfiles.get_profile("ibu_kos_melati"), 100)
+	var cs_zero := MajikanCall.create_state(MajikanProfiles.get_profile("ibu_kos_melati"))
+	var res_zero := Progression.settle_shift(sv_exp, sh_zero, cs_zero)
+	_assert_eq(bool(res_zero["ok"]), true, "0-chore abort settles cleanly")
+	_assert_eq(bool(res_zero.get("aborted", false)), true, "0-chore non-fired marked aborted")
+	_assert_eq(int(res_zero["payout_rp"]), 0, "0-chore exploit awards Rp 0")
+	_assert_eq(int(res_zero["xp_gained"]), 0, "0-chore exploit awards 0 XP")
+	_assert_eq(int(res_zero["save"]["day"]), 3, "0-chore abort does not advance day")
+	_assert_eq(int(res_zero["save"]["completed_shifts"]), 0, "0-chore abort does not increment completed_shifts")
+
+	var cs_zero_fired := cs_zero.duplicate(true)
+	cs_zero_fired["fired"] = true
+	var res_zf := Progression.settle_shift(sv_exp, sh_zero, cs_zero_fired)
+	_assert_eq(bool(res_zf.get("aborted", true)), false, "0-chore fired is NOT treated as free abort")
+	_assert_eq(int(res_zf["save"]["fired_count"]), 1, "0-chore fired increments fired_count")
+	_assert_eq(int(res_zf["save"]["day"]), 4, "0-chore fired advances day")
+
+	# Partial shift proration (1 of 3 chores)
+	var sh_part := ChoreEngine.create_shift("kamar_kos", MajikanProfiles.get_profile("ibu_kos_melati"), 100)
+	sh_part = ChoreEngine.complete_chore(sh_part, String(sh_part["assigned_ids"][0]), 0.85, 1)["shift"]
+	var res_part := Progression.settle_shift(sv_exp, sh_part, cs_zero)
+	var expected_prorated := int(sh_part["earned_rp"]) + int(round(35000.0 / 3.0))
+	_assert_eq(int(res_part["payout_rp"]), expected_prorated, "partial 1/3 shift prorates contract pay")
+
+	# Mood speed, +15% morale payout bonus, Upgrade mood_bonus, and per-shift distraction cap
+	_assert_true(ChoreEngine.effective_duration("sweep_floor", 1, 85) < ChoreEngine.effective_duration("sweep_floor", 1, 60), "high mood >=80 speeds up chore")
+	_assert_true(ChoreEngine.effective_duration("sweep_floor", 1, 20) > ChoreEngine.effective_duration("sweep_floor", 1, 60), "low mood <=25 slows down chore")
+	var sv_up := sv_exp.duplicate(true)
+	sv_up["unlocked_kos_upgrades"] = ["rak_sepatu", "ac_hemat"]
+	_assert_eq(Progression.get_mood_bonus(sv_up), 16, "get_mood_bonus sums upgrade mood bonuses")
+	var cs_high_mood := cs_zero.duplicate(true)
+	cs_high_mood["mood"] = 85
+	var res_morale := Progression.settle_shift(sv_exp, sh_settle, cs_high_mood)
+	var res_base_mood := Progression.settle_shift(sv_exp, sh_settle, cs_zero)
+	_assert_true(int(res_morale["payout_rp"]) > int(res_base_mood["payout_rp"]), "high mood >=80 grants morale bonus payout")
+
+	var cs_cap := MajikanCall.create_state(MajikanProfiles.get_profile("ibu_kos_melati"))
+	cs_cap = MajikanCall.apply_distraction(cs_cap, "playing_game")
+	cs_cap = MajikanCall.apply_distraction(cs_cap, "calling_boyfriend")
+	var mood_at_cap := int(cs_cap["mood"])
+	cs_cap = MajikanCall.apply_distraction(cs_cap, "calling_boyfriend")
+	_assert_eq(int(cs_cap["mood"]), mood_at_cap, "3rd distraction in same shift capped")
+	_assert_eq(int(cs_cap.get("distractions_used", 0)), 2, "distractions_used capped at 2")
+
+	var bad_mood_save := SaveStore.deserialize('{"mood": 999, "chatted_dates": {"ibu_sari": "day_2", "bad": 123}}')
+	_assert_eq(int(bad_mood_save["mood"]), 100, "mood clamped <= 100")
+	_assert_eq(String(bad_mood_save["chatted_dates"].get("ibu_sari", "")), "day_2", "valid chatted_dates preserved")
+	_assert_eq(bad_mood_save["chatted_dates"].has("bad"), false, "non-string chatted_dates stripped")
 
 	print("GODOT TDD RESULT: %d passed, %d failed" % [_passed, _failed])
 	quit(0 if _failed == 0 else 1)

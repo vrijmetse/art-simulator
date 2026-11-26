@@ -98,6 +98,8 @@ static func create_player_save() -> Dictionary:
 		"skin_hex": "#C68B59",
 		"last_rent_day": 0,
 		"pending_rent_rp": 0,
+		"mood": 65,
+		"chatted_dates": {},
 		"active_tier_id": "kamar_kos",
 		"active_profile_id": "ibu_kos_melati",
 		"equipped_outfit_id": "starter_kasual",
@@ -172,6 +174,14 @@ static func get_max_energy(save: Dictionary) -> int:
 			total += int(KOS_UPGRADES[uid]["energy_bonus"])
 	return total
 
+static func get_mood_bonus(save: Dictionary) -> int:
+	var bonus := 0
+	var ups: Array = save.get("unlocked_kos_upgrades", [])
+	for uid in ups:
+		if KOS_UPGRADES.has(uid):
+			bonus += int(KOS_UPGRADES[uid].get("mood_bonus", 0))
+	return bonus
+
 static func get_tip_bonus_multiplier(save: Dictionary) -> float:
 	var bonus := 1.0
 	var ups: Array = save.get("unlocked_kos_upgrades", [])
@@ -224,10 +234,33 @@ static func settle_shift(save: Dictionary, shift: Dictionary, call_state: Dictio
 		return {"ok": false, "reason": "already_settled", "save": save, "shift": shift, "payout_rp": 0, "xp_gained": 0}
 
 	var is_fired := bool(call_state.get("fired", false))
+	var done_count: int = (shift.get("completed_ids", []) as Array).size()
+	var total_count := maxi(1, (shift.get("assigned_ids", []) as Array).size())
+
+	# 0-chore instant-exit guard (only treated as free abort when not fired!)
+	if done_count == 0 and not is_fired:
+		var aborted_shift := shift.duplicate(true)
+		aborted_shift["settled"] = true
+		return {
+			"ok": true,
+			"aborted": true,
+			"reason": "no_chores_done",
+			"payout_rp": 0,
+			"xp_gained": 0,
+			"fired": false,
+			"save": save.duplicate(true),
+			"shift": aborted_shift,
+		}
+
 	var chore_rp := maxi(0, int(shift.get("earned_rp", 0)))
-	var contract_rp := 0 if is_fired else MajikanCall.final_payout_rp(call_state)
+	var raw_contract := 0 if is_fired else MajikanCall.final_payout_rp(call_state)
+	var completion_ratio := clampf(float(done_count) / float(total_count), 0.0, 1.0)
+	var prorated_contract := int(round(float(raw_contract) * completion_ratio))
 	var tip_mult := 1.0 if is_fired else get_tip_bonus_multiplier(save)
-	var adjusted_contract := int(round(float(contract_rp) * tip_mult))
+	var shift_mood := int(call_state.get("mood", 60))
+	if not is_fired and shift_mood >= 80:
+		tip_mult += 0.15
+	var adjusted_contract := int(round(float(prorated_contract) * tip_mult))
 	var total_payout := maxi(0, chore_rp + adjusted_contract)
 
 	var raw_xp := maxi(0, int(shift.get("xp_earned", 0)))
@@ -240,6 +273,7 @@ static func settle_shift(save: Dictionary, shift: Dictionary, call_state: Dictio
 	nxt_save["day"] = int(nxt_save.get("day", 1)) + 1
 	nxt_save["completed_shifts"] = int(nxt_save.get("completed_shifts", 0)) + (0 if is_fired else 1)
 	nxt_save["fired_count"] = int(nxt_save.get("fired_count", 0)) + (1 if is_fired else 0)
+	nxt_save["mood"] = clampi(maxi(45, shift_mood) + get_mood_bonus(nxt_save), 25, 100)
 
 	var sk: Dictionary = nxt_save.get("skill_xp", {})
 	var earned_sk: Dictionary = shift.get("skill_xp_earned", {})
@@ -255,6 +289,7 @@ static func settle_shift(save: Dictionary, shift: Dictionary, call_state: Dictio
 
 	return {
 		"ok": true,
+		"aborted": false,
 		"reason": "",
 		"payout_rp": total_payout,
 		"xp_gained": xp_gained,
