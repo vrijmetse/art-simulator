@@ -33,37 +33,37 @@ static func apply_lighting(sun: DirectionalLight3D, bounce: DirectionalLight3D, 
 
 	match phase:
 		"pagi":
-			sun_col = Color(1.0, 0.90, 0.72)
-			sun_energy = 1.06
-			bounce_col = Color(0.92, 0.82, 0.68)
-			bounce_energy = 0.20
-			amb_col = Color(0.78, 0.82, 0.92)
-			amb_energy = 0.34
-			sky_top = Color(0.20, 0.58, 0.94)
+			sun_col = Color(1.0, 0.86, 0.62)
+			sun_energy = 1.05
+			bounce_col = Color(0.76, 0.72, 0.68)
+			bounce_energy = 0.14
+			amb_col = Color(0.46, 0.58, 0.84)
+			amb_energy = 0.28
+			sky_top = Color(0.18, 0.52, 0.90)
 		"siang":
-			sun_col = Color(1.0, 0.96, 0.86)
-			sun_energy = 1.22
-			bounce_col = Color(0.88, 0.84, 0.74)
-			bounce_energy = 0.21
-			amb_col = Color(0.72, 0.82, 0.95)
-			amb_energy = 0.35
+			sun_col = Color(1.0, 0.94, 0.80)
+			sun_energy = 1.18
+			bounce_col = Color(0.80, 0.78, 0.74)
+			bounce_energy = 0.16
+			amb_col = Color(0.50, 0.66, 0.90)
+			amb_energy = 0.30
 			sky_top = Color(0.14, 0.54, 0.96)
 		"sore":
-			sun_col = Color(1.0, 0.64, 0.36)
-			sun_energy = 0.96
-			bounce_col = Color(0.88, 0.60, 0.46)
-			bounce_energy = 0.19
-			amb_col = Color(0.74, 0.58, 0.68)
-			amb_energy = 0.32
+			sun_col = Color(1.0, 0.60, 0.32)
+			sun_energy = 0.98
+			bounce_col = Color(0.76, 0.54, 0.48)
+			bounce_energy = 0.15
+			amb_col = Color(0.42, 0.48, 0.74)
+			amb_energy = 0.26
 			adj_sat = 1.26
-			sky_top = Color(0.24, 0.36, 0.74)
+			sky_top = Color(0.20, 0.32, 0.68)
 		"malam":
-			sun_col = Color(0.46, 0.58, 0.90)
-			sun_energy = 0.42
-			bounce_col = Color(0.32, 0.42, 0.68)
-			bounce_energy = 0.18
-			amb_col = Color(0.28, 0.34, 0.54)
-			amb_energy = 0.28
+			sun_col = Color(0.44, 0.56, 0.90)
+			sun_energy = 0.44
+			bounce_col = Color(0.28, 0.38, 0.64)
+			bounce_energy = 0.14
+			amb_col = Color(0.24, 0.30, 0.52)
+			amb_energy = 0.24
 			adj_sat = 1.14
 			adj_con = 1.06
 			sky_top = Color(0.08, 0.14, 0.32)

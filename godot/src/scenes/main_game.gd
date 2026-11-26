@@ -490,6 +490,10 @@ func _load_stage_glb(glb_path: String) -> void:
 		stage_root.add_child(inst)
 		SceneVisuals.apply_baked_ao(inst)
 		if "kos_room" in resolved:
+			if ResourceLoader.exists("res://assets/textures/kos_room_lightmap.png"):
+				var lm_tex := load("res://assets/textures/kos_room_lightmap.png") as Texture2D
+				if lm_tex != null:
+					SceneVisuals.apply_lightmap(inst, lm_tex)
 			Atmosphere.apply_kos_upgrades_visual(inst, _save.get("unlocked_kos_upgrades", []))
 			for fb_name in ["FanBlade_0", "FanBlade_1", "FanBlade_2", "FanBlade_3"]:
 				var fb := inst.find_child(fb_name, true, false)
@@ -524,7 +528,7 @@ func _spawn_npcs(npc_list: Array) -> void:
 		holder.position = npc.get("pos", Vector3.ZERO)
 		holder.rotation.y = float(npc.get("rot_y", 0.0))
 		var inst := ps.instantiate() as Node3D
-		inst.scale = Vector3(0.84, 0.84, 0.84)
+		inst.scale = Vector3(0.92, 0.92, 0.92)
 		holder.add_child(inst)
 		SceneVisuals.apply_character_polish(inst)
 		SceneVisuals.attach_contact_shadow(holder, 0.36)
@@ -1149,7 +1153,7 @@ func _process(delta: float) -> void:
 		cam.look_at(player.position + Vector3(0.62, 0.92, 0.0), Vector3.UP)
 		return
 
-	var cam_offset := Vector3(2.2, 4.3, 5.4) if _world_mode == "street" else Vector3(3.4, 3.5, 3.8)
+	var cam_offset := Vector3(2.90, 2.95, 3.85) if _world_mode == "street" else Vector3(3.15, 3.10, 3.50)
 	var cam_target := player.position + cam_offset
 	cam.position = cam.position.lerp(cam_target, minf(1.0, delta * 5.0))
 	cam.look_at(player.position + Vector3(0.0, 0.80, -0.35), Vector3.UP)

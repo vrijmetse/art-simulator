@@ -1,6 +1,7 @@
 import os
 import sys
 import math
+import numpy as np
 import bpy
 import bmesh
 from mathutils import Vector
@@ -12,8 +13,10 @@ from tex_utils import (
     generate_foliage_texture,
     generate_laptop_ui,
     generate_plaster_ao_texture,
+    generate_sajadah_texture,
     generate_tile_textures,
     generate_turf_texture,
+    generate_tv_weather_texture,
     generate_wall_art_padi,
     generate_wood_texture,
     generate_woven_rug_texture,
@@ -148,7 +151,7 @@ def import_kenney_glb(prefix, filename, loc, rot_z=0.0, scale=1.85, target_heigh
     return parent
 
 
-def add_beveled_box(name, size, loc, mat, bevel=0.022, rot=(0.0, 0.0, 0.0), cuts=0):
+def add_beveled_box(name, size, loc, mat, bevel=0.022, rot=(0.0, 0.0, 0.0), cuts=0, use_wn=True, reset_uv=False):
     bpy.ops.mesh.primitive_cube_add(size=1.0, location=loc, rotation=rot)
     obj = bpy.context.active_object
     obj.name = name
@@ -157,7 +160,7 @@ def add_beveled_box(name, size, loc, mat, bevel=0.022, rot=(0.0, 0.0, 0.0), cuts
     if bevel > 0:
         b = obj.modifiers.new("Bevel", 'BEVEL')
         b.width = bevel
-        b.segments = 3
+        b.segments = 3 if use_wn else 2
         bpy.ops.object.modifier_apply(modifier="Bevel")
     if cuts > 0:
         bpy.ops.object.mode_set(mode='EDIT')
@@ -167,53 +170,135 @@ def add_beveled_box(name, size, loc, mat, bevel=0.022, rot=(0.0, 0.0, 0.0), cuts
     bpy.ops.object.shade_smooth()
     obj.data.use_auto_smooth = True
     obj.data.auto_smooth_angle = math.radians(42)
-    if bevel > 0:
+    if bevel > 0 and use_wn:
         wn = obj.modifiers.new("WeightedNormal", 'WEIGHTED_NORMAL')
         wn.keep_sharp = True
         bpy.ops.object.modifier_apply(modifier="WeightedNormal")
     bpy.ops.object.mode_set(mode='EDIT')
     bpy.ops.mesh.select_all(action='SELECT')
-    bpy.ops.uv.cube_project(cube_size=max(size) * 0.6)
+    if reset_uv:
+        bpy.ops.uv.reset()
+    else:
+        bpy.ops.uv.cube_project(cube_size=max(size) * 0.6)
     bpy.ops.object.mode_set(mode='OBJECT')
     obj.data.materials.append(mat)
     return obj
 
 
-def bake_cycles_ao(samples=10, ao_min=0.48, ao_max=1.0):
+def bake_cycles_lightmap(out_png_path: str, size: int = 1024, samples: int = 24):
+    """Bake real Cycles 2-tone GI + soft shadows + window light shafts into UV2 (LightmapUV)."""
     scene = bpy.context.scene
     scene.render.engine = 'CYCLES'
     scene.cycles.device = 'CPU'
     scene.cycles.samples = samples
-    scene.cycles.bake_type = 'AO'
-    scene.render.bake.target = 'VERTEX_COLORS'
+    scene.cycles.use_denoising = False
+    scene.cycles.max_bounces = 3
+    scene.cycles.diffuse_bounces = 2
+    scene.cycles.bake_type = 'DIFFUSE'
+    scene.render.bake.use_pass_direct = True
+    scene.render.bake.use_pass_indirect = True
+    scene.render.bake.use_pass_color = False
+    scene.render.bake.target = 'IMAGE_TEXTURES'
     scene.render.bake.use_clear = True
+    scene.render.bake.margin = 4
+
+    # Two-tone World ambient: cool slate-blue shadows
+    world = bpy.data.worlds.new("BakeWorld")
+    scene.world = world
+    world.use_nodes = True
+    bg = world.node_tree.nodes["Background"]
+    bg.inputs["Color"].default_value = (0.34, 0.46, 0.72, 1.0)
+    bg.inputs["Strength"].default_value = 0.92
+
+    # Warm golden Sun shining diagonally through the 3D window frame & mullions
+    bpy.ops.object.light_add(type='SUN', location=(0.6, 5.0, 3.6))
+    sun_obj = bpy.context.active_object
+    sun_obj.name = "_BakeSun"
+    sun_obj.data.energy = 3.4
+    sun_obj.data.color = (1.0, 0.78, 0.44)
+    sun_obj.data.angle = math.radians(4.5)
+    sun_obj.rotation_euler = (math.radians(-48), math.radians(14), math.radians(-22))
+
+    # Warm cozy bedside lamp pool
+    bpy.ops.object.light_add(type='POINT', location=(-0.60, 1.98, 0.78))
+    lamp_obj = bpy.context.active_object
+    lamp_obj.name = "_BakeBedLamp"
+    lamp_obj.data.energy = 26.0
+    lamp_obj.data.color = (1.0, 0.66, 0.28)
+    lamp_obj.data.shadow_soft_size = 0.16
+
+    # Let sunlight pass cleanly through window glass during bake
+    win_sky = bpy.data.objects.get("WinSky")
+    if win_sky:
+        win_sky.hide_render = True
 
     mesh_objs = [o for o in bpy.data.objects if o.type == 'MESH' and not o.hide_render]
-    for obj in mesh_objs:
-        mesh = obj.data
-        if not mesh.color_attributes:
-            col = mesh.color_attributes.new(name="Col", type='BYTE_COLOR', domain='CORNER')
-        else:
-            col = mesh.color_attributes.get("Col") or mesh.color_attributes[0]
-            col.name = "Col"
-        mesh.color_attributes.active_color = col
-        idx = list(mesh.color_attributes).index(col)
-        mesh.color_attributes.render_color_index = idx
+    for o in mesh_objs:
+        if not o.data.uv_layers:
+            o.data.uv_layers.new(name="UVMap")
+        lm_uv = o.data.uv_layers.get("LightmapUV") or o.data.uv_layers.new(name="LightmapUV")
+        o.data.uv_layers.active = lm_uv
 
-        bpy.ops.object.select_all(action='DESELECT')
-        obj.select_set(True)
-        bpy.context.view_layer.objects.active = obj
-        try:
-            bpy.ops.object.bake(type='AO')
-        except Exception as e:
-            print(f"AO bake skipped for {obj.name}: {e}")
-            continue
+    bpy.ops.object.select_all(action='DESELECT')
+    for o in mesh_objs:
+        o.select_set(True)
+    if mesh_objs:
+        bpy.context.view_layer.objects.active = mesh_objs[0]
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_all(action='SELECT')
+        bpy.ops.uv.smart_project(angle_limit=math.radians(66), island_margin=0.012)
+        bpy.ops.object.mode_set(mode='OBJECT')
 
-        for item in col.data:
-            r = max(ao_min, min(ao_max, item.color[0]))
-            g = max(ao_min, min(ao_max, item.color[1]))
-            b = max(ao_min, min(ao_max, item.color[2]))
-            item.color = (r, g, b, 1.0)
+    lm_img = bpy.data.images.new("KosLightmapBake", width=size, height=size, alpha=False, float_buffer=True)
+    bake_mat = bpy.data.materials.new("_BakeWhiteDiffuse")
+    bake_mat.use_nodes = True
+    nt = bake_mat.node_tree
+    bsdf = nt.nodes["Principled BSDF"]
+    bsdf.inputs["Base Color"].default_value = (0.94, 0.94, 0.94, 1.0)
+    bsdf.inputs["Roughness"].default_value = 0.90
+    tex_node = nt.nodes.new("ShaderNodeTexImage")
+    tex_node.image = lm_img
+    nt.nodes.active = tex_node
+
+    saved_mats = {}
+    for o in mesh_objs:
+        saved_mats[o.name] = list(o.data.materials)
+        o.data.materials.clear()
+        o.data.materials.append(bake_mat)
+
+    bpy.ops.object.bake(type='DIFFUSE')
+
+    # Smooth 3x3 Gaussian blur + safe [0.50..1.00] lift to prevent double-darkening in Godot
+    arr = np.array(lm_img.pixels[:], dtype=np.float32).reshape(size, size, 4)
+    rgb = arr[:, :, :3]
+    for _ in range(2):
+        p = np.pad(rgb, ((1, 1), (1, 1), (0, 0)), mode='edge')
+        rgb = (
+            p[1:-1, 1:-1] * 4.0
+            + (p[:-2, 1:-1] + p[2:, 1:-1] + p[1:-1, :-2] + p[1:-1, 2:]) * 2.0
+            + (p[:-2, :-2] + p[:-2, 2:] + p[2:, :-2] + p[2:, 2:]) * 1.0
+        ) / 16.0
+    rgb = np.clip(rgb, 0.0, 1.8)
+    rgb = np.clip(0.50 + 0.50 * (rgb / max(0.85, float(np.percentile(rgb, 96)))), 0.48, 1.0)
+    out_rgba = np.concatenate([rgb, np.ones((size, size, 1), dtype=np.float32)], axis=-1).astype(np.float32)
+
+    out_img = bpy.data.images.new("KosLightmapOut", width=size, height=size, alpha=True, float_buffer=False)
+    out_img.pixels.foreach_set(out_rgba.reshape(-1).tolist())
+    out_img.filepath_raw = out_png_path
+    out_img.file_format = 'PNG'
+    out_img.save()
+
+    # Restore original materials & primary UVMap (index 0) before glTF export
+    for o in mesh_objs:
+        o.data.materials.clear()
+        for m in saved_mats.get(o.name, []):
+            o.data.materials.append(m)
+        o.data.uv_layers.active_index = 0
+    if win_sky:
+        win_sky.hide_render = False
+    for tmp in (sun_obj, lamp_obj):
+        bpy.data.objects.remove(tmp, do_unlink=True)
+    print("BAKED CYCLES LIGHTMAP:", out_png_path)
 
 
 def add_curved_monstera_plant(x, y, pot_mat, soil_mat, stem_mat, leaf_mat):
@@ -292,68 +377,60 @@ def add_open_standing_fan(x, y, dark_mat, teal_mat, metal_mat):
 def build_room():
     bpy.ops.wm.read_factory_settings(use_empty=True)
 
-    floor_alb, floor_nrm, floor_rgh = generate_tile_textures(TEX_DIR, "room_ceramic_v19", (0.82, 0.73, 0.60), "ceramic")
-    wall_alb, wall_nrm, wall_rgh = generate_plaster_ao_texture(TEX_DIR, "room_plaster_v5", (0.84, 0.74, 0.58))
-    wood_alb, wood_nrm, wood_rgh = generate_wood_texture(TEX_DIR, "room_teak_v5", (0.34, 0.17, 0.08))
-    grass_alb, grass_nrm, grass_rgh = generate_turf_texture(TEX_DIR, "room_grass_v11", (0.12, 0.24, 0.12))
+    floor_alb, floor_nrm, floor_rgh = generate_tile_textures(TEX_DIR, "room_ceramic_v20", (0.86, 0.78, 0.66), "ceramic", use_polyhaven=False)
+    wall_alb, wall_nrm, wall_rgh = generate_plaster_ao_texture(TEX_DIR, "room_plaster_v20", (0.90, 0.83, 0.72), use_polyhaven=False)
+    wood_alb, wood_nrm, wood_rgh = generate_wood_texture(TEX_DIR, "room_teak_v20", (0.44, 0.24, 0.12), use_polyhaven=False)
     leaf_alb = generate_foliage_texture(TEX_DIR, "room_plant_v5", (0.14, 0.44, 0.16))
     art_img = generate_wall_art_padi(TEX_DIR, "wall_art_padi_v5")
     laptop_img = generate_laptop_ui(TEX_DIR, "laptop_ui_v5")
+    tv_img = generate_tv_weather_texture(TEX_DIR, "tv_weather_v20")
     rug_img = generate_woven_rug_texture(TEX_DIR, "woven_rug_v5")
-    sheet_img = generate_fabric_weave_texture(TEX_DIR, "fabric_sheet_v5", (0.86, 0.80, 0.70))
-    blanket_img = generate_fabric_weave_texture(TEX_DIR, "fabric_blanket_v5", (0.76, 0.28, 0.14))
-    curtain_img = generate_fabric_weave_texture(TEX_DIR, "fabric_curtain_v5", (0.18, 0.42, 0.56))
+    sajadah_img = generate_sajadah_texture(TEX_DIR, "sajadah_v20")
+    sheet_img = generate_fabric_weave_texture(TEX_DIR, "fabric_sheet_v5", (0.90, 0.86, 0.78))
+    blanket_img = generate_fabric_weave_texture(TEX_DIR, "fabric_blanket_v5", (0.78, 0.30, 0.16))
+    curtain_img = generate_fabric_weave_texture(TEX_DIR, "fabric_curtain_v5", (0.20, 0.46, 0.58))
 
-    mat_floor = make_pbr_material("RoomFloor", floor_alb, 0.46, floor_nrm, 0.62, (4.4, 4.4), floor_rgh)
-    mat_wall = make_pbr_material("RoomWall", wall_alb, 0.84, wall_nrm, 0.50, (1.6, 1.6), wall_rgh)
-    mat_wood = make_pbr_material("RoomWood", wood_alb, 0.44, wood_nrm, 0.55, (1.5, 1.5), wood_rgh)
-    mat_grass = make_pbr_material("YardGrass", grass_alb, 0.94, grass_nrm, 0.55, (5.0, 5.0), grass_rgh)
-    mat_patio = make_solid_mat("YardPatio", (0.24, 0.23, 0.26), 0.90)
-    mat_leaf = make_pbr_material("RoomPlant", leaf_alb, 0.68)
+    mat_floor = make_pbr_material("RoomFloor", floor_alb, 0.34, floor_nrm, 0.28, (4.2, 4.2))
+    mat_wall = make_pbr_material("RoomWall", wall_alb, 0.82, None, 0.0, (1.0, 1.0))
+    mat_wood = make_pbr_material("RoomWood", wood_alb, 0.40, None, 0.0, (1.4, 1.4))
+    mat_leaf = make_pbr_material("RoomPlant", leaf_alb, 0.66)
     mat_art = make_pbr_material("RoomWallArt", art_img, 0.55)
-    mat_screen = make_pbr_material("LaptopScreen", laptop_img, 0.35)
-    mat_rug = make_pbr_material("WovenRug", rug_img, 0.90)
-    mat_cream = make_pbr_material("BedSheet", sheet_img, 0.88, None, 0.0, (2.0, 2.0))
-    mat_coral = make_pbr_material("BlanketCoral", blanket_img, 0.86, None, 0.0, (2.0, 2.0))
-    mat_curtain = make_pbr_material("SageCurtain", curtain_img, 0.88, None, 0.0, (1.5, 2.5))
+    mat_screen = make_pbr_material("LaptopScreen", laptop_img, 0.32)
+    mat_tv = make_pbr_material("TvScreen", tv_img, 0.25)
+    tv_bsdf = mat_tv.node_tree.nodes["Principled BSDF"]
+    tv_bsdf.inputs["Emission Strength"].default_value = 0.75
+    tv_bsdf.inputs["Emission Color"].default_value = (0.35, 0.62, 0.85, 1.0)
+    mat_rug = make_pbr_material("WovenRug", rug_img, 0.88)
+    mat_sajadah = make_pbr_material("SajadahEmerald", sajadah_img, 0.86)
+    mat_cream = make_pbr_material("BedSheet", sheet_img, 0.86, None, 0.0, (2.0, 2.0))
+    mat_coral = make_pbr_material("BlanketCoral", blanket_img, 0.84, None, 0.0, (2.0, 2.0))
+    mat_curtain = make_pbr_material("SageCurtain", curtain_img, 0.86, None, 0.0, (1.5, 2.5))
 
-    mat_pot = make_solid_mat("TerracottaPot", (0.68, 0.30, 0.18), 0.76)
-    mat_soil = make_solid_mat("DarkSoil", (0.16, 0.11, 0.08), 0.95)
-    mat_lamp = make_solid_mat("WarmShade", (0.98, 0.80, 0.44), 0.35, 0.0, 1.15)
-    mat_book1 = make_solid_mat("BookTeal", (0.18, 0.52, 0.50), 0.76)
-    mat_book2 = make_solid_mat("BookMustard", (0.82, 0.60, 0.22), 0.76)
-    mat_brass = make_solid_mat("BrassKnob", (0.78, 0.60, 0.26), 0.30, 0.85)
-    mat_dark = make_solid_mat("DarkAlloy", (0.16, 0.18, 0.22), 0.42, 0.65)
-    mat_metal = make_solid_mat("AlloyChrome", (0.72, 0.74, 0.78), 0.25, 0.85)
-    mat_wicker = make_solid_mat("WickerTan", (0.76, 0.64, 0.46), 0.88)
-    mat_sky = make_solid_mat("WindowSky", (0.98, 0.72, 0.36), 0.25, 0.0, 0.65)
-    mat_sajadah = make_solid_mat("SajadahEmerald", (0.10, 0.40, 0.26), 0.86)
-    mat_terracotta_red = make_solid_mat("TermosRed", (0.82, 0.18, 0.16), 0.36, 0.12)
+    mat_pot = make_solid_mat("TerracottaPot", (0.68, 0.30, 0.18), 0.72)
+    mat_soil = make_solid_mat("DarkSoil", (0.16, 0.11, 0.08), 0.92)
+    mat_lamp = make_solid_mat("WarmShade", (0.98, 0.80, 0.44), 0.32, 0.0, 1.25)
+    mat_book1 = make_solid_mat("BookTeal", (0.18, 0.52, 0.50), 0.72)
+    mat_book2 = make_solid_mat("BookMustard", (0.82, 0.60, 0.22), 0.72)
+    mat_brass = make_solid_mat("BrassKnob", (0.82, 0.64, 0.28), 0.28, 0.85)
+    mat_dark = make_solid_mat("DarkAlloy", (0.14, 0.16, 0.20), 0.38, 0.65)
+    mat_metal = make_solid_mat("AlloyChrome", (0.74, 0.76, 0.80), 0.25, 0.85)
+    mat_wicker = make_solid_mat("WickerTan", (0.78, 0.66, 0.48), 0.84)
+    mat_sky = make_solid_mat("WindowSky", (1.0, 0.76, 0.40), 0.22, 0.0, 0.85)
+    mat_terracotta_red = make_solid_mat("TermosRed", (0.84, 0.18, 0.16), 0.34, 0.12)
 
-    add_beveled_box("OuterYard", (16.0, 16.0, 0.12), (0.0, 0.0, -0.24), mat_grass, 0.0)
-    # Surrounding backyard perimeter wall & plain warm stone veranda edge so room sits inside a real garden!
-    add_beveled_box("YardFenceBack", (12.0, 0.24, 1.45), (0.0, 5.2, 0.45), mat_wall, 0.02)
-    add_beveled_box("YardFenceLeft", (0.24, 12.0, 1.45), (-5.2, 0.0, 0.45), mat_wall, 0.02)
-    add_beveled_box("YardPatio", (5.8, 5.8, 0.10), (0.0, 0.0, -0.17), mat_patio, 0.02)
-    # Soft dark contact-shadow AO pads under major furniture legs for crisp indoor grounding
-    mat_shadow = make_solid_mat("ContactAO", (0.34, 0.30, 0.25), 0.98, 0.0, 0.0)
-    for sname, sx, sy, sw, sd in [
-        ("AO_Bed", -1.55, 1.25, 1.32, 2.12),
-        ("AO_Nightstand", -0.60, 2.02, 0.56, 0.54),
-        ("AO_Desk", 0.85, 1.88, 1.42, 0.74),
-        ("AO_Wardrobe", 1.92, 1.98, 0.94, 0.64),
-        ("AO_Basket", 1.68, -0.70, 0.42, 0.42),
-    ]:
-        add_beveled_box(sname, (sw, sd, 0.008), (sx, sy, 0.005), mat_shadow, 0.0)
-    add_beveled_box("FloorSlab", (4.8, 4.8, 0.16), (0.0, 0.0, -0.08), mat_floor, 0.03, cuts=8)
-    add_beveled_box("WallBack", (4.8, 0.14, 2.75), (0.0, 2.38, 1.375), mat_wall, 0.025, cuts=8)
-    add_beveled_box("WallLeft", (0.14, 4.8, 2.75), (-2.38, 0.0, 1.375), mat_wall, 0.025, cuts=8)
-    add_beveled_box("SkirtBack", (4.76, 0.06, 0.14), (0.0, 2.285, 0.07), mat_wood, 0.015)
-    add_beveled_box("SkirtLeft", (0.06, 4.76, 0.14), (-2.285, 0.0, 0.07), mat_wood, 0.015)
-    add_beveled_box("CrownBack", (4.76, 0.08, 0.08), (0.0, 2.29, 2.70), mat_wood, 0.015)
-    add_beveled_box("CrownLeft", (0.08, 4.76, 0.08), (-2.29, 0.0, 2.70), mat_wood, 0.015)
-    add_beveled_box("WainscotBack", (4.74, 0.03, 0.85), (0.0, 2.295, 0.43), mat_cream, 0.01)
-    add_beveled_box("WainscotLeft", (0.03, 4.74, 0.85), (-2.295, 0.0, 0.43), mat_cream, 0.01)
+    # Cozy cutaway diorama (clean dark studio exterior + lush plants outside, no muddy grey yard!)
+    add_beveled_box("FloorSlab", (4.8, 4.8, 0.16), (0.0, 0.0, -0.08), mat_floor, 0.015, cuts=2, use_wn=False)
+    add_beveled_box("WallBack", (4.8, 0.14, 2.75), (0.0, 2.38, 1.375), mat_wall, 0.008, cuts=2, use_wn=False)
+    add_beveled_box("WallLeft", (0.14, 4.8, 2.75), (-2.38, 0.0, 1.375), mat_wall, 0.008, cuts=2, use_wn=False)
+    add_beveled_box("SkirtBack", (4.76, 0.06, 0.14), (0.0, 2.285, 0.07), mat_wood, 0.010, use_wn=False)
+    add_beveled_box("SkirtLeft", (0.06, 4.76, 0.14), (-2.285, 0.0, 0.07), mat_wood, 0.010, use_wn=False)
+    add_beveled_box("CrownBack", (4.76, 0.08, 0.08), (0.0, 2.29, 2.70), mat_wood, 0.010, use_wn=False)
+    add_beveled_box("CrownLeft", (0.08, 4.76, 0.08), (-2.29, 0.0, 2.70), mat_wood, 0.010, use_wn=False)
+    add_beveled_box("WainscotBack", (4.74, 0.03, 0.85), (0.0, 2.295, 0.43), mat_cream, 0.008, use_wn=False)
+    add_beveled_box("WainscotLeft", (0.03, 4.74, 0.85), (-2.295, 0.0, 0.43), mat_cream, 0.008, use_wn=False)
+    # Exterior tropical greenery framing the open window & left diorama edge
+    import_kenney_glb("ExtPlantWindow", "pottedPlant.glb", (0.35, 2.72, 0.65), rot_z=0.5, target_height=1.15, center_xy=True)
+    import_kenney_glb("ExtPlantCorner", "pottedPlant.glb", (-2.68, -1.65, -0.10), rot_z=1.1, target_height=1.25, center_xy=True)
     # Indoor Split AC unit high on WallBack + power cord
     add_beveled_box("IndoorAC", (0.86, 0.22, 0.26), (0.35, 2.20, 2.42), mat_cream, 0.03)
     add_beveled_box("IndoorACVent", (0.76, 0.04, 0.04), (0.35, 2.09, 2.33), mat_dark, 0.008)
@@ -395,11 +472,9 @@ def build_room():
     add_beveled_box("ClockHandH", (0.02, 0.018, 0.09), (-2.23, 0.45, 1.91), mat_dark, 0.002)
     add_beveled_box("ClockHandM", (0.02, 0.11, 0.018), (-2.23, 0.49, 1.88), mat_dark, 0.002)
 
-    # Patterned Woven Kilim Rug + 3D Emerald & Gold Sajadah Prayer Mat (clear of rug & chair!)
-    add_beveled_box("CozyRug", (1.95, 1.45, 0.024), (-0.12, -0.35, 0.014), mat_rug, 0.012)
-    add_beveled_box("SajadahBase", (0.68, 1.06, 0.016), (1.20, -0.95, 0.010), mat_sajadah, 0.008)
-    add_beveled_box("SajadahBorder", (0.58, 0.96, 0.006), (1.20, -0.95, 0.019), mat_book2, 0.004)
-    add_beveled_box("SajadahArch", (0.38, 0.54, 0.006), (1.20, -0.88, 0.022), mat_sajadah, 0.004)
+    # Patterned Woven Kilim Rug + Crisp UV-mapped Emerald & Gold Sajadah Prayer Mat
+    add_beveled_box("CozyRug", (1.95, 1.45, 0.024), (-0.12, -0.35, 0.014), mat_rug, 0.012, reset_uv=True)
+    add_beveled_box("SajadahBase", (0.68, 1.06, 0.014), (1.20, -0.95, 0.009), mat_sajadah, 0.006, reset_uv=True)
 
     # Wall Calendar next to window + Red Indonesian Floral Thermos on Desk
     add_beveled_box("WallCalendar", (0.28, 0.02, 0.40), (1.24, 2.28, 1.62), mat_cream, 0.004)
@@ -464,16 +539,16 @@ def build_room():
     add_open_standing_fan(1.90, 0.72, mat_dark, mat_book1, mat_metal)
     import_kenney_glb("PottedPlant", "pottedPlant.glb", (-1.72, -1.05, 0.0), rot_z=0.35, target_height=0.95, center_xy=True)
 
-    # Indonesian Kos Magic Com (Rice Cooker) on a small corner stand
-    add_beveled_box("RiceCookerStand", (0.38, 0.38, 0.42), (1.92, 0.08, 0.21), mat_wood, 0.015)
-    bpy.ops.mesh.primitive_cylinder_add(vertices=16, radius=0.12, depth=0.20, location=(1.92, 0.08, 0.52))
-    bpy.ops.object.shade_smooth()
-    bpy.context.active_object.data.materials.append(mat_cream)
-    bpy.ops.mesh.primitive_cylinder_add(vertices=16, radius=0.11, depth=0.04, location=(1.92, 0.08, 0.63))
-    bpy.ops.object.shade_smooth()
-    bpy.context.active_object.data.materials.append(mat_coral)
+    # Storage Boxes atop Wardrobe + Retro Cozy TV on corner stand
+    add_beveled_box("WardBox1", (0.38, 0.34, 0.22), (1.76, 1.98, 2.03), mat_wicker, 0.015)
+    add_beveled_box("WardBox2", (0.34, 0.30, 0.18), (2.14, 1.98, 2.01), mat_book1, 0.012)
+    add_beveled_box("RoomTvBody", (0.44, 0.10, 0.32), (1.92, 0.08, 0.62), mat_dark, 0.015, rot=(0, 0, math.radians(-55)))
+    add_beveled_box("RoomTvScreen", (0.38, 0.02, 0.25), (1.88, 0.05, 0.62), mat_tv, 0.0, rot=(0, 0, math.radians(-55)), use_wn=False, reset_uv=True)
 
-    bake_cycles_ao(samples=10, ao_min=0.48, ao_max=1.0)
+    # Indonesian Kos Magic Com (Rice Cooker) on desk side + warm lightmap bake!
+    add_beveled_box("RiceCookerStand", (0.38, 0.38, 0.42), (1.92, 0.08, 0.21), mat_wood, 0.015)
+
+    bake_cycles_lightmap(os.path.join(TEX_DIR, "kos_room_lightmap.png"), size=1024, samples=24)
 
     os.makedirs(os.path.dirname(OUT_GLB), exist_ok=True)
     bpy.ops.export_scene.gltf(filepath=OUT_GLB, export_format='GLB', export_apply=False)

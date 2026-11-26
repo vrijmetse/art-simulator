@@ -154,77 +154,80 @@ def generate_terracotta_textures(tex_dir: str, name_prefix: str = "genteng", bas
     )
 
 
-def generate_plaster_ao_texture(tex_dir: str, name: str, base_rgb=(0.86, 0.78, 0.64)):
-    alb, nrm, rgh = load_polyhaven_pbr(tex_dir, "plaster", base_rgb, f"{name}_ph_alb")
-    if alb is not None:
-        return alb, nrm, rgh
+def generate_plaster_ao_texture(tex_dir: str, name: str, base_rgb=(0.86, 0.78, 0.64), use_polyhaven: bool = False):
+    if use_polyhaven:
+        alb, nrm, rgh = load_polyhaven_pbr(tex_dir, "plaster", base_rgb, f"{name}_ph_alb")
+        if alb is not None:
+            return alb, nrm, rgh
     size = 512
     yy, xx = np.mgrid[0:size, 0:size]
     v = yy / size
-    rng = np.random.default_rng(7)
-    grain = rng.normal(0.0, 0.022, (size, size)).astype(np.float32)
-    bottom_ao = 1.0 - 0.28 * np.exp(-((1.0 - v) * 6.0) ** 2)
-    top_ao = 1.0 - 0.16 * np.exp(-(v * 7.5) ** 2)
-    shade = np.clip(bottom_ao * top_ao + grain, 0.45, 1.05)
+    u = xx / size
+    # Subtle soft stylized plaster tone without gritty high-frequency noise
+    soft_wave = 0.012 * np.sin(u * math.pi * 4.0) * np.cos(v * math.pi * 4.0)
+    bottom_ao = 1.0 - 0.16 * np.exp(-((1.0 - v) * 5.0) ** 2)
+    top_ao = 1.0 - 0.10 * np.exp(-(v * 6.5) ** 2)
+    shade = np.clip(bottom_ao * top_ao + soft_wave, 0.68, 1.04)
     rgb = np.stack([np.clip(base_rgb[i] * shade, 0.0, 1.0) for i in range(3)], axis=-1)
     rgba = np.concatenate([rgb, np.ones((size, size, 1), dtype=np.float32)], axis=-1).astype(np.float32)
-    return (
-        save_rgba_png(name, rgba, tex_dir, False),
-        save_rgba_png(f"{name}_nrm", _height_to_normal(grain, 2.2), tex_dir, True),
-        None,
-    )
+    return save_rgba_png(name, rgba, tex_dir, False), None, None
 
 
-def generate_tile_textures(tex_dir: str, name: str = "ceramic_tile", base_rgb=(0.84, 0.76, 0.64), polyhaven_key: str = "ceramic"):
-    alb, nrm, rgh = load_polyhaven_pbr(tex_dir, polyhaven_key, base_rgb, f"{name}_ph_alb")
-    if alb is not None:
-        return alb, nrm, rgh
+def generate_tile_textures(tex_dir: str, name: str = "ceramic_tile", base_rgb=(0.84, 0.76, 0.64), polyhaven_key: str = "ceramic", use_polyhaven: bool = False):
+    if use_polyhaven:
+        alb, nrm, rgh = load_polyhaven_pbr(tex_dir, polyhaven_key, base_rgb, f"{name}_ph_alb")
+        if alb is not None:
+            return alb, nrm, rgh
     size = 512
     yy, xx = np.mgrid[0:size, 0:size]
-    tiles = 6.0
+    tiles = 4.0
+    tx = np.floor(xx / size * tiles)
+    ty = np.floor(yy / size * tiles)
     u = (xx / size * tiles) % 1.0
     v = (yy / size * tiles) % 1.0
-    grout = (u < 0.045) | (v < 0.045)
-    rng = np.random.default_rng(19)
-    speck = rng.normal(0.0, 0.018, (size, size)).astype(np.float32)
-    shade = np.where(grout, 0.65, 0.98 + speck)
-    height = np.where(grout, 0.12, 0.88 + speck * 0.5).astype(np.float32)
+    grout = (u < 0.032) | (v < 0.032)
+    tile_var = 0.96 + 0.05 * (((tx * 3 + ty * 5) % 4) / 3.0)
+    sheen = 1.0 + 0.025 * (1.0 - 0.5 * (u + v))
+    shade = np.where(grout, 0.72, tile_var * sheen)
+    height = np.where(grout, 0.20, 0.92).astype(np.float32)
     rgb = np.stack([np.clip(base_rgb[i] * shade, 0.0, 1.0) for i in range(3)], axis=-1)
     rgba = np.concatenate([rgb, np.ones((size, size, 1), dtype=np.float32)], axis=-1).astype(np.float32)
     return (
         save_rgba_png(f"{name}_albedo", rgba, tex_dir, False),
-        save_rgba_png(f"{name}_normal", _height_to_normal(height, 2.2), tex_dir, True),
+        save_rgba_png(f"{name}_normal", _height_to_normal(height, 1.4), tex_dir, True),
         None,
     )
 
 
-def generate_asphalt_textures(tex_dir: str):
-    alb, nrm, rgh = load_polyhaven_pbr(tex_dir, "asphalt", (0.28, 0.30, 0.34), "asphalt_ph_alb")
-    if alb is not None:
-        return alb, nrm, rgh
-    size = 512
-    rng = np.random.default_rng(99)
-    grit = rng.normal(0.0, 0.045, (size, size)).astype(np.float32)
-    base = np.clip(0.24 + grit * 0.45, 0.10, 0.38)
-    rgb = np.stack([base * 0.96, base * 0.98, base * 1.05], axis=-1)
-    rgba = np.concatenate([rgb, np.ones((size, size, 1), dtype=np.float32)], axis=-1).astype(np.float32)
-    return (
-        save_rgba_png("asphalt_albedo", rgba, tex_dir, False),
-        save_rgba_png("asphalt_normal", _height_to_normal(grit, 1.8), tex_dir, True),
-        None,
-    )
-
-
-def generate_wood_texture(tex_dir: str, name: str = "teak_wood", base_rgb=(0.45, 0.27, 0.15)):
-    alb, nrm, rgh = load_polyhaven_pbr(tex_dir, "wood", base_rgb, f"{name}_ph_alb")
-    if alb is not None:
-        return alb, nrm, rgh
+def generate_asphalt_textures(tex_dir: str, use_polyhaven: bool = False):
+    if use_polyhaven:
+        alb, nrm, rgh = load_polyhaven_pbr(tex_dir, "asphalt", (0.28, 0.30, 0.34), "asphalt_ph_alb")
+        if alb is not None:
+            return alb, nrm, rgh
     size = 512
     yy, xx = np.mgrid[0:size, 0:size]
     u, v = xx / size, yy / size
-    grain = 0.035 * np.sin(v * 220.0 + np.sin(u * 4.0) * 0.5)
-    plank_seam = np.where(((v * 6.0) % 1.0) < 0.02, 0.72, 1.0)
-    shade = np.clip((0.96 + grain) * plank_seam, 0.5, 1.1)
+    rng = np.random.default_rng(99)
+    coarse = rng.normal(0.0, 0.014, (64, 64)).astype(np.float32)
+    coarse_up = np.repeat(np.repeat(coarse, 8, axis=0), 8, axis=1)
+    fine = rng.normal(0.0, 0.008, (size, size)).astype(np.float32)
+    base = np.clip(0.19 + coarse_up + fine + 0.015 * np.sin(v * math.pi * 2.0), 0.14, 0.25)
+    rgb = np.stack([base * 0.92, base * 0.96, base * 1.08], axis=-1)
+    rgba = np.concatenate([rgb, np.ones((size, size, 1), dtype=np.float32)], axis=-1).astype(np.float32)
+    return save_rgba_png("asphalt_albedo", rgba, tex_dir, False), None, None
+
+
+def generate_wood_texture(tex_dir: str, name: str = "teak_wood", base_rgb=(0.45, 0.27, 0.15), use_polyhaven: bool = False):
+    if use_polyhaven:
+        alb, nrm, rgh = load_polyhaven_pbr(tex_dir, "wood", base_rgb, f"{name}_ph_alb")
+        if alb is not None:
+            return alb, nrm, rgh
+    size = 512
+    yy, xx = np.mgrid[0:size, 0:size]
+    u, v = xx / size, yy / size
+    grain = 0.032 * np.sin(v * 95.0 + np.sin(u * 4.0) * 0.8) + 0.015 * np.sin(v * 32.0)
+    plank_seam = np.where(((v * 4.0) % 1.0) < 0.018, 0.78, 1.0)
+    shade = np.clip((0.97 + grain) * plank_seam, 0.65, 1.08)
     rgb = np.stack([np.clip(base_rgb[i] * shade, 0.0, 1.0) for i in range(3)], axis=-1)
     rgba = np.concatenate([rgb, np.ones((size, size, 1), dtype=np.float32)], axis=-1).astype(np.float32)
     return save_rgba_png(name, rgba, tex_dir, False), None, None
@@ -359,48 +362,88 @@ def generate_fabric_weave_texture(tex_dir: str, name: str, base_rgb):
 
 
 def generate_stylized_face_texture(tex_dir: str, name: str, skin_rgb):
-    """512x512 crisp cozy stylized face texture for planar -Y head UV projection."""
-    size = 512
+    """256x256 smooth anti-aliased Sims-like stylized face texture for planar -Y head UV projection."""
+    size = 256
     yy, xx = np.mgrid[0:size, 0:size]
-    u = xx / size  # 0..1 left-to-right
-    v = yy / size  # 0..1 top-to-bottom (row 0 = top of head)
+    u = xx / size
+    v = yy / size
     rgb = np.zeros((size, size, 3), dtype=np.float32)
     rgb[:, :] = skin_rgb
 
+    def _blend(mask_arr, col_rgb, alpha=1.0):
+        nonlocal rgb
+        m = np.clip(mask_arr, 0.0, 1.0)[..., None] * alpha
+        rgb = rgb * (1.0 - m) + np.array(col_rgb, dtype=np.float32) * m
+
     # Soft rosy cheeks
     for cx in (0.31, 0.69):
-        d2 = ((u - cx) / 0.085) ** 2 + ((v - 0.61) / 0.055) ** 2
-        blush = np.exp(-d2 * 1.8)[..., None]
-        rgb = rgb * (1.0 - 0.25 * blush) + np.array([0.86, 0.44, 0.40], dtype=np.float32) * (0.25 * blush)
+        d2 = ((u - cx) / 0.088) ** 2 + ((v - 0.60) / 0.056) ** 2
+        _blend(np.exp(-d2 * 1.8), [0.88, 0.44, 0.40], 0.24)
 
-    # Crisp stylized eyes (whites + warm dark irises + bright white catchlights) + arched brows
-    for cx, side in ((0.36, -1.0), (0.64, 1.0)):
-        eye_w = ((u - cx) / 0.068) ** 2 + ((v - 0.47) / 0.055) ** 2
-        rgb[eye_w < 1.0] = [0.96, 0.95, 0.93]
-        iris = ((u - cx) / 0.044) ** 2 + ((v - 0.475) / 0.046) ** 2
-        rgb[iris < 1.0] = [0.11, 0.09, 0.09]
-        pupil = ((u - cx) / 0.022) ** 2 + ((v - 0.478) / 0.024) ** 2
-        rgb[pupil < 1.0] = [0.03, 0.03, 0.03]
-        spark = ((u - (cx + 0.016)) / 0.014) ** 2 + ((v - 0.455) / 0.014) ** 2
-        rgb[spark < 1.0] = [0.99, 0.99, 0.99]
-        # Upper lash line
-        lash = (np.abs(u - cx) < 0.072) & (np.abs(v - (0.422 + 0.022 * ((u - cx) / 0.072) ** 2)) < 0.011)
-        rgb[lash] = [0.07, 0.05, 0.05]
-        # Eyebrow
-        brow_v = 0.345 + 0.018 * ((u - cx) / 0.08) ** 2
-        brow = (np.abs(u - cx) < 0.075) & (np.abs(v - brow_v) < 0.014)
-        rgb[brow] = [0.10, 0.08, 0.07]
+    # Soft anti-aliased eyes (whites + warm dark irises + bright white catchlights) + arched brows
+    for cx in (0.36, 0.64):
+        eye_r = np.sqrt(((u - cx) / 0.064) ** 2 + ((v - 0.47) / 0.048) ** 2)
+        _blend((1.0 - eye_r) * 6.0, [0.95, 0.94, 0.92])
+        iris_r = np.sqrt(((u - cx) / 0.040) ** 2 + ((v - 0.474) / 0.042) ** 2)
+        _blend((1.0 - iris_r) * 7.0, [0.14, 0.10, 0.09])
+        pupil_r = np.sqrt(((u - cx) / 0.020) ** 2 + ((v - 0.476) / 0.022) ** 2)
+        _blend((1.0 - pupil_r) * 8.0, [0.03, 0.03, 0.03])
+        spark_r = np.sqrt(((u - (cx + 0.015)) / 0.014) ** 2 + ((v - 0.456) / 0.014) ** 2)
+        _blend((1.0 - spark_r) * 6.0, [0.99, 0.99, 0.99])
+        lash_d = np.abs(v - (0.426 + 0.018 * ((u - cx) / 0.068) ** 2))
+        lash_m = np.clip((1.0 - lash_d / 0.012) * (1.0 - np.abs(u - cx) / 0.072) * 3.5, 0.0, 1.0)
+        _blend(lash_m, [0.07, 0.05, 0.05])
+        brow_v = 0.352 + 0.016 * ((u - cx) / 0.078) ** 2
+        brow_m = np.clip((1.0 - np.abs(v - brow_v) / 0.015) * (1.0 - np.abs(u - cx) / 0.074) * 3.0, 0.0, 1.0)
+        _blend(brow_m, [0.10, 0.08, 0.07])
 
-    # Subtle nose shadow + warm friendly smile
-    nose = ((u - 0.50) / 0.028) ** 2 + ((v - 0.57) / 0.024) ** 2
-    n_mask = np.exp(-nose * 1.8)[..., None]
-    rgb = rgb * (1.0 - 0.16 * n_mask) + np.array([skin_rgb[0] * 0.72, skin_rgb[1] * 0.68, skin_rgb[2] * 0.66], dtype=np.float32) * (0.16 * n_mask)
-
-    smile_v = 0.715 - 0.032 * ((u - 0.50) / 0.095) ** 2
-    smile = (np.abs(u - 0.50) < 0.088) & (np.abs(v - smile_v) < 0.011)
-    rgb[smile] = [0.56, 0.24, 0.23]
+    # Subtle nose bridge & tip shadow + warm curved smile
+    nose = ((u - 0.50) / 0.024) ** 2 + ((v - 0.57) / 0.022) ** 2
+    _blend(np.exp(-nose * 1.9), [skin_rgb[0] * 0.72, skin_rgb[1] * 0.68, skin_rgb[2] * 0.66], 0.22)
+    smile_v = 0.708 - 0.026 * ((u - 0.50) / 0.088) ** 2
+    smile_m = np.clip((1.0 - np.abs(v - smile_v) / 0.012) * (1.0 - np.abs(u - 0.50) / 0.084) * 3.0, 0.0, 1.0)
+    _blend(smile_m, [0.58, 0.26, 0.25], 0.85)
 
     rgba = np.concatenate([np.clip(rgb, 0.0, 1.0), np.ones((size, size, 1), dtype=np.float32)], axis=-1).astype(np.float32)
+    return save_rgba_png(name, rgba, tex_dir, False)
+
+
+def generate_sajadah_texture(tex_dir: str, name: str = "sajadah_emerald"):
+    """Crisp emerald-and-gold Nusantara prayer mat texture with mihrab arch & tassels."""
+    w, h = 192, 320
+    yy, xx = np.mgrid[0:h, 0:w]
+    u, v = xx / w, yy / h
+    rgb = np.zeros((h, w, 3), dtype=np.float32)
+    rgb[:, :] = [0.09, 0.36, 0.24]
+    border = (u < 0.11) | (u > 0.89) | (v < 0.08) | (v > 0.92)
+    gold_trim = ((u > 0.12) & (u < 0.16)) | ((u > 0.84) & (u < 0.88)) | ((v > 0.09) & (v < 0.12)) | ((v > 0.88) & (v < 0.91))
+    arch_y = 0.24 + 0.12 * (np.abs(u - 0.5) / 0.28) ** 1.5
+    arch = (np.abs(u - 0.5) < 0.28) & (v > arch_y) & (v < 0.78)
+    arch_rim = (np.abs(u - 0.5) < 0.31) & (v > arch_y - 0.025) & (v < 0.80) & (~arch)
+    rgb[border] = [0.06, 0.24, 0.16]
+    rgb[gold_trim | arch_rim] = [0.88, 0.72, 0.30]
+    rgb[arch] = [0.12, 0.46, 0.30]
+    weave = 0.03 * np.sin(u * 120.0) * np.sin(v * 160.0)
+    rgb = np.clip(rgb + weave[..., None], 0.0, 1.0)
+    rgba = np.concatenate([rgb, np.ones((h, w, 1), dtype=np.float32)], axis=-1).astype(np.float32)
+    return save_rgba_png(name, rgba, tex_dir, False)
+
+
+def generate_tv_weather_texture(tex_dir: str, name: str = "tv_weather"):
+    """Glowing TV screen texture (cozy Indonesian weather broadcast)."""
+    w, h = 192, 128
+    yy, xx = np.mgrid[0:h, 0:w]
+    u, v = xx / w, yy / h
+    rgb = np.zeros((h, w, 3), dtype=np.float32)
+    rgb[:, :] = [0.22, 0.60, 0.88]
+    rgb[v > 0.78] = [0.10, 0.18, 0.32]
+    sun = ((u - 0.26) ** 2 + (v - 0.32) ** 2) < 0.015
+    rgb[sun] = [0.98, 0.84, 0.30]
+    cloud = (((u - 0.42) / 0.16) ** 2 + ((v - 0.42) / 0.10) ** 2) < 1.0
+    rgb[cloud] = [0.96, 0.97, 0.99]
+    bar = (u > 0.62) & (u < 0.88) & (v > 0.24) & (v < 0.66)
+    rgb[bar] = [0.94, 0.95, 0.97]
+    rgba = np.concatenate([rgb, np.ones((h, w, 1), dtype=np.float32)], axis=-1).astype(np.float32)
     return save_rgba_png(name, rgba, tex_dir, False)
 
 

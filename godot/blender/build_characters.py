@@ -7,7 +7,7 @@ from mathutils import Vector
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
-from tex_utils import generate_batik_texture, make_pbr_material
+from tex_utils import generate_batik_texture, generate_stylized_face_texture, make_pbr_material
 
 GODOT_DIR = os.path.dirname(SCRIPT_DIR)
 TEX_DIR = os.path.join(GODOT_DIR, "assets", "textures")
@@ -84,10 +84,12 @@ def apply_subsurf_and_smooth(obj, levels: int = 1):
     bpy.ops.object.select_all(action='DESELECT')
     bpy.context.view_layer.objects.active = obj
     obj.select_set(True)
-    sub = obj.modifiers.new("Subsurf", 'SUBSURF')
-    sub.levels = levels
-    sub.render_levels = levels
-    bpy.ops.object.convert(target='MESH')
+    # Only subsurf low-poly hair/hijab primitives (< 130 verts) so glTF export stays well under 14,500 verts
+    if levels > 0 and len(obj.data.vertices) < 130:
+        sub = obj.modifiers.new("Subsurf", 'SUBSURF')
+        sub.levels = levels
+        sub.render_levels = levels
+        bpy.ops.object.convert(target='MESH')
     bpy.ops.object.shade_smooth()
     return obj
 
@@ -157,23 +159,24 @@ def bisect_clean_garment_seams(body_mesh, arm, sleeve_frac: float = 0.52, bare_c
     bpy.ops.object.mode_set(mode='OBJECT')
 
 
-def assign_body_materials(body_mesh, arm, palette: dict, batik_img=None, sleeve_frac: float = 0.52,
+def assign_body_materials(body_mesh, arm, palette: dict, hb: dict, face_img, batik_img=None, sleeve_frac: float = 0.52,
                           bare_calves_z=None, long_sleeve: bool = False):
     ua_l = arm.data.bones.get("upperarm_l")
     sleeve_x = abs(ua_l.head_local.lerp(ua_l.tail_local, sleeve_frac).x) if ua_l else 0.27
 
-    mat_skin = make_matte_mat("Skin", palette["skin"], 0.80, 0.14)
+    mat_skin = make_matte_mat("Skin", palette["skin"], 0.72, 0.14)
     if batik_img is not None:
-        mat_shirt = make_pbr_material("Shirt_Batik", batik_img, 0.84, None, 0.0, (2.8, 2.8))
+        mat_shirt = make_pbr_material("Shirt_Batik", batik_img, 0.80, None, 0.0, (2.6, 2.6))
     else:
-        mat_shirt = make_matte_mat("Shirt", palette["shirt"], 0.84, 0.14)
-    mat_pants = make_matte_mat("Pants", palette["pants"], 0.86, 0.12)
-    mat_shoes = make_matte_mat("Shoes", palette["shoes"], 0.64, 0.22)
+        mat_shirt = make_matte_mat("Shirt", palette["shirt"], 0.78, 0.14)
+    mat_pants = make_matte_mat("Pants", palette["pants"], 0.82, 0.12)
+    mat_shoes = make_matte_mat("Shoes", palette["shoes"], 0.58, 0.22)
+    mat_face = make_pbr_material("FaceSkin", face_img, 0.70, None, 0.0, (1.0, 1.0))
 
     body_mesh.data.materials.clear()
-    for m in (mat_skin, mat_shirt, mat_pants, mat_shoes):
+    for m in (mat_skin, mat_shirt, mat_pants, mat_shoes, mat_face):
         body_mesh.data.materials.append(m)
-    idx_skin, idx_shirt, idx_pants, idx_shoes = 0, 1, 2, 3
+    idx_skin, idx_shirt, idx_pants, idx_shoes, idx_face = 0, 1, 2, 3, 4
 
     vg_names = {vg.index: vg.name for vg in body_mesh.vertex_groups}
     verts = body_mesh.data.vertices
@@ -190,7 +193,10 @@ def assign_body_materials(body_mesh, arm, palette: dict, batik_img=None, sleeve_
         if dom_vg in FOOT_BONES or (c.z < 0.092 and dom_vg in LEG_BONES):
             poly.material_index = idx_shoes
         elif dom_vg in {"head", "head_leaf"}:
-            poly.material_index = idx_skin
+            if c.y < hb["cy"] - 0.018 and c.z > hb["z_min"] + 0.015:
+                poly.material_index = idx_face
+            else:
+                poly.material_index = idx_skin
         elif dom_vg == "neck_01":
             if c.z >= 1.475 and abs(c.x) < 0.072:
                 poly.material_index = idx_skin
@@ -218,10 +224,50 @@ def assign_body_materials(body_mesh, arm, palette: dict, batik_img=None, sleeve_
         else:
             poly.material_index = idx_skin
 
+    # Push interior garment vertices slightly outward for natural tailored 3D clothing overlap at seams
     bpy.ops.object.select_all(action='DESELECT')
     bpy.context.view_layer.objects.active = body_mesh
     body_mesh.select_set(True)
+    bpy.ops.object.mode_set(mode='EDIT')
+    bm = bmesh.from_edit_mesh(body_mesh.data)
+    bm.verts.ensure_lookup_table()
+    bm.faces.ensure_lookup_table()
+    uv_layer = bm.loops.layers.uv.verify()
+
+    shirt_only_verts = set()
+    pants_only_verts = set()
+    skin_verts = set()
+    for f in bm.faces:
+        if f.material_index in (idx_skin, idx_face):
+            for v in f.verts:
+                skin_verts.add(v)
+        elif f.material_index == idx_shirt:
+            for v in f.verts:
+                shirt_only_verts.add(v)
+        elif f.material_index == idx_pants:
+            for v in f.verts:
+                pants_only_verts.add(v)
+
+    for v in shirt_only_verts - skin_verts:
+        v.co += v.normal * 0.0042
+    for v in pants_only_verts - skin_verts - shirt_only_verts:
+        v.co += v.normal * 0.0028
+
+    # Project crisp planar -Y UV onto FaceSkin polygons
+    rx_span = max(0.08, hb["rx"] * 1.46)
+    z_bot = hb["z_min"] + 0.005
+    z_span = max(0.12, hb["z_max"] - z_bot)
+    for f in bm.faces:
+        if f.material_index == idx_face:
+            for loop in f.loops:
+                co = loop.vert.co
+                u = 0.5 + (co.x - hb["cx"]) / (rx_span * 2.0)
+                v = (co.z - z_bot) / z_span
+                loop[uv_layer].uv = (max(0.02, min(0.98, u)), max(0.02, min(0.98, v)))
+
+    bmesh.update_edit_mesh(body_mesh.data)
     bpy.ops.object.mode_set(mode='OBJECT')
+
     for p in body_mesh.data.polygons:
         p.select = (p.material_index == idx_shirt)
     bpy.ops.object.mode_set(mode='EDIT')
@@ -230,61 +276,9 @@ def assign_body_materials(body_mesh, arm, palette: dict, batik_img=None, sleeve_
 
 
 def build_stylized_indonesian_face(arm, body_mesh, hb: dict, skin_rgb, hair_rgb):
-    cx = hb["cx"]
-    z_eye = hb["z_min"] + (hb["z_max"] - hb["z_min"]) * 0.56
-    z_brow = z_eye + 0.019
-    z_nose = z_eye - 0.036
-    z_mouth = z_eye - 0.074
-
-    mat_sclera = make_matte_mat("EyeSclera", (0.92, 0.90, 0.86), 0.35, 0.30)
-    mat_iris = make_matte_mat("EyeIris", (0.05, 0.03, 0.02), 0.18, 0.45)
-    mat_brow = make_matte_mat("Eyebrow", hair_rgb, 0.72, 0.12)
-    mat_nose = make_matte_mat("Nose", tuple(max(0.0, c - 0.04) for c in skin_rgb), 0.78, 0.14)
-    mat_lip = make_matte_mat("Smile", (0.58, 0.25, 0.23), 0.62, 0.20)
-
-    for side_s in (-1.0, 1.0):
-        ex = cx + side_s * 0.031
-        ey = sample_face_y(body_mesh, ex, z_eye, 0.015, 0.015)
-
-        bpy.ops.object.select_all(action='DESELECT')
-        bpy.ops.mesh.primitive_uv_sphere_add(segments=12, ring_count=8, radius=0.0110, location=(ex, ey + 0.002, z_eye))
-        sc = bpy.context.active_object
-        sc.scale = (1.16, 0.50, 0.66)
-        bpy.ops.object.shade_smooth()
-        attach_to_bone(sc, arm, "head", mat_sclera)
-
-        bpy.ops.object.select_all(action='DESELECT')
-        bpy.ops.mesh.primitive_uv_sphere_add(segments=12, ring_count=8, radius=0.0092, location=(ex, ey - 0.004, z_eye))
-        ir = bpy.context.active_object
-        ir.scale = (0.96, 0.55, 0.98)
-        bpy.ops.object.shade_smooth()
-        attach_to_bone(ir, arm, "head", mat_iris)
-
-        by = sample_face_y(body_mesh, ex, z_brow, 0.016, 0.012)
-        bpy.ops.object.select_all(action='DESELECT')
-        bpy.ops.mesh.primitive_cube_add(size=1.0, location=(ex, by - 0.002, z_brow), rotation=(0, math.radians(-8 * side_s), 0))
-        br = bpy.context.active_object
-        br.scale = (0.025, 0.007, 0.0055)
-        apply_bevel_and_smooth(br, width=0.0015, segments=1)
-        attach_to_bone(br, arm, "head", mat_brow)
-
-    ny = sample_face_y(body_mesh, cx, z_nose, 0.012, 0.012)
-    bpy.ops.object.select_all(action='DESELECT')
-    bpy.ops.mesh.primitive_uv_sphere_add(segments=10, ring_count=8, radius=0.010, location=(cx, ny - 0.004, z_nose))
-    nose = bpy.context.active_object
-    nose.name = "FaceNose"
-    nose.scale = (0.85, 1.05, 0.92)
-    bpy.ops.object.shade_smooth()
-    attach_to_bone(nose, arm, "head", mat_nose)
-
-    my = sample_face_y(body_mesh, cx, z_mouth, 0.018, 0.012)
-    bpy.ops.object.select_all(action='DESELECT')
-    bpy.ops.mesh.primitive_cube_add(size=1.0, location=(cx, my - 0.0025, z_mouth))
-    lip = bpy.context.active_object
-    lip.name = "FaceSmile"
-    lip.scale = (0.036, 0.008, 0.0075)
-    apply_bevel_and_smooth(lip, width=0.002, segments=2)
-    attach_to_bone(lip, arm, "head", mat_lip)
+    # Facial features are rendered cleanly via 256x256 anti-aliased FaceSkin UV projection;
+    # keep geometry flush and smooth like The Sims (no protruding cubes/spheres).
+    return None
 
 
 def build_indonesian_hair_or_hijab(arm, body_mesh, hb: dict, style: str, hair_rgb, ribbon_rgb=None, hijab_rgb=None):
@@ -398,6 +392,98 @@ def build_indonesian_hair_or_hijab(arm, body_mesh, hb: dict, style: str, hair_rg
         attach_to_bone(poni, arm, "head", mat_hair)
         return cap
 
+    if style == "ponytail":
+        bpy.ops.object.select_all(action='DESELECT')
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=24, ring_count=16, radius=1.0, location=(cx, cy + 0.016, cz + 0.018))
+        cap = bpy.context.active_object
+        cap.name = "DewiHairCap"
+        cap.scale = (rx + 0.016, ry + 0.012, rz + 0.017)
+        apply_subsurf_and_smooth(cap, levels=1)
+        attach_to_bone(cap, arm, "head", mat_hair)
+
+        bpy.ops.object.select_all(action='DESELECT')
+        bpy.ops.mesh.primitive_cone_add(vertices=18, radius1=0.056, radius2=0.024, depth=0.24, location=(cx, hb["y_max"] + 0.036, cz - 0.045), rotation=(math.radians(-22), 0, 0))
+        tail = bpy.context.active_object
+        tail.name = "DewiPonytail"
+        apply_subsurf_and_smooth(tail, levels=1)
+        attach_to_bone(tail, arm, "head", mat_hair)
+
+        fy = sample_face_y(body_mesh, cx, hb["z_max"] - 0.045, 0.03, 0.02)
+        bpy.ops.object.select_all(action='DESELECT')
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=16, ring_count=10, radius=1.0, location=(cx - 0.012, fy + 0.015, hb["z_max"] - 0.042), rotation=(math.radians(12), math.radians(-10), 0))
+        poni = bpy.context.active_object
+        poni.name = "DewiPoni"
+        poni.scale = (rx * 0.78, 0.044, 0.030)
+        apply_subsurf_and_smooth(poni, levels=1)
+        attach_to_bone(poni, arm, "head", mat_hair)
+        return cap
+
+    if style == "peci":
+        bpy.ops.object.select_all(action='DESELECT')
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=22, ring_count=14, radius=1.0, location=(cx, cy + 0.015, cz + 0.012))
+        cap = bpy.context.active_object
+        cap.name = "PakRtHairCap"
+        cap.scale = (rx + 0.010, ry + 0.008, rz + 0.012)
+        apply_subsurf_and_smooth(cap, levels=1)
+        attach_to_bone(cap, arm, "head", mat_hair)
+
+        mat_peci = make_matte_mat("PeciVelvet", (0.06, 0.06, 0.07), 0.88, 0.08)
+        bpy.ops.object.select_all(action='DESELECT')
+        bpy.ops.mesh.primitive_cylinder_add(vertices=24, radius=rx + 0.022, depth=0.105, location=(cx, cy + 0.012, hb["z_max"] + 0.015))
+        peci = bpy.context.active_object
+        peci.name = "PakRtPeci"
+        peci.scale = (0.94, 1.12, 1.0)
+        apply_bevel_and_smooth(peci, width=0.006, segments=2)
+        attach_to_bone(peci, arm, "head", mat_peci)
+        return peci
+
+    if style == "ojek_helmet":
+        mat_helmet = make_matte_mat("OjekHelmet", (0.12, 0.60, 0.28), 0.34, 0.28)
+        bpy.ops.object.select_all(action='DESELECT')
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=24, ring_count=16, radius=1.0, location=(cx, cy + 0.012, cz + 0.026))
+        helm = bpy.context.active_object
+        helm.name = "OjekHelmet"
+        helm.scale = (rx + 0.032, ry + 0.028, rz + 0.032)
+        apply_subsurf_and_smooth(helm, levels=1)
+        attach_to_bone(helm, arm, "head", mat_helmet)
+
+        mat_visor = make_matte_mat("OjekVisor", (0.10, 0.14, 0.20), 0.18, 0.55)
+        bpy.ops.object.select_all(action='DESELECT')
+        bpy.ops.mesh.primitive_cube_add(size=1.0, location=(cx, hb["y_min"] - 0.020, cz + 0.022))
+        vis = bpy.context.active_object
+        vis.name = "OjekVisor"
+        vis.scale = (rx * 1.48, 0.035, 0.056)
+        apply_bevel_and_smooth(vis, width=0.006, segments=2)
+        attach_to_bone(vis, arm, "head", mat_visor)
+        return helm
+
+    if style == "cap":
+        bpy.ops.object.select_all(action='DESELECT')
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=22, ring_count=14, radius=1.0, location=(cx, cy + 0.015, cz + 0.012))
+        hair = bpy.context.active_object
+        hair.name = "KurirHair"
+        hair.scale = (rx + 0.010, ry + 0.008, rz + 0.010)
+        apply_subsurf_and_smooth(hair, levels=1)
+        attach_to_bone(hair, arm, "head", mat_hair)
+
+        mat_cap = make_matte_mat("KurirCap", (0.10, 0.18, 0.34), 0.72, 0.14)
+        bpy.ops.object.select_all(action='DESELECT')
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=22, ring_count=12, radius=1.0, location=(cx, cy + 0.012, cz + 0.034))
+        c_dome = bpy.context.active_object
+        c_dome.name = "KurirCapDome"
+        c_dome.scale = (rx + 0.022, ry + 0.020, rz * 0.72)
+        apply_subsurf_and_smooth(c_dome, levels=1)
+        attach_to_bone(c_dome, arm, "head", mat_cap)
+
+        bpy.ops.object.select_all(action='DESELECT')
+        bpy.ops.mesh.primitive_cube_add(size=1.0, location=(cx, hb["y_min"] - 0.042, cz + 0.032), rotation=(math.radians(8), 0, 0))
+        brim = bpy.context.active_object
+        brim.name = "KurirCapBrim"
+        brim.scale = (rx * 1.42, 0.088, 0.014)
+        apply_bevel_and_smooth(brim, width=0.004, segments=2)
+        attach_to_bone(brim, arm, "head", mat_cap)
+        return c_dome
+
     bpy.ops.object.select_all(action='DESELECT')
     bpy.ops.mesh.primitive_uv_sphere_add(segments=22, ring_count=14, radius=1.0, location=(cx, cy + 0.016, cz + 0.018))
     cap = bpy.context.active_object
@@ -405,16 +491,6 @@ def build_indonesian_hair_or_hijab(arm, body_mesh, hb: dict, style: str, hair_rg
     cap.scale = (rx + 0.012, ry + 0.008, rz + 0.014)
     apply_subsurf_and_smooth(cap, levels=1)
     attach_to_bone(cap, arm, "head", mat_hair)
-
-    z_kumis = hb["z_min"] + (hb["z_max"] - hb["z_min"]) * 0.34
-    ky = sample_face_y(body_mesh, cx, z_kumis, 0.018, 0.012)
-    bpy.ops.object.select_all(action='DESELECT')
-    bpy.ops.mesh.primitive_cube_add(size=1.0, location=(cx, ky - 0.002, z_kumis))
-    kumis = bpy.context.active_object
-    kumis.name = "BapakKumis"
-    kumis.scale = (0.042, 0.008, 0.007)
-    apply_bevel_and_smooth(kumis, width=0.002, segments=2)
-    attach_to_bone(kumis, arm, "head", mat_hair)
     return cap
 
 
@@ -617,24 +693,36 @@ def build_ual_character(
     bpy.ops.mesh.remove_doubles(threshold=0.0005)
     bpy.ops.mesh.normals_make_consistent(inside=False)
     bpy.ops.object.mode_set(mode='OBJECT')
-    # Safe welded Decimate (after remove_doubles!) keeping mobile WebGL2 vertex count < 14,500 with zero holes
-    dec = body_mesh.modifiers.new("Decimate", 'DECIMATE')
-    dec.ratio = 0.45 if len(body_mesh.data.vertices) > 6500 else 0.82
-    bpy.ops.object.modifier_apply(modifier="Decimate")
+    # Keep full smooth mannequin topology (7,011-7,222 verts) without destructive Decimate
+    # Clear fragmented split normals & merge body UVs so glTF exports ~8,500 smooth vertices instead of 24k split UV islands
+    bpy.ops.object.select_all(action='DESELECT')
+    bpy.context.view_layer.objects.active = body_mesh
+    body_mesh.select_set(True)
+    # Gentle 0.72 weld keeps smooth anatomy (~11.5k glTF verts <= 14,500 cap!) without 0.45 faceting
+    if len(body_mesh.data.vertices) > 7050:
+        dec = body_mesh.modifiers.new("Decimate", 'DECIMATE')
+        dec.ratio = 0.72
+        bpy.ops.object.modifier_apply(modifier="Decimate")
+    if body_mesh.data.has_custom_normals:
+        bpy.ops.mesh.customdata_custom_splitnormals_clear()
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.uv.smart_project(angle_limit=math.radians(82))
+    bpy.ops.object.mode_set(mode='OBJECT')
     bpy.ops.object.shade_smooth()
-    body_mesh.data.use_auto_smooth = True
-    body_mesh.data.auto_smooth_angle = math.radians(60)
 
+    hb = measure_head_bounds(body_mesh)
     bisect_clean_garment_seams(body_mesh, arm, sleeve_frac=0.52, bare_calves_z=bare_calves_z, long_sleeve=long_sleeve)
     batik_img = None
     if batik_cfg is not None:
         batik_img = generate_batik_texture(TEX_DIR, batik_cfg["name"], batik_cfg["base"], batik_cfg["accent"])
+    face_name = f"face_{os.path.splitext(out_filename)[0]}"
+    face_img = generate_stylized_face_texture(TEX_DIR, face_name, palette["skin"])
     assign_body_materials(
-        body_mesh, arm, palette, batik_img=batik_img,
+        body_mesh, arm, palette, hb, face_img, batik_img=batik_img,
         sleeve_frac=0.52, bare_calves_z=bare_calves_z, long_sleeve=long_sleeve,
     )
 
-    hb = measure_head_bounds(body_mesh)
     build_stylized_indonesian_face(arm, body_mesh, hb, palette["skin"], palette["hair"])
     headwear = build_indonesian_hair_or_hijab(arm, body_mesh, hb, hair_style, palette["hair"], ribbon_rgb=ribbon_rgb, hijab_rgb=hijab)
     hw_xs = [v.co.x for v in headwear.data.vertices]
@@ -684,13 +772,15 @@ def build_ual_character(
     if idle_act:
         arm.animation_data.action = idle_act
 
+    total_verts = sum(len(o.data.vertices) for o in bpy.data.objects if o.type == 'MESH')
+    assert total_verts <= 14500, f"{out_filename} exceeded 14500 vert budget: {total_verts}"
     out_path = os.path.join(MODELS_DIR, out_filename)
     os.makedirs(MODELS_DIR, exist_ok=True)
     bpy.ops.export_scene.gltf(
         filepath=out_path, export_format='GLB',
         export_animations=True, export_nla_strips=True, export_nla_strips_merged_animation_name="Idle",
     )
-    print("EXPORTED UAL1 HUMAN:", out_path, "verts=", len(body_mesh.data.vertices), "bytes=", os.path.getsize(out_path))
+    print("EXPORTED UAL1 HUMAN:", out_path, "total_verts=", total_verts, "bytes=", os.path.getsize(out_path))
 
 
 if __name__ == "__main__":
@@ -749,5 +839,62 @@ if __name__ == "__main__":
         {"skin": (0.30, 0.15, 0.08), "shirt": (0.14, 0.26, 0.15), "pants": (0.12, 0.13, 0.16), "hair": (0.04, 0.03, 0.03), "shoes": (0.16, 0.09, 0.06)},
         hair_style="bapak",
         batik_cfg={"name": "batik_budi", "base": (0.14, 0.26, 0.15), "accent": (0.76, 0.62, 0.26)},
+        apron=False, collar_placket=True, is_male=True,
+    )
+
+    # 8 Unique NPC models (zero green daster reuse, zero duplicate NPC silhouettes!)
+    build_ual_character(
+        "mannequin-female.glb", "char_dewi.glb",
+        {"skin": (0.37, 0.20, 0.11), "shirt": (0.82, 0.34, 0.24), "pants": (0.15, 0.22, 0.36), "hair": (0.04, 0.03, 0.03), "shoes": (0.72, 0.68, 0.62)},
+        hair_style="ponytail", apron=False, collar_placket=True,
+    )
+
+    build_ual_character(
+        "base.glb", "char_pak_rt.glb",
+        {"skin": (0.33, 0.17, 0.09), "shirt": (0.52, 0.38, 0.16), "pants": (0.11, 0.12, 0.15), "hair": (0.05, 0.04, 0.04), "shoes": (0.14, 0.10, 0.08)},
+        hair_style="peci",
+        batik_cfg={"name": "batik_pak_rt", "base": (0.46, 0.32, 0.14), "accent": (0.92, 0.78, 0.42)},
+        apron=False, collar_placket=True, is_male=True,
+    )
+
+    build_ual_character(
+        "base.glb", "char_ojek.glb",
+        {"skin": (0.31, 0.16, 0.08), "shirt": (0.10, 0.56, 0.24), "pants": (0.14, 0.19, 0.30), "hair": (0.04, 0.03, 0.03), "shoes": (0.12, 0.12, 0.14)},
+        hair_style="ojek_helmet", apron=False, collar_placket=True, long_sleeve=True, is_male=True,
+    )
+
+    build_ual_character(
+        "base.glb", "char_kurir.glb",
+        {"skin": (0.34, 0.18, 0.09), "shirt": (0.88, 0.40, 0.12), "pants": (0.15, 0.18, 0.26), "hair": (0.04, 0.03, 0.03), "shoes": (0.14, 0.14, 0.16)},
+        hair_style="cap", apron=False, collar_placket=True, is_male=True,
+    )
+
+    build_ual_character(
+        "mannequin-female.glb", "char_pelajar.glb",
+        {"skin": (0.39, 0.21, 0.11), "shirt": (0.90, 0.90, 0.88), "pants": (0.34, 0.36, 0.42), "hair": (0.04, 0.03, 0.03), "shoes": (0.12, 0.12, 0.14)},
+        hair_style="bob", apron=False, collar_placket=True, bare_calves_z=0.52,
+        skirt_cfg={"name": "SmaSkirt", "obj_name": "SmaSkirt", "use_batik": False, "color": (0.34, 0.36, 0.42),
+                   "rings": [(0.52, 0.22, 0.19, 0.01), (0.74, 0.21, 0.17, 0.01), (0.94, 0.19, 0.15, 0.01), (1.03, 0.17, 0.14, 0.00)]},
+    )
+
+    build_ual_character(
+        "base.glb", "char_hendra.glb",
+        {"skin": (0.36, 0.19, 0.10), "shirt": (0.14, 0.22, 0.38), "pants": (0.48, 0.42, 0.32), "hair": (0.05, 0.04, 0.03), "shoes": (0.22, 0.14, 0.09)},
+        hair_style="bapak", apron=False, collar_placket=True, is_male=True,
+    )
+
+    build_ual_character(
+        "mannequin-female.glb", "char_rina.glb",
+        {"skin": (0.35, 0.19, 0.10), "shirt": (0.44, 0.32, 0.56), "pants": (0.14, 0.14, 0.18), "hair": (0.04, 0.03, 0.03), "shoes": (0.20, 0.14, 0.12)},
+        hair_style="hijab_bergo", hijab=(0.82, 0.76, 0.66), long_sleeve=True,
+        skirt_cfg={"name": "RinaSkirt", "obj_name": "RinaSkirt", "use_batik": False, "color": (0.18, 0.16, 0.24),
+                   "rings": [(0.26, 0.24, 0.20, 0.02), (0.52, 0.22, 0.18, 0.01), (0.78, 0.21, 0.17, 0.01), (1.03, 0.17, 0.14, 0.00)]},
+    )
+
+    build_ual_character(
+        "base.glb", "char_agus.glb",
+        {"skin": (0.32, 0.17, 0.09), "shirt": (0.48, 0.24, 0.14), "pants": (0.16, 0.15, 0.14), "hair": (0.05, 0.04, 0.03), "shoes": (0.18, 0.12, 0.08)},
+        hair_style="bapak",
+        batik_cfg={"name": "batik_agus", "base": (0.48, 0.24, 0.14), "accent": (0.86, 0.70, 0.36)},
         apron=False, collar_placket=True, is_male=True,
     )

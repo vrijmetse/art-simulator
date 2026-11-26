@@ -81,7 +81,7 @@ shape = SubResource("PlayerCap")
 
 [node name="Camera3D" type="Camera3D" parent="."]
 transform = Transform3D(0.766, -0.312, 0.562, 0, 0.874, 0.485, -0.643, -0.371, 0.670, 3.8, 3.6, 4.2)
-fov = 44.0
+fov = 38.0
 current = true
 
 [node name="SfxPlayer" type="AudioStreamPlayer" parent="."]

@@ -944,5 +944,69 @@ func _initialize() -> void:
 	_assert_eq(cs_node.cast_shadow, GeometryInstance3D.SHADOW_CASTING_SETTING_OFF, "contact shadow does not cast directional shadow")
 	sv_char.free()
 
+	# 29. Unique NPC Cast (no duplicate model_path, no Player char_art reuse) + Lightmap UV2 binding
+	var expected_chars := [
+		"res://assets/models/char_art.glb",
+		"res://assets/models/char_art_hijab.glb",
+		"res://assets/models/char_art_pro.glb",
+		"res://assets/models/char_art_elite.glb",
+		"res://assets/models/char_ibu.glb",
+		"res://assets/models/char_kakak.glb",
+		"res://assets/models/char_budi.glb",
+		"res://assets/models/char_dewi.glb",
+		"res://assets/models/char_pak_rt.glb",
+		"res://assets/models/char_ojek.glb",
+		"res://assets/models/char_kurir.glb",
+		"res://assets/models/char_pelajar.glb",
+		"res://assets/models/char_hendra.glb",
+		"res://assets/models/char_rina.glb",
+		"res://assets/models/char_agus.glb",
+	]
+	for cp in expected_chars:
+		_assert_true(ResourceLoader.exists(cp), "character model exists: " + cp)
+	for tier_k in ["kos", "kampung", "perumahan_36", "perumahan_45", "cluster_elite"]:
+		var st_npcs: Array = ArtNpcRoster.get_street_config(tier_k).get("street_npcs", [])
+		var seen_st := {}
+		for n in st_npcs:
+			var mp := String(n.get("model_path", ""))
+			_assert_true(mp != "res://assets/models/char_art.glb", tier_k + " street NPC must not reuse player green daster: " + mp)
+			_assert_true(not seen_st.has(mp), tier_k + " street NPC model_path must be unique: " + mp)
+			seen_st[mp] = true
+		var sh_npcs: Array = ArtNpcRoster.get_shift_npcs(tier_k)
+		var seen_sh := {}
+		for n in sh_npcs:
+			var mp := String(n.get("model_path", ""))
+			_assert_true(mp != "res://assets/models/char_art.glb", tier_k + " shift NPC must not reuse player green daster: " + mp)
+			_assert_true(not seen_sh.has(mp), tier_k + " shift NPC model_path must be unique: " + mp)
+			seen_sh[mp] = true
+	var lm_root := Node3D.new()
+	var lm_no_uv2 := MeshInstance3D.new()
+	var lm_box := BoxMesh.new()
+	lm_box.material = StandardMaterial3D.new()
+	lm_no_uv2.mesh = lm_box
+	lm_root.add_child(lm_no_uv2)
+	var lm_with_uv2 := MeshInstance3D.new()
+	var arr := []
+	arr.resize(Mesh.ARRAY_MAX)
+	arr[Mesh.ARRAY_VERTEX] = PackedVector3Array([Vector3.ZERO, Vector3.RIGHT, Vector3.FORWARD])
+	arr[Mesh.ARRAY_TEX_UV] = PackedVector2Array([Vector2.ZERO, Vector2.RIGHT, Vector2.DOWN])
+	arr[Mesh.ARRAY_TEX_UV2] = PackedVector2Array([Vector2.ZERO, Vector2.RIGHT, Vector2.DOWN])
+	var am := ArrayMesh.new()
+	am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+	am.surface_set_material(0, StandardMaterial3D.new())
+	lm_with_uv2.mesh = am
+	lm_root.add_child(lm_with_uv2)
+	var lm_img := Image.create(8, 8, false, Image.FORMAT_RGBA8)
+	lm_img.fill(Color(0.8, 0.78, 0.75, 1.0))
+	var lm_tex := ImageTexture.create_from_image(lm_img)
+	ArtSceneVisuals.apply_lightmap(lm_root, lm_tex)
+	var m_no := lm_no_uv2.get_active_material(0) as StandardMaterial3D
+	var m_yes := lm_with_uv2.get_active_material(0) as StandardMaterial3D
+	_assert_true(m_no != null and not m_no.detail_enabled, "apply_lightmap skips meshes without UV2")
+	_assert_true(m_yes != null and m_yes.detail_enabled, "apply_lightmap enables detail on meshes with UV2")
+	_assert_eq(m_yes.detail_uv_layer, BaseMaterial3D.DETAIL_UV_2, "apply_lightmap binds DETAIL_UV_2")
+	_assert_eq(m_yes.detail_blend_mode, BaseMaterial3D.BLEND_MODE_MUL, "apply_lightmap uses BLEND_MODE_MUL")
+	lm_root.free()
+
 	print("GODOT TDD RESULT: %d passed, %d failed" % [_passed, _failed])
 	quit(0 if _failed == 0 else 1)

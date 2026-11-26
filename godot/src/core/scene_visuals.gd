@@ -6,7 +6,7 @@ static var _contact_tex: ImageTexture = null
 static func apply_baked_ao(node: Node) -> void:
 	if node is MeshInstance3D:
 		var mi := node as MeshInstance3D
-		if mi.mesh != null:
+		if mi.mesh is ArrayMesh:
 			for s in range(mi.mesh.get_surface_count()):
 				var fmt: int = mi.mesh.surface_get_format(s)
 				if (fmt & Mesh.ARRAY_FORMAT_COLOR) == 0:
@@ -22,6 +22,29 @@ static func apply_baked_ao(node: Node) -> void:
 	for child in node.get_children():
 		apply_baked_ao(child)
 
+static func apply_lightmap(node: Node, lightmap_tex: Texture2D) -> void:
+	if node == null or lightmap_tex == null:
+		return
+	if node is MeshInstance3D:
+		var mi := node as MeshInstance3D
+		if mi.mesh is ArrayMesh:
+			for s in range(mi.mesh.get_surface_count()):
+				var fmt: int = mi.mesh.surface_get_format(s)
+				if (fmt & Mesh.ARRAY_FORMAT_TEX_UV2) == 0:
+					continue
+				var mat: Material = mi.get_active_material(s)
+				if mat is StandardMaterial3D:
+					var sm := (mat as StandardMaterial3D).duplicate() as StandardMaterial3D
+					if sm.emission_enabled and sm.emission_energy_multiplier > 0.5:
+						continue
+					sm.detail_enabled = true
+					sm.detail_uv_layer = BaseMaterial3D.DETAIL_UV_2
+					sm.detail_blend_mode = BaseMaterial3D.BLEND_MODE_MUL
+					sm.detail_albedo = lightmap_tex
+					mi.set_surface_override_material(s, sm)
+	for child in node.get_children():
+		apply_lightmap(child, lightmap_tex)
+
 static func apply_character_polish(node: Node) -> void:
 	if node == null:
 		return
@@ -35,10 +58,13 @@ static func apply_character_polish(node: Node) -> void:
 				if mat is StandardMaterial3D:
 					var sm := (mat as StandardMaterial3D).duplicate() as StandardMaterial3D
 					sm.rim_enabled = true
-					sm.rim = 0.24
-					sm.rim_tint = 0.55
-					if "skin" in sm.resource_name.to_lower() and sm.roughness > 0.72:
+					sm.rim = 0.20
+					sm.rim_tint = 0.48
+					var rname := sm.resource_name.to_lower()
+					if "skin" in rname and sm.roughness > 0.72:
 						sm.roughness = 0.68
+					elif not ("eye" in rname or "iris" in rname) and sm.roughness < 0.45:
+						sm.roughness = 0.62
 					mi.set_surface_override_material(s, sm)
 	for child in node.get_children():
 		apply_character_polish(child)

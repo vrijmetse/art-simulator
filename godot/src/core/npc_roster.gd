@@ -74,7 +74,7 @@ static func get_shift_npcs(tier_id: String) -> Array:
 					"role": "bapak2",
 					"label_id": "Pak Hendra",
 					"label_en": "Mr. Hendra",
-					"model_path": "res://assets/models/char_budi.glb",
+					"model_path": "res://assets/models/char_hendra.glb",
 					"pos": Vector3(1.15, 0.0, -1.45),
 					"rot_y": -0.35,
 					"anim": "Idle",
@@ -94,7 +94,7 @@ static func get_shift_npcs(tier_id: String) -> Array:
 					"role": "mba2",
 					"label_id": "Mbak Rina",
 					"label_en": "Mbak Rina",
-					"model_path": "res://assets/models/char_art_pro.glb",
+					"model_path": "res://assets/models/char_rina.glb",
 					"pos": Vector3(2.15, 0.0, 0.55),
 					"rot_y": -1.35,
 					"anim": "Idle",
@@ -150,7 +150,7 @@ static func get_shift_npcs(tier_id: String) -> Array:
 					"role": "bapak2",
 					"label_id": "Pak Agus",
 					"label_en": "Mr. Agus",
-					"model_path": "res://assets/models/char_budi.glb",
+					"model_path": "res://assets/models/char_agus.glb",
 					"pos": Vector3(1.75, 0.0, 0.45),
 					"rot_y": -1.35,
 					"anim": "Idle",
@@ -185,9 +185,9 @@ static func get_street_config(tier_id: String) -> Dictionary:
 				"portal_work": Vector3(4.8, 0.0, -0.15),
 				"street_npcs": [
 					{"id": "ibu_citra", "label_id": "Ibu Citra", "label_en": "Ibu Citra", "model_path": "res://assets/models/char_ibu.glb", "pos": Vector3(2.4, 0.0, 0.35), "rot_y": -0.45, "anim": "Idle"},
-					{"id": "pak_hendra", "label_id": "Pak Hendra", "label_en": "Pak Hendra", "model_path": "res://assets/models/char_budi.glb", "pos": Vector3(0.3, 0.0, 0.70), "rot_y": 0.30, "anim": "Idle"},
+					{"id": "pak_hendra", "label_id": "Pak Hendra", "label_en": "Pak Hendra", "model_path": "res://assets/models/char_hendra.glb", "pos": Vector3(0.3, 0.0, 0.70), "rot_y": 0.30, "anim": "Idle"},
 					{"id": "kakak_nadine", "label_id": "Kakak Nadine", "label_en": "Kakak Nadine", "model_path": "res://assets/models/char_kakak.glb", "pos": Vector3(-3.1, 0.0, 0.65), "rot_y": 0.55, "anim": "Idle"},
-					{"id": "kurir_paket", "label_id": "Kurir Paket", "label_en": "Parcel Courier", "model_path": "res://assets/models/char_budi.glb", "pos": Vector3(3.8, 0.0, 0.85), "rot_y": -0.60, "anim": "Idle"},
+					{"id": "kurir_paket", "label_id": "Kurir Paket", "label_en": "Parcel Courier", "model_path": "res://assets/models/char_kurir.glb", "pos": Vector3(3.8, 0.0, 0.85), "rot_y": -0.60, "anim": "Idle"},
 				],
 			}
 		"perumahan_36", "perumahan_45":
@@ -201,8 +201,8 @@ static func get_street_config(tier_id: String) -> Dictionary:
 					{"id": "ibu_sari", "label_id": "Ibu Sari", "label_en": "Ibu Sari", "model_path": "res://assets/models/char_ibu.glb", "pos": Vector3(1.5, 0.0, 0.85), "rot_y": -0.35, "anim": "Idle"},
 					{"id": "pak_budi", "label_id": "Pak Budi", "label_en": "Pak Budi", "model_path": "res://assets/models/char_budi.glb", "pos": Vector3(4.6, 0.0, 1.25), "rot_y": -0.75, "anim": "Idle"},
 					{"id": "kakak_maya", "label_id": "Kakak Maya", "label_en": "Kakak Maya", "model_path": "res://assets/models/char_kakak.glb", "pos": Vector3(-0.1, 0.0, 1.45), "rot_y": 0.25, "anim": "Idle"},
-					{"id": "bang_ojek", "label_id": "Bang Ojek", "label_en": "Ojek Rider", "model_path": "res://assets/models/char_budi.glb", "pos": Vector3(-3.0, 0.0, 1.55), "rot_y": 0.40, "anim": "Idle"},
-					{"id": "anak_sekolah", "label_id": "Anak Sekolah", "label_en": "Student", "model_path": "res://assets/models/char_kakak.glb", "pos": Vector3(2.8, 0.0, 1.60), "rot_y": -0.50, "anim": "Idle"},
+					{"id": "bang_ojek", "label_id": "Bang Ojek", "label_en": "Ojek Rider", "model_path": "res://assets/models/char_ojek.glb", "pos": Vector3(-3.0, 0.0, 1.55), "rot_y": 0.40, "anim": "Idle"},
+					{"id": "anak_sekolah", "label_id": "Anak Sekolah", "label_en": "Student", "model_path": "res://assets/models/char_pelajar.glb", "pos": Vector3(2.8, 0.0, 1.60), "rot_y": -0.50, "anim": "Idle"},
 				],
 			}
 		_:
@@ -214,9 +214,9 @@ static func get_street_config(tier_id: String) -> Dictionary:
 				"portal_work": Vector3(2.9, 0.0, 0.55),
 				"street_npcs": [
 					{"id": "ibu_melati", "label_id": "Ibu Melati", "label_en": "Ibu Melati", "model_path": "res://assets/models/char_ibu.glb", "pos": Vector3(0.45, 0.0, 1.40), "rot_y": -0.35, "anim": "Idle"},
-					{"id": "mbak_dewi", "label_id": "Mbak Dewi", "label_en": "Mbak Dewi", "model_path": "res://assets/models/char_art.glb", "pos": Vector3(-2.6, 0.0, 1.60), "rot_y": 0.45, "anim": "Idle"},
-					{"id": "pak_agus", "label_id": "Pak Agus", "label_en": "Pak Agus", "model_path": "res://assets/models/char_budi.glb", "pos": Vector3(4.2, 0.0, 1.45), "rot_y": -0.75, "anim": "Idle"},
-					{"id": "pak_rt", "label_id": "Pak RT", "label_en": "Pak RT", "model_path": "res://assets/models/char_budi.glb", "pos": Vector3(2.1, 0.0, 1.75), "rot_y": -0.45, "anim": "Idle"},
+					{"id": "mbak_dewi", "label_id": "Mbak Dewi", "label_en": "Mbak Dewi", "model_path": "res://assets/models/char_dewi.glb", "pos": Vector3(-2.6, 0.0, 1.60), "rot_y": 0.45, "anim": "Idle"},
+					{"id": "pak_agus", "label_id": "Pak Agus", "label_en": "Pak Agus", "model_path": "res://assets/models/char_agus.glb", "pos": Vector3(4.2, 0.0, 1.45), "rot_y": -0.75, "anim": "Idle"},
+					{"id": "pak_rt", "label_id": "Pak RT", "label_en": "Pak RT", "model_path": "res://assets/models/char_pak_rt.glb", "pos": Vector3(2.1, 0.0, 1.75), "rot_y": -0.45, "anim": "Idle"},
 				],
 			}
 

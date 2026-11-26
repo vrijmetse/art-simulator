@@ -34,27 +34,28 @@ def build_gang_kampung():
 
     roof_a_alb, roof_a_nrm, roof_a_rgh = generate_terracotta_textures(TEX_DIR, "gang_roof_terra_v15", (0.52, 0.23, 0.14))
     roof_b_alb, roof_b_nrm, roof_b_rgh = generate_terracotta_textures(TEX_DIR, "gang_roof_slate_v15", (0.24, 0.29, 0.34))
-    wall_a, wall_nrm, wall_rgh = generate_plaster_ao_texture(TEX_DIR, "gang_wall_cream_v15", (0.85, 0.78, 0.65))
-    wall_b, _, _ = generate_plaster_ao_texture(TEX_DIR, "gang_wall_mint_v15", (0.71, 0.79, 0.69))
-    wall_c, _, _ = generate_plaster_ao_texture(TEX_DIR, "gang_wall_peach_v15", (0.83, 0.70, 0.56))
-    pave_alb, pave_nrm, pave_rgh = generate_tile_textures(TEX_DIR, "gang_paving_v15", (0.74, 0.70, 0.64), "paving")
-    wood_alb, wood_nrm, wood_rgh = generate_wood_texture(TEX_DIR, "gang_wood_v15", (0.38, 0.22, 0.12))
-    grass_alb, grass_nrm, grass_rgh = generate_turf_texture(TEX_DIR, "gang_grass_v15", (0.22, 0.44, 0.18))
+    wall_a, wall_nrm, wall_rgh = generate_plaster_ao_texture(TEX_DIR, "gang_wall_cream_v20", (0.90, 0.84, 0.72), use_polyhaven=False)
+    wall_b, _, _ = generate_plaster_ao_texture(TEX_DIR, "gang_wall_mint_v20", (0.76, 0.84, 0.74), use_polyhaven=False)
+    wall_c, _, _ = generate_plaster_ao_texture(TEX_DIR, "gang_wall_peach_v20", (0.88, 0.74, 0.60), use_polyhaven=False)
+    pave_alb, pave_nrm, pave_rgh = generate_tile_textures(TEX_DIR, "gang_paving_v20", (0.78, 0.74, 0.68), "paving", use_polyhaven=False)
+    wood_alb, wood_nrm, wood_rgh = generate_wood_texture(TEX_DIR, "gang_wood_v20", (0.44, 0.24, 0.12), use_polyhaven=False)
+    grass_alb, grass_nrm, grass_rgh = generate_turf_texture(TEX_DIR, "gang_grass_v15", (0.20, 0.42, 0.18))
     batu_alb, batu_nrm, _ = generate_batu_alam_texture(TEX_DIR, "gang_batu_v15")
 
-    mat_roof_a = make_pbr_material("GangRoofA", roof_a_alb, 0.74, roof_a_nrm, 1.15, (2.0, 2.0), roof_a_rgh)
-    mat_roof_b = make_pbr_material("GangRoofB", roof_b_alb, 0.74, roof_b_nrm, 1.15, (2.0, 2.0), roof_b_rgh)
-    mat_wall_a = make_pbr_material("GangWallA", wall_a, 0.88, wall_nrm, 0.45, (1.5, 1.5), wall_rgh)
-    mat_wall_b = make_pbr_material("GangWallB", wall_b, 0.88, wall_nrm, 0.45, (1.5, 1.5), wall_rgh)
-    mat_wall_c = make_pbr_material("GangWallC", wall_c, 0.88, wall_nrm, 0.45, (1.5, 1.5), wall_rgh)
-    mat_pave = make_pbr_material("GangPaving", pave_alb, 0.84, pave_nrm, 0.75, (7.0, 1.8), pave_rgh)
-    mat_wood = make_pbr_material("GangWood", wood_alb, 0.68, wood_nrm, 0.45, (1.5, 1.5), wood_rgh)
-    mat_grass = make_pbr_material("GangGrass", grass_alb, 0.94, grass_nrm, 0.55, (6.0, 5.0), grass_rgh)
-    mat_stone = make_pbr_material("GangBatu", batu_alb, 0.88, batu_nrm, 0.90, (2.0, 2.5))
+    mat_roof_a = make_pbr_material("GangRoofA", roof_a_alb, 0.70, roof_a_nrm, 0.85, (2.0, 2.0), roof_a_rgh)
+    mat_roof_b = make_pbr_material("GangRoofB", roof_b_alb, 0.70, roof_b_nrm, 0.85, (2.0, 2.0), roof_b_rgh)
+    mat_wall_a = make_pbr_material("GangWallA", wall_a, 0.84, None, 0.0, (1.0, 1.0))
+    mat_wall_b = make_pbr_material("GangWallB", wall_b, 0.84, None, 0.0, (1.0, 1.0))
+    mat_wall_c = make_pbr_material("GangWallC", wall_c, 0.84, None, 0.0, (1.0, 1.0))
+    mat_pave = make_pbr_material("GangPaving", pave_alb, 0.56, pave_nrm, 0.35, (7.0, 1.8))
+    mat_wood = make_pbr_material("GangWood", wood_alb, 0.52, None, 0.0, (1.5, 1.5))
+    mat_grass = make_pbr_material("GangGrass", grass_alb, 0.90, grass_nrm, 0.35, (6.0, 5.0), grass_rgh)
+    mat_stone = make_pbr_material("GangBatu", batu_alb, 0.84, batu_nrm, 0.65, (2.0, 2.5))
 
-    mat_trim = make_solid_mat("TrimWhite", (0.86, 0.83, 0.76), 0.78)
-    mat_iron = make_solid_mat("IronDark", (0.10, 0.11, 0.14), 0.48, 0.65)
-    mat_glass = make_solid_mat("WarmGlass", (0.07, 0.15, 0.23), 0.18, 0.0)
+    mat_trim = make_solid_mat("TrimWhite", (0.90, 0.87, 0.80), 0.74)
+    mat_iron = make_solid_mat("IronDark", (0.12, 0.13, 0.16), 0.44, 0.65)
+    mat_glass = make_solid_mat("WarmGlass", (0.98, 0.78, 0.42), 0.22, 0.0, 0.72)
+    mat_asphalt_edge = make_solid_mat("GangAsphaltEdge", (0.17, 0.19, 0.23), 0.48)
     mat_brass = make_solid_mat("BrassMetal", (0.76, 0.58, 0.24), 0.32, 0.85)
     mat_cushion = make_solid_mat("CurtainWarm", (0.78, 0.36, 0.26), 0.86)
     mat_tank = make_solid_mat("PosBlue", (0.18, 0.48, 0.74), 0.42)
@@ -65,9 +66,11 @@ def build_gang_kampung():
     mat_metal = make_solid_mat("AlloyMetal", (0.72, 0.74, 0.78), 0.42, 0.0)
     mat_banana = make_solid_mat("BananaLeaf", (0.28, 0.60, 0.20), 0.72)
 
-    # Narrow 2.4m walkable Gang Kampung paving alley (ONLY walk/bike/motorbike — NO cars!)
+    # Narrow 2.4m walkable Gang Kampung paving alley + clean asphalt roadside & low stone border
     add_box("GangGround", (24.0, 14.0, 0.12), (0.0, 2.0, -0.14), mat_grass, 0.0)
-    add_box("GangAlleyPaving", (22.0, 2.45, 0.12), (0.0, -1.15, -0.04), mat_pave, 0.015)
+    add_box("GangAlleyPaving", (22.0, 2.55, 0.12), (0.0, -1.15, -0.04), mat_pave, 0.015)
+    add_box("GangAsphaltBorder", (22.0, 3.60, 0.10), (0.0, -4.15, -0.06), mat_asphalt_edge, 0.0)
+    add_box("GangCurbStone", (22.0, 0.14, 0.08), (0.0, -2.42, 0.01), mat_trim, 0.012)
 
     # 3 Cozy Detailed Kampung Houses along the narrow paving alley
     for idx, (cx, wmat, rmat) in enumerate([
@@ -84,6 +87,7 @@ def build_gang_kampung():
         for px in (-1.22, 1.22):
             add_box(f"KampungPil_{idx}_{px}", (0.18, 0.18, 1.48), (cx + px, 0.06, 0.86), mat_stone, 0.012)
             add_box(f"KampungPilCap_{idx}_{px}", (0.22, 0.22, 0.07), (cx + px, 0.06, 1.62), mat_trim, 0.01)
+            add_box(f"KampungPilLantern_{idx}_{px}", (0.11, 0.11, 0.14), (cx + px, -0.04, 1.42), mat_lamp, 0.015)
 
         # 4-panel teak door + brass handle + glossy curtained window
         add_box(f"KampungDoorFrame_{idx}", (0.82, 0.09, 1.50), (cx - 0.55, 0.88, 0.84), mat_wood, 0.012)
