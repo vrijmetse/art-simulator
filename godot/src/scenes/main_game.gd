@@ -18,6 +18,7 @@ const StreetTraffic := preload("res://src/core/street_traffic.gd")
 const Portraits := preload("res://src/core/portraits.gd")
 const WishlistStory := preload("res://src/core/wishlist_story.gd")
 const StreetPatrols := preload("res://src/core/street_patrols.gd")
+const Retention := preload("res://src/core/retention.gd")
 const PlayerControllerScene := preload("res://src/scenes/player_controller.gd")
 const ChoreHotspotScene := preload("res://src/scenes/chore_hotspot.gd")
 
@@ -88,6 +89,7 @@ var _step_player: AudioStreamPlayer
 var _audio_unlocked := false
 var _pending_story_tier := ""
 var _pending_level_unlocks: Array = []
+var _shift_event: Dictionary = {}
 
 # HUD nodes
 var _lbl_balance: Label
@@ -232,8 +234,12 @@ func _ready() -> void:
 			_capture_tier = arg.substr("--capture-tier=".length())
 
 	_save = SaveStore.load_from_path()
+	var today_s := _today_date_str()
+	_save = Retention.sync_daily_login(_save, today_s)["save"]
+	_save = Retention.evaluate_badges(_save)["save"]
 	_muted = bool(_save.get("muted", false))
 	_build_hud()
+	_apply_mobile_safe_area()
 	Settings.apply_graphics_quality(sun_light, world_env.environment if world_env != null else null, String(_save.get("gfx_quality", "high")))
 
 	if _smoke_mode:
@@ -274,6 +280,32 @@ func _ready() -> void:
 
 func _loc() -> String:
 	return String(_save.get("locale", "id"))
+
+func _today_date_str() -> String:
+	return Time.get_date_string_from_system()
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_GO_BACK_REQUEST:
+		if _modal_backdrop != null and _modal_backdrop.visible:
+			_modal_backdrop.visible = false
+			_refresh_tutorial_banner()
+		elif _phone_open:
+			_phone_open = false
+			_refresh_hud()
+		elif _onboarding_wrap == null or not _onboarding_wrap.visible:
+			_open_settings_modal()
+
+func _apply_mobile_safe_area() -> void:
+	if _smoke_mode or DisplayServer.get_name() == "headless":
+		return
+	var safe := DisplayServer.get_display_safe_area()
+	var win := get_viewport().get_visible_rect().size
+	if safe.size.x <= 0 or win.x <= 0:
+		return
+	var scale_x := win.x / maxf(1.0, float(DisplayServer.window_get_size().x))
+	var pad_left := clampf(float(safe.position.x) * scale_x, 0.0, 48.0)
+	if _tl_card != null:
+		_tl_card.position.x = 14.0 + pad_left
 
 func _t(id_str: String, en_str: String) -> String:
 	return en_str if _loc() == "en" else id_str
@@ -635,8 +667,10 @@ func _start_shift() -> void:
 		prof = MajikanProfiles.get_profile("ibu_kos_melati")
 	var max_e := Progression.get_max_energy(_save)
 	_shift = ChoreEngine.create_shift(tier_id, prof, max_e)
+	_shift_event = Retention.get_shift_event(int(_save.get("day", 1)), tier_id, _loc())
 	var start_mood := Progression.get_shift_starting_mood(_save)
 	_call_state = MajikanCall.create_state(prof, start_mood)
+	_call_state["patience_mult"] = float(_shift_event.get("patience_mult", 1.0))
 	_world_mode = "shift"
 	_in_shift = true
 	_shift_elapsed_s = 0.0
@@ -675,7 +709,11 @@ func _start_shift() -> void:
 		SaveStore.save_to_path(_save)
 	_refresh_atmosphere()
 	var emp_lbl := String(prof.get("name", prof.get("label_id", "")))
-	_show_toast(_t("Shift di %s dimulai! Kerjakan tugas & jawab panggilan." % emp_lbl, "Shift at %s started! Finish chores & answer calls." % emp_lbl))
+	var ev_title := String(_shift_event.get("title", ""))
+	if String(_shift_event.get("id", "normal")) != "normal" and ev_title != "":
+		_show_toast(_t("Shift %s: %s" % [emp_lbl, ev_title], "%s Shift: %s" % [emp_lbl, ev_title]))
+	else:
+		_show_toast(_t("Shift di %s dimulai! Kerjakan tugas & jawab panggilan." % emp_lbl, "Shift at %s started! Finish chores & answer calls." % emp_lbl))
 	_refresh_hud()
 
 func _clear_hotspots() -> void:
@@ -766,6 +804,8 @@ func _talk_to_street_npc(npc: Dictionary) -> void:
 	_save = res["state"]
 	if bool(res.get("claimed", false)):
 		_save["mood"] = clampi(int(_save.get("mood", 65)) + 12, 0, 100)
+		_save = Retention.record_mission_progress(_save, "neighbors", 1, _today_date_str())
+		_save = Retention.evaluate_badges(_save)["save"]
 		var tip_rp := int(res.get("tip_rp", 0))
 		_save = Settings.append_daily_log(_save, {
 			"day": int(_save.get("day", 1)),
@@ -836,6 +876,8 @@ func _try_tap_boost() -> void:
 	_chore_boosts_used += 1
 	_chore_boost_cd = 0.35
 	_chore_progress += ChoreEngine.TAP_BOOST_SECONDS
+	_save["shift_boost_count"] = int(_save.get("shift_boost_count", 0)) + 1
+	_save = Retention.record_mission_progress(_save, "boosts", 1, _today_date_str())
 	_play_sfx(_wav_chore_tick)
 
 func _trigger_world_action() -> void:
@@ -912,6 +954,15 @@ func _finish_active_chore() -> void:
 	var res := ChoreEngine.complete_chore(_shift, cid, pay_mult, sk_lvl)
 	if res["ok"]:
 		_shift = res["shift"]
+		_save = Retention.record_mission_progress(_save, "chores", 1, _today_date_str())
+		var ev_xp_mult := float(_shift_event.get("xp_mult", 1.0))
+		if ev_xp_mult > 1.0:
+			var extra_xp := int(round(float(res["xp_gain"]) * (ev_xp_mult - 1.0)))
+			_shift["xp_earned"] = int(_shift.get("xp_earned", 0)) + extra_xp
+		var ev_e_mult := float(_shift_event.get("energy_mult", 1.0))
+		if ev_e_mult < 1.0:
+			var saved_e := int(round(float(cfg["energy"]) * (1.0 - ev_e_mult)))
+			_shift["energy"] = mini(int(_shift.get("max_energy", 100)), int(_shift.get("energy", 0)) + saved_e)
 		var boost_rp := 0
 		if _chore_boosts_used >= 2:
 			boost_rp = ChoreEngine.TAP_BOOST_BONUS_RP
@@ -956,6 +1007,22 @@ func _finish_shift() -> void:
 		_enter_street_mode("shift")
 		_show_toast(_t("Belum ada tugas selesai — shift dibatalkan (Rp 0).", "No chores completed — shift cancelled (Rp 0)."))
 		return
+	var ev_bonus_rp := 0
+	if not bool(res.get("fired", false)):
+		_save = Retention.record_mission_progress(_save, "shifts", 1, _today_date_str())
+		var ev_pm := float(_shift_event.get("pay_mult", 1.0))
+		if ev_pm > 1.0:
+			ev_bonus_rp += int(round(float(res.get("payout_rp", 0)) * (ev_pm - 1.0)))
+		ev_bonus_rp += int(_shift_event.get("flat_bonus_rp", 0))
+		if ev_bonus_rp > 0:
+			_save["balance_rp"] = int(_save.get("balance_rp", 0)) + ev_bonus_rp
+			_save["total_earnings_rp"] = int(_save.get("total_earnings_rp", 0)) + ev_bonus_rp
+			res["payout_rp"] = int(res.get("payout_rp", 0)) + ev_bonus_rp
+	var bg_eval := Retention.evaluate_badges(_save)
+	_save = bg_eval["save"]
+	for nb in (bg_eval.get("newly_unlocked", []) as Array):
+		var b_lbl := String(nb.get("label_en" if _loc() == "en" else "label_id", ""))
+		_show_toast(_t("Lencana Baru: %s (+25 XP)!" % b_lbl, "New Badge: %s (+25 XP)!" % b_lbl), "player", "happy")
 	_save = Settings.append_daily_log(_save, {
 		"day": int(_save.get("day", 1)) - 1,
 		"kind": "fired" if bool(res.get("fired", false)) else "shift",
@@ -1249,6 +1316,8 @@ func _on_answer_call() -> void:
 		_show_toast(String(_call_state.get("last_warning_text_en" if _loc() == "en" else "last_warning_text", "")))
 	else:
 		_play_sfx(_wav_coin)
+		_save["calls_answered_count"] = int(_save.get("calls_answered_count", 0)) + 1
+		_save = Retention.record_mission_progress(_save, "calls", 1, _today_date_str())
 		_show_toast(_t("Sigap! Trust naik & bonus +%s" % I18n.format_balance(5000, "id"), "Quick answer! Trust up & +%s tip!" % I18n.format_balance(5000, "en")))
 	_refresh_hud()
 
@@ -1359,7 +1428,8 @@ func _refresh_hud() -> void:
 	if _btn_map != null:
 		_btn_map.text = _t("Peta", "Map")
 	if _btn_settings != null:
-		_btn_settings.text = _t("Menu", "Menu")
+		var has_rw := Retention.has_unclaimed_daily_reward(_save, _today_date_str())
+		_btn_settings.text = _t("Menu ★" if has_rw else "Menu", "Menu ★" if has_rw else "Menu")
 	_btn_phone.text = "HP"
 	var badge_n := MajikanCall.get_phone_badge_count(_call_state) if _in_shift else 0
 	_lbl_phone_badge.text = str(badge_n)
@@ -1403,7 +1473,7 @@ func _refresh_call_banner() -> void:
 	_refresh_tutorial_banner()
 	if active_call:
 		var pers := MajikanProfiles.get_personality(String(_call_state.get("personality", "ramah")))
-		var pat := float(pers.get("call_patience_s", 12.0))
+		var pat := float(pers.get("call_patience_s", 12.0)) * float(_call_state.get("patience_mult", 1.0))
 		var rem := maxf(0.0, pat - float(_call_state.get("call_elapsed_s", 0.0)))
 		if _call_portrait != null:
 			var prof_id := String(_save.get("active_profile_id", "ibu_kos_melati"))
@@ -1484,9 +1554,81 @@ func _open_career_modal() -> void:
 	btn_book.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_style_btn(btn_book, Color(0.32, 0.28, 0.48), Color(0.96, 0.78, 0.26))
 	btn_book.pressed.connect(_open_storybook_modal)
+	var btn_misi := Button.new()
+	btn_misi.text = _t("Misi & Streak", "Missions & Streak")
+	btn_misi.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_style_btn(btn_misi, Color(0.18, 0.48, 0.34), Color(0.96, 0.78, 0.26))
+	btn_misi.pressed.connect(_open_retention_modal)
 	row_extra.add_child(btn_wish)
 	row_extra.add_child(btn_book)
+	row_extra.add_child(btn_misi)
 	_modal_list.add_child(row_extra)
+	_show_modal()
+
+func _open_retention_modal() -> void:
+	_clear_modal()
+	var today_s := _today_date_str()
+	_save = Retention.sync_daily_login(_save, today_s)["save"]
+	_modal_title.text = _t("MISI HARIAN, STREAK & LENCANA", "DAILY MISSIONS, STREAK & BADGES")
+
+	var streak_day := clampi(int(_save.get("login_streak", 1)), 1, 7)
+	var rw: Dictionary = Retention.STREAK_REWARDS[streak_day - 1]
+	var can_claim := String(_save.get("streak_claimed_date", "")) != today_s
+	var btn_streak := Button.new()
+	var rw_lbl := String(rw["label_en"] if _loc() == "en" else rw["label_id"])
+	if can_claim:
+		btn_streak.text = _t("★ Klaim Streak Hari %d: %s (+%s, +%d XP)" % [streak_day, rw_lbl, I18n.format_balance(int(rw["rp"]), "id"), int(rw["xp"])], "★ Claim Day %d Streak: %s (+%s, +%d XP)" % [streak_day, rw_lbl, I18n.format_balance(int(rw["rp"]), "en"), int(rw["xp"])])
+		_style_btn(btn_streak, Color(0.22, 0.56, 0.38), Color(0.98, 0.84, 0.34))
+	else:
+		btn_streak.text = _t("✓ Streak Hari %d/7 Sudah Diklaim Hari Ini" % streak_day, "✓ Day %d/7 Streak Claimed Today" % streak_day)
+		btn_streak.disabled = true
+	btn_streak.pressed.connect(func():
+		var cl := Retention.claim_streak_reward(_save, _today_date_str())
+		if cl["ok"]:
+			_save = cl["save"]
+			SaveStore.save_to_path(_save)
+			_play_sfx(_wav_fanfare)
+			_show_toast(_t("Bonus Streak Hari %d diklaim!" % streak_day, "Day %d Streak bonus claimed!" % streak_day), "player", "happy")
+			call_deferred("_open_retention_modal")
+			_refresh_hud()
+	)
+	_modal_list.add_child(btn_streak)
+
+	for m in Retention.get_active_missions(_save, today_s, _loc()):
+		var mid := String(m["id"])
+		var btn_m := Button.new()
+		if bool(m["claimed"]):
+			btn_m.text = "✓ %s (%s)" % [String(m["label"]), _t("Selesai", "Claimed")]
+			btn_m.disabled = true
+		elif bool(m["done"]):
+			btn_m.text = "★ %s (%d/%d) — %s +%s" % [String(m["label"]), int(m["current"]), int(m["target"]), _t("Klaim", "Claim"), I18n.format_balance(int(m["rp"]), _loc())]
+			_style_btn(btn_m, Color(0.20, 0.44, 0.56), Color(0.98, 0.84, 0.34))
+		else:
+			btn_m.text = "○ %s (%d/%d) • +%s" % [String(m["label"]), int(m["current"]), int(m["target"]), I18n.format_balance(int(m["rp"]), _loc())]
+			btn_m.disabled = true
+		btn_m.pressed.connect(func():
+			var cm := Retention.claim_mission_reward(_save, mid, _today_date_str())
+			if cm["ok"]:
+				_save = cm["save"]
+				SaveStore.save_to_path(_save)
+				_play_sfx(_wav_coin)
+				call_deferred("_open_retention_modal")
+				_refresh_hud()
+		)
+		_modal_list.add_child(btn_m)
+
+	var unlocked_bd: Array = _save.get("unlocked_badges", [])
+	var bd_lbl := Label.new()
+	var bd_names: Array = []
+	for raw_bid in unlocked_bd:
+		var bid := String(raw_bid)
+		if Retention.BADGES.has(bid):
+			bd_names.append(String(Retention.BADGES[bid]["label_en" if _loc() == "en" else "label_id"]))
+	bd_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	bd_lbl.text = "%s (%d/%d): %s" % [_t("Lencana", "Badges"), unlocked_bd.size(), Retention.BADGES.size(), ", ".join(bd_names) if bd_names.size() > 0 else _t("Belum ada", "None yet")]
+	bd_lbl.add_theme_font_size_override("font_size", 11)
+	bd_lbl.add_theme_color_override("font_color", Color(0.98, 0.84, 0.34))
+	_modal_list.add_child(bd_lbl)
 	_show_modal()
 
 func _open_storybook_modal() -> void:
@@ -1653,6 +1795,12 @@ func _open_summary_modal(res: Dictionary) -> void:
 	_modal_list.add_child(l1)
 	_modal_list.add_child(l2)
 	_modal_list.add_child(l3)
+	var meal_rp := int(res.get("meal_cost_rp", 0))
+	if meal_rp > 0:
+		var l_meal := Label.new()
+		l_meal.text = _t("Uang Makan & Transport: -%s" % I18n.format_balance(meal_rp, "id"), "Daily Meal & Commute: -%s" % I18n.format_balance(meal_rp, "en"))
+		l_meal.add_theme_color_override("font_color", Color(0.96, 0.62, 0.42))
+		_modal_list.add_child(l_meal)
 	_show_modal()
 
 func _open_levelup_modal(new_lv: int, res: Dictionary) -> void:
@@ -1884,6 +2032,11 @@ func _open_settings_modal() -> void:
 	btn_book.text = _t("Buku Cerita ART", "ART Story Book")
 	btn_book.pressed.connect(_open_storybook_modal)
 	_modal_list.add_child(btn_book)
+
+	var btn_ret := Button.new()
+	btn_ret.text = _t("★ Misi Harian, Streak & Lencana" if Retention.has_unclaimed_daily_reward(_save, _today_date_str()) else "Misi Harian, Streak & Lencana", "★ Daily Missions, Streak & Badges" if Retention.has_unclaimed_daily_reward(_save, _today_date_str()) else "Daily Missions, Streak & Badges")
+	btn_ret.pressed.connect(_open_retention_modal)
+	_modal_list.add_child(btn_ret)
 
 	var btn_lang := Button.new()
 	btn_lang.text = _t("Bahasa: Indonesia (Ubah ke EN)", "Language: English (Switch to ID)")

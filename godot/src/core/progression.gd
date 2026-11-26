@@ -158,6 +158,13 @@ static func create_player_save() -> Dictionary:
 		"unlocked_wishlist": [],
 		"seen_chapters": [],
 		"tutorial_step": 0,
+		"login_streak": 0,
+		"last_login_date": "",
+		"streak_claimed_date": "",
+		"daily_missions": {},
+		"unlocked_badges": [],
+		"shift_boost_count": 0,
+		"calls_answered_count": 0,
 		"daily_log": [],
 	}
 
@@ -318,8 +325,13 @@ static func settle_shift(save: Dictionary, shift: Dictionary, call_state: Dictio
 	var raw_xp := maxi(0, int(shift.get("xp_earned", 0)))
 	var xp_gained := int(floor(float(raw_xp) * 0.5)) if is_fired else raw_xp
 
+	var tier := CareerTiers.get_tier(String(save.get("active_tier_id", "kamar_kos")))
+	var meal_cost := 0
+	if not is_fired and not bool(tier.get("live_in_room_provided", false)) and int(save.get("day", 1)) >= 3 and (int(save.get("balance_rp", 0)) + total_payout) >= 15000:
+		meal_cost = 8000
+
 	var nxt_save := save.duplicate(true)
-	nxt_save["balance_rp"] = int(nxt_save.get("balance_rp", 0)) + total_payout
+	nxt_save["balance_rp"] = maxi(0, int(nxt_save.get("balance_rp", 0)) + total_payout - meal_cost)
 	nxt_save["total_earnings_rp"] = int(nxt_save.get("total_earnings_rp", 0)) + total_payout
 	nxt_save["xp"] = int(nxt_save.get("xp", 0)) + xp_gained
 	nxt_save["day"] = int(nxt_save.get("day", 1)) + 1
@@ -344,6 +356,7 @@ static func settle_shift(save: Dictionary, shift: Dictionary, call_state: Dictio
 		"aborted": false,
 		"reason": "",
 		"payout_rp": total_payout,
+		"meal_cost_rp": meal_cost,
 		"xp_gained": xp_gained,
 		"fired": is_fired,
 		"save": nxt_save,

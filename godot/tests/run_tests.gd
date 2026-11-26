@@ -18,6 +18,7 @@ const ArtStreetTraffic := preload("res://src/core/street_traffic.gd")
 const ArtPortraits := preload("res://src/core/portraits.gd")
 const ArtWishlistStory := preload("res://src/core/wishlist_story.gd")
 const ArtStreetPatrols := preload("res://src/core/street_patrols.gd")
+const ArtRetention := preload("res://src/core/retention.gd")
 
 var _failed := 0
 var _passed := 0
@@ -764,6 +765,64 @@ func _initialize() -> void:
 	var sv_ep_rt := SaveStore.deserialize(SaveStore.serialize(sv_ep_seen))
 	_assert_true("ch_epilogue" in (sv_ep_rt["seen_chapters"] as Array), "SaveStore preserves ch_epilogue in seen_chapters")
 	_assert_eq(ArtWishlistStory.get_storybook_entries(sv_ep_seen, "id").size(), 6, "storybook lists 5 chapters + epilogue")
+
+	# 24. 1-Month Retention: 7-Day Streak, Clock-Skew Safety, Daily Missions, Shift Events, Badges & Modest Meal Sink
+	var sv_r := Progression.create_player_save()
+	var sync1 := ArtRetention.sync_daily_login(sv_r, "2026-11-26")
+	sv_r = sync1["save"]
+	_assert_eq(int(sv_r["login_streak"]), 1, "first login sets streak to 1")
+	_assert_eq(bool(sync1["can_claim_streak"]), true, "first login allows streak claim")
+	var cl1 := ArtRetention.claim_streak_reward(sv_r, "2026-11-26")
+	_assert_eq(bool(cl1["ok"]), true, "day 1 streak reward claimed")
+	_assert_true(int(cl1["save"]["balance_rp"]) > 0, "day 1 streak adds Rp")
+	var cl_dup := ArtRetention.claim_streak_reward(cl1["save"], "2026-11-26")
+	_assert_eq(bool(cl_dup["ok"]), false, "same-day duplicate streak claim blocked")
+
+	var sync2 := ArtRetention.sync_daily_login(cl1["save"], "2026-11-27")
+	_assert_eq(int(sync2["save"]["login_streak"]), 2, "consecutive day increments streak to 2")
+	var sync_skew := ArtRetention.sync_daily_login(sync2["save"], "2026-11-25")
+	_assert_eq(int(sync_skew["save"]["login_streak"]), 2, "backward clock skew preserves streak instead of resetting")
+	_assert_eq(bool(sync_skew["can_claim_streak"]), false, "backward clock skew blocks re-claiming earlier streak")
+	var cl_skew := ArtRetention.claim_streak_reward(cl1["save"], "2026-11-25")
+	_assert_eq(bool(cl_skew["ok"]), false, "backward clock skew cannot re-claim streak reward")
+	var sync_gap := ArtRetention.sync_daily_login(sync2["save"], "2026-11-30")
+	_assert_eq(int(sync_gap["save"]["login_streak"]), 1, "multi-day gap resets streak to 1")
+
+	var sv_m2 := ArtRetention.record_mission_progress(sync1["save"], "neighbors", 3, "2026-11-26")
+	var missions_today := ArtRetention.get_active_missions(sv_m2, "2026-11-26", "id")
+	_assert_eq(missions_today.size(), 3, "3 rotating daily missions generated")
+	var sv_m_old := ArtRetention.record_mission_progress(sv_m2, "neighbors", 1, "2026-11-28")
+	_assert_eq(String(sv_m_old["daily_missions"]["date"]), "2026-11-28", "mismatched mission date auto-resets")
+
+	var ev_any := ArtRetention.get_shift_event(2, "kampung", "id")
+	_assert_true(String(ev_any.get("id", "")) != "", "shift event returned for day/tier")
+	_assert_true(float(ev_any.get("pay_mult", 0.0)) > 0.5, "shift event pay_mult valid")
+
+	var sv_bg := Progression.create_player_save()
+	sv_bg["completed_shifts"] = 1
+	sv_bg["shift_boost_count"] = 5
+	sv_bg["xp"] = 1400
+	sv_bg["unlocked_wishlist"] = ArtWishlistStory.WISHLIST_ITEMS.keys()
+	var bg_res := ArtRetention.evaluate_badges(sv_bg)
+	_assert_true((bg_res["newly_unlocked"] as Array).size() >= 3, "badges unlock on milestones")
+	_assert_true(int(bg_res["save"]["xp"]) > 1400, "new badges grant +25 XP bonus once")
+	var bg_dup := ArtRetention.evaluate_badges(bg_res["save"])
+	_assert_eq((bg_dup["newly_unlocked"] as Array).size(), 0, "badges never double-award")
+
+	var sv_ret_rt := SaveStore.deserialize('{"login_streak": 99, "unlocked_badges": ["first_shift", "first_shift", "bogus"], "shift_boost_count": -4}')
+	_assert_eq(int(sv_ret_rt["login_streak"]), 7, "SaveStore clamps login_streak 0..7")
+	_assert_eq((sv_ret_rt["unlocked_badges"] as Array).size(), 1, "SaveStore deduplicates & validates unlocked_badges")
+	_assert_eq(int(sv_ret_rt["shift_boost_count"]), 0, "SaveStore clamps shift_boost_count >= 0")
+
+	var sv_meal := Progression.create_player_save()
+	sv_meal["day"] = 3
+	sv_meal["balance_rp"] = 20000
+	var sh_meal := ChoreEngine.create_shift("kamar_kos", MajikanProfiles.get_profile("ibu_kos_melati"), 100)
+	sh_meal = ChoreEngine.complete_chore(sh_meal, "make_bed", 0.85, 1)["shift"]
+	var cs_meal := MajikanCall.create_state(MajikanProfiles.get_profile("ibu_kos_melati"))
+	var res_meal := Progression.settle_shift(sv_meal, sh_meal, cs_meal)
+	_assert_eq(int(res_meal["meal_cost_rp"]), 8000, "day >= 3 non-live-in deducts Rp 8,000 meal sink cleanly")
+	_assert_eq(int(res_meal["save"]["balance_rp"]), 20000 + int(res_meal["payout_rp"]) - 8000, "meal sink deducted from balance after payout_rp")
 
 	print("GODOT TDD RESULT: %d passed, %d failed" % [_passed, _failed])
 	quit(0 if _failed == 0 else 1)

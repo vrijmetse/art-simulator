@@ -66,7 +66,7 @@ static func respond_to_call(state: Dictionary) -> Dictionary:
 	if not nxt.get("active_call", false) or nxt.get("fired", false):
 		return nxt
 	var pers: Dictionary = Profiles.get_personality(String(nxt.get("personality", "ramah")))
-	var patience: float = float(pers["call_patience_s"])
+	var patience: float = float(pers["call_patience_s"]) * float(nxt.get("patience_mult", 1.0))
 	nxt["active_call"] = false
 	if float(nxt["call_elapsed_s"]) <= patience:
 		nxt["trust"] = clampi(int(nxt["trust"]) + 6, 0, 100)
@@ -82,7 +82,8 @@ static func tick_call(state: Dictionary, dt: float) -> Dictionary:
 	var clamped_dt: float = clampf(dt, 0.0, 2.0)
 	nxt["call_elapsed_s"] = float(nxt["call_elapsed_s"]) + clamped_dt
 	var pers: Dictionary = Profiles.get_personality(String(nxt.get("personality", "ramah")))
-	if float(nxt["call_elapsed_s"]) > float(pers["call_patience_s"]):
+	var patience: float = float(pers["call_patience_s"]) * float(nxt.get("patience_mult", 1.0))
+	if float(nxt["call_elapsed_s"]) > patience:
 		nxt["active_call"] = false
 		return _apply_miss_penalty(nxt, pers)
 	return nxt

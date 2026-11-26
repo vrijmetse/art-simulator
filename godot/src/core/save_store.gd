@@ -5,6 +5,7 @@ const CareerTiers := preload("res://src/core/career_tiers.gd")
 const Progression := preload("res://src/core/progression.gd")
 const SettingsStore := preload("res://src/core/settings_store.gd")
 const WishlistStory := preload("res://src/core/wishlist_story.gd")
+const Retention := preload("res://src/core/retention.gd")
 
 const DEFAULT_PATH := "user://save_v1.json"
 
@@ -121,6 +122,39 @@ static func sanitize(raw: Variant) -> Dictionary:
 		clean["tutorial_step"] = 4
 	else:
 		clean["tutorial_step"] = 0
+
+	clean["login_streak"] = clampi(_safe_int(d.get("login_streak", 0), 0, 0), 0, 7)
+	clean["last_login_date"] = String(d.get("last_login_date", "")).left(16)
+	clean["streak_claimed_date"] = String(d.get("streak_claimed_date", "")).left(16)
+	var raw_dm: Variant = d.get("daily_missions", {})
+	if typeof(raw_dm) == TYPE_DICTIONARY:
+		var dm_d: Dictionary = raw_dm
+		var clean_prog := {}
+		var raw_p: Variant = dm_d.get("progress", {})
+		if typeof(raw_p) == TYPE_DICTIONARY:
+			for k in (raw_p as Dictionary).keys():
+				clean_prog[String(k)] = maxi(0, _safe_int((raw_p as Dictionary)[k], 0, 0))
+		var clean_cl: Array = []
+		var raw_cl: Variant = dm_d.get("claimed", [])
+		if typeof(raw_cl) == TYPE_ARRAY:
+			for cid in raw_cl:
+				var sc := String(cid)
+				if not (sc in clean_cl):
+					clean_cl.append(sc)
+		clean["daily_missions"] = {"date": String(dm_d.get("date", "")).left(16), "progress": clean_prog, "claimed": clean_cl}
+	else:
+		clean["daily_missions"] = {}
+
+	var valid_badges: Array = []
+	var raw_bd: Variant = d.get("unlocked_badges", [])
+	if typeof(raw_bd) == TYPE_ARRAY:
+		for bid in raw_bd:
+			var s_bid := String(bid)
+			if Retention.BADGES.has(s_bid) and not (s_bid in valid_badges):
+				valid_badges.append(s_bid)
+	clean["unlocked_badges"] = valid_badges
+	clean["shift_boost_count"] = _safe_int(d.get("shift_boost_count", 0), 0, 0)
+	clean["calls_answered_count"] = _safe_int(d.get("calls_answered_count", 0), 0, 0)
 
 	clean["daily_log"] = SettingsStore.sanitize_daily_log(d.get("daily_log", []))
 
