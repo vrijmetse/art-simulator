@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cdl1gwdx1a2oa"
-path="res://.godot/imported/kampung_gang_Leaves_NormalTree_C.webp-ab4699c549336eefa360909078eae77b.ctex"
+path.etc2="res://.godot/imported/kampung_gang_Leaves_NormalTree_C.webp-ab4699c549336eefa360909078eae77b.etc2.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["etc2_astc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "881cf9a73037fb57fe480d64b6fe11f1"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://assets/models/kampung_gang_Leaves_NormalTree_C.webp"
-dest_files=["res://.godot/imported/kampung_gang_Leaves_NormalTree_C.webp-ab4699c549336eefa360909078eae77b.ctex"]
+dest_files=["res://.godot/imported/kampung_gang_Leaves_NormalTree_C.webp-ab4699c549336eefa360909078eae77b.etc2.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
@@ -39,5 +40,5 @@ process/premult_alpha=false
 process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
-process/size_limit=0
+process/size_limit=512
 detect_3d/compress_to=1

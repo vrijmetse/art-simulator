@@ -3,3 +3,7 @@ dist
 .git
 tests
 docs
+godot
+src
+public
+scripts

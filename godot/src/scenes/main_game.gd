@@ -432,6 +432,16 @@ func _unhandled_input(event: InputEvent) -> void:
 			if t > 0.0 and t < 40.0:
 				var hit := from + dir * t
 				player.set_tap_target(hit)
+	elif event is InputEventScreenTouch and event.pressed:
+		if _modal_backdrop != null and _modal_backdrop.visible:
+			return
+		var from := cam.project_ray_origin(event.position)
+		var dir := cam.project_ray_normal(event.position)
+		if absf(dir.y) > 0.01:
+			var t := -from.y / dir.y
+			if t > 0.0 and t < 40.0:
+				var hit := from + dir * t
+				player.set_tap_target(hit)
 
 func _on_joy_gui_input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:

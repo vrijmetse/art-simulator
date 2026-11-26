@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cago23k453vv4"
-path="res://.godot/imported/kos_room_grass_nrm.jpg-f33188125e6e2df2d882a069a9615750.ctex"
+path.etc2="res://.godot/imported/kos_room_grass_nrm.jpg-f33188125e6e2df2d882a069a9615750.etc2.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["etc2_astc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "21dbcf342b4f6a4db55db4926330e8b3"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://assets/models/kos_room_grass_nrm.jpg"
-dest_files=["res://.godot/imported/kos_room_grass_nrm.jpg-f33188125e6e2df2d882a069a9615750.ctex"]
+dest_files=["res://.godot/imported/kos_room_grass_nrm.jpg-f33188125e6e2df2d882a069a9615750.etc2.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
@@ -39,5 +40,5 @@ process/premult_alpha=false
 process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
-process/size_limit=0
+process/size_limit=512
 detect_3d/compress_to=1

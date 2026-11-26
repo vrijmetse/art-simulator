@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bnymvs80415ep"
-path="res://.godot/imported/cluster_elite_street_plaster_nrm.jpg-e5854cb1a5f735390f2a47b5b88255ba.ctex"
+path.etc2="res://.godot/imported/cluster_elite_street_plaster_nrm.jpg-e5854cb1a5f735390f2a47b5b88255ba.etc2.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["etc2_astc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "47051fbfa8a6fa6f1c4020df6dea9725"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://assets/models/cluster_elite_street_plaster_nrm.jpg"
-dest_files=["res://.godot/imported/cluster_elite_street_plaster_nrm.jpg-e5854cb1a5f735390f2a47b5b88255ba.ctex"]
+dest_files=["res://.godot/imported/cluster_elite_street_plaster_nrm.jpg-e5854cb1a5f735390f2a47b5b88255ba.etc2.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
@@ -39,5 +40,5 @@ process/premult_alpha=false
 process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
-process/size_limit=0
+process/size_limit=512
 detect_3d/compress_to=1
