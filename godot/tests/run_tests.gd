@@ -735,5 +735,35 @@ func _initialize() -> void:
 	_assert_true(AudioSynth.make_chore_tick().data.size() > 0, "chore tick SFX synthesized")
 	_assert_true(AudioSynth.make_footstep_tick().data.size() > 0, "footstep tick SFX synthesized")
 
+	# 23. Growth, Story Epilogue, Career Ranks & Level-Up Unlocks
+	var xpp0 := Progression.get_xp_progress(0)
+	_assert_eq(int(xpp0["level"]), 1, "xp 0 is level 1")
+	_assert_eq(int(xpp0["xp_in_level"]), 0, "xp 0 in-level is 0")
+	_assert_eq(int(xpp0["xp_needed"]), 40, "lv1->lv2 needs 40 xp")
+	var xpp50 := Progression.get_xp_progress(50)
+	_assert_eq(int(xpp50["level"]), 2, "xp 50 is level 2")
+	_assert_eq(int(xpp50["xp_in_level"]), 10, "xp 50 has 10 xp into level 2")
+	_assert_eq(int(xpp50["xp_needed"]), 120, "lv2->lv3 needs 120 xp (40..160)")
+
+	_assert_true(int(Progression.KOS_UPGRADES["kipas_angin"]["mood_bonus"]) > 0, "kipas_angin gives positive mood_bonus")
+	_assert_eq(Economy.get_career_rank(600, "id"), "ART Profesional", "rank 600")
+	_assert_eq(Economy.get_career_rank(1400, "id"), "Housekeeper Teladan", "rank 1400")
+
+	var unlocks := Progression.get_xp_unlocks(70, 90, "id")
+	_assert_true(unlocks.size() >= 1, "crossing 80 XP returns unlock summary lines")
+
+	var sv_ep := Progression.create_player_save()
+	sv_ep["xp"] = 1400
+	_assert_eq(ArtWishlistStory.is_epilogue_unlocked(sv_ep), false, "epilogue locked before all 4 wishlist items")
+	sv_ep["unlocked_wishlist"] = ArtWishlistStory.WISHLIST_ITEMS.keys()
+	_assert_eq(ArtWishlistStory.is_epilogue_unlocked(sv_ep), true, "epilogue unlocks with cluster_elite + 4 wishlist items")
+	var ep := ArtWishlistStory.get_unseen_epilogue(sv_ep)
+	_assert_eq(String(ep.get("id", "")), "ch_epilogue", "unseen epilogue returned")
+	var sv_ep_seen := ArtWishlistStory.mark_chapter_seen(sv_ep, "ch_epilogue")
+	_assert_true(ArtWishlistStory.get_unseen_epilogue(sv_ep_seen).is_empty(), "seen epilogue not repeated")
+	var sv_ep_rt := SaveStore.deserialize(SaveStore.serialize(sv_ep_seen))
+	_assert_true("ch_epilogue" in (sv_ep_rt["seen_chapters"] as Array), "SaveStore preserves ch_epilogue in seen_chapters")
+	_assert_eq(ArtWishlistStory.get_storybook_entries(sv_ep_seen, "id").size(), 6, "storybook lists 5 chapters + epilogue")
+
 	print("GODOT TDD RESULT: %d passed, %d failed" % [_passed, _failed])
 	quit(0 if _failed == 0 else 1)

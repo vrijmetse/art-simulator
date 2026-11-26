@@ -105,6 +105,7 @@ static func sanitize(raw: Variant) -> Dictionary:
 	var valid_ch_ids := {}
 	for tid in WishlistStory.STORY_CHAPTERS.keys():
 		valid_ch_ids[String(WishlistStory.STORY_CHAPTERS[tid]["id"])] = true
+	valid_ch_ids[String(WishlistStory.STORY_EPILOGUE["id"])] = true
 	var valid_seen: Array = []
 	var raw_seen: Variant = d.get("seen_chapters", [])
 	if typeof(raw_seen) == TYPE_ARRAY:

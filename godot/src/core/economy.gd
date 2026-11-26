@@ -16,6 +16,10 @@ static func award_contract(state: Dictionary, payout_rp: int, xp_gain: int) -> D
 	return next
 
 static func get_career_rank(xp: int, locale: String = "id") -> String:
+	if xp >= 1400:
+		return "Elite Housekeeper" if locale == "en" else "Housekeeper Teladan"
+	if xp >= 600:
+		return "Senior Housekeeper" if locale == "en" else "ART Profesional"
 	if xp >= 300:
 		return "Master Homekeeper" if locale == "en" else "ART Andalan"
 	if xp >= 150:

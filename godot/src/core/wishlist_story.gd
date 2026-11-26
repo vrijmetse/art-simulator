@@ -89,6 +89,62 @@ const STORY_CHAPTERS := {
 	},
 }
 
+const STORY_EPILOGUE := {
+	"id": "ch_epilogue",
+	"tier_id": "epilogue",
+	"title_id": "Epilog: Kisah Sukses Sang ART Teladan",
+	"title_en": "Epilogue: Story of a Model Homekeeper",
+	"body_id": "Cluster Elite sudah dipercaya padamu dan semua Impian ART telah terwujud—uang kiriman kampung, HP baru, tabungan kontrakan, hingga motor sendiri! Perjalananmu dari kamar kos sederhana kini menjadi inspirasi seluruh lingkungan.",
+	"body_en": "You mastered the Elite Cluster and achieved every ART Dream—supporting family back home, a new phone, rental savings, and your own scooter! Your journey from a humble kos room now inspires the entire neighborhood.",
+}
+
+static func is_epilogue_unlocked(save: Dictionary) -> bool:
+	var xp := int(save.get("xp", 0))
+	if not CareerTiers.can_access_tier("cluster_elite", xp):
+		return false
+	var unlocked: Array = save.get("unlocked_wishlist", [])
+	for raw_id in WISHLIST_ITEMS.keys():
+		if not (String(raw_id) in unlocked):
+			return false
+	return true
+
+static func get_unseen_epilogue(save: Dictionary) -> Dictionary:
+	if not is_epilogue_unlocked(save):
+		return {}
+	var seen: Array = save.get("seen_chapters", [])
+	if String(STORY_EPILOGUE["id"]) in seen:
+		return {}
+	return STORY_EPILOGUE
+
+static func get_storybook_entries(save: Dictionary, locale: String = "id") -> Array:
+	var out: Array = []
+	var xp := int(save.get("xp", 0))
+	for t in CareerTiers.TIERS:
+		var tid := String(t["id"])
+		var ch: Dictionary = STORY_CHAPTERS.get(tid, {})
+		if ch.is_empty():
+			continue
+		var unlocked := CareerTiers.can_access_tier(tid, xp)
+		out.append({
+			"id": String(ch["id"]),
+			"tier_id": tid,
+			"unlocked": unlocked,
+			"min_xp": int(t["min_xp"]),
+			"title": String(ch["title_en"] if locale == "en" else ch["title_id"]),
+			"body": String(ch["body_en"] if locale == "en" else ch["body_id"]),
+			"chapter": ch,
+		})
+	out.append({
+		"id": String(STORY_EPILOGUE["id"]),
+		"tier_id": "epilogue",
+		"unlocked": is_epilogue_unlocked(save),
+		"min_xp": 1400,
+		"title": String(STORY_EPILOGUE["title_en"] if locale == "en" else STORY_EPILOGUE["title_id"]),
+		"body": String(STORY_EPILOGUE["body_en"] if locale == "en" else STORY_EPILOGUE["body_id"]),
+		"chapter": STORY_EPILOGUE,
+	})
+	return out
+
 static func buy_wishlist_item(save: Dictionary, item_id: String) -> Dictionary:
 	if not WISHLIST_ITEMS.has(item_id):
 		return {"ok": false, "reason": "unknown_item", "save": save}

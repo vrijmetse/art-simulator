@@ -14,7 +14,7 @@ const KOS_UPGRADES := {
 		"id": "kipas_angin",
 		"cost_rp": 45000,
 		"energy_bonus": 10,
-		"mood_bonus": 0,
+		"mood_bonus": 4,
 		"tip_bonus_pct": 0.0,
 		"label_id": "Kipas Angin Baru (+10 Energi)",
 		"label_en": "New Standing Fan (+10 Energy)",
@@ -59,6 +59,42 @@ const KOS_UPGRADES := {
 
 static func level_from_xp(xp: int) -> int:
 	return 1 + int(floor(sqrt(float(maxi(0, xp)) / 40.0)))
+
+static func get_xp_progress(xp: int) -> Dictionary:
+	var cur := maxi(0, xp)
+	var lv := level_from_xp(cur)
+	var floor_xp := 40 * (lv - 1) * (lv - 1)
+	var next_xp := 40 * lv * lv
+	var in_lv := maxi(0, cur - floor_xp)
+	var needed := maxi(1, next_xp - floor_xp)
+	return {
+		"level": lv,
+		"current_xp": cur,
+		"floor_xp": floor_xp,
+		"next_xp": next_xp,
+		"xp_in_level": in_lv,
+		"xp_needed": needed,
+		"ratio": clampf(float(in_lv) / float(needed), 0.0, 1.0),
+	}
+
+static func get_xp_unlocks(prev_xp: int, new_xp: int, locale: String = "id") -> Array:
+	var out: Array = []
+	var prev_lv := level_from_xp(prev_xp)
+	var new_lv := level_from_xp(new_xp)
+	if new_lv > prev_lv:
+		var total_pct := int(round(get_level_tip_bonus(new_xp) * 100.0))
+		out.append(("Contract Bonus +%d%% (+4%%/Lv)" % total_pct) if locale == "en" else ("Bonus Gaji Kontrak +%d%% (+4%%/Lv)" % total_pct))
+	for t in CareerTiers.TIERS:
+		var tid := String(t["id"])
+		if CareerTiers.can_access_tier(tid, new_xp) and not CareerTiers.can_access_tier(tid, prev_xp):
+			var h_name := String(t.get("house_type_en", t["house_type"]) if locale == "en" else t["house_type"])
+			out.append(("New District Unlocked: %s" % h_name) if locale == "en" else ("Distrik Baru Terbuka: %s" % h_name))
+	for o in CareerTiers.OUTFIT_TIERS:
+		var oid := String(o["id"])
+		if CareerTiers.can_equip_outfit(oid, new_xp) and not CareerTiers.can_equip_outfit(oid, prev_xp):
+			var o_name := String(o.get("label_en", o["label_id"]) if locale == "en" else o["label_id"])
+			out.append(("New Uniform Unlocked: %s" % o_name) if locale == "en" else ("Seragam Baru Terbuka: %s" % o_name))
+	return out
 
 static func get_room_upgrade_title(_tier: Dictionary = {}, locale: String = "id") -> String:
 	return "Upgrade Room" if locale == "en" else "Upgrade Kamar"

@@ -5,6 +5,7 @@ const CareerTiers := preload("res://src/core/career_tiers.gd")
 const MajikanProfiles := preload("res://src/core/majikan_profiles.gd")
 const MajikanCall := preload("res://src/core/majikan_call.gd")
 const ChoreEngine := preload("res://src/core/chore_engine.gd")
+const Economy := preload("res://src/core/economy.gd")
 const Progression := preload("res://src/core/progression.gd")
 const SaveStore := preload("res://src/core/save_store.gd")
 const AudioSynth := preload("res://src/core/audio_synth.gd")
@@ -86,6 +87,7 @@ var _rain_player: AudioStreamPlayer
 var _step_player: AudioStreamPlayer
 var _audio_unlocked := false
 var _pending_story_tier := ""
+var _pending_level_unlocks: Array = []
 
 # HUD nodes
 var _lbl_balance: Label
@@ -966,6 +968,7 @@ func _finish_shift() -> void:
 	SaveStore.save_to_path(_save)
 	var new_lv := Progression.level_from_xp(int(_save.get("xp", 0)))
 	_pending_story_tier = WishlistStory.get_newly_unlocked_chapter_tier(prev_xp, int(_save.get("xp", 0)), _save)
+	_pending_level_unlocks = Progression.get_xp_unlocks(prev_xp, int(_save.get("xp", 0)), _loc()) if new_lv > prev_lv else []
 	if new_lv > prev_lv:
 		_play_sfx(_wav_fanfare)
 	else:
@@ -1418,6 +1421,22 @@ func _clear_modal() -> void:
 func _open_career_modal() -> void:
 	_clear_modal()
 	_modal_title.text = _t("Papan Lowongan & Tingkatan Karier", "Career Tiers & Job Board")
+	var xp := int(_save.get("xp", 0))
+	var xpp := Progression.get_xp_progress(xp)
+	var rank_str := Economy.get_career_rank(xp, _loc())
+	var bonus_pct := int(round(Progression.get_level_tip_bonus(xp) * 100.0))
+	var rank_lbl := Label.new()
+	rank_lbl.text = "%s • Lv.%d (%d/%d XP) • +%d%% %s" % [rank_str, int(xpp["level"]), int(xpp["xp_in_level"]), int(xpp["xp_needed"]), bonus_pct, _t("Kontrak", "Contract")]
+	rank_lbl.add_theme_font_size_override("font_size", 12)
+	rank_lbl.add_theme_color_override("font_color", Color(0.55, 0.96, 0.72))
+	_modal_list.add_child(rank_lbl)
+	var xp_bar := ProgressBar.new()
+	xp_bar.custom_minimum_size = Vector2(400, 10)
+	xp_bar.max_value = int(xpp["xp_needed"])
+	xp_bar.value = int(xpp["xp_in_level"])
+	xp_bar.show_percentage = false
+	_style_bar(xp_bar, Color(0.96, 0.78, 0.26), Color(0.16, 0.19, 0.24))
+	_modal_list.add_child(xp_bar)
 	var sk: Dictionary = _save.get("skill_xp", {})
 	var sk_lbl := Label.new()
 	sk_lbl.text = "%s: %s Lv.%d • %s Lv.%d • %s Lv.%d • %s Lv.%d" % [
@@ -1430,11 +1449,11 @@ func _open_career_modal() -> void:
 	sk_lbl.add_theme_font_size_override("font_size", 12)
 	sk_lbl.add_theme_color_override("font_color", Color(0.98, 0.84, 0.34))
 	_modal_list.add_child(sk_lbl)
-	var xp := int(_save.get("xp", 0))
+	var xp_cur_career := int(_save.get("xp", 0))
 	var cur_id := String(_save.get("active_tier_id", "kamar_kos"))
 	for t in CareerTiers.get_all_tiers():
 		var tid := String(t["id"])
-		var unlocked := CareerTiers.can_access_tier(tid, xp)
+		var unlocked := CareerTiers.can_access_tier(tid, xp_cur_career)
 		var btn := Button.new()
 		var badge := "✓ " if tid == cur_id else ""
 		var room_tag := _t(" + Kamar ART", " + Live-In Room") if bool(t["live_in_room_provided"]) else ""
@@ -1453,11 +1472,37 @@ func _open_career_modal() -> void:
 				_maybe_show_chapter_modal(tid)
 		)
 		_modal_list.add_child(btn)
+	var row_extra := HBoxContainer.new()
+	row_extra.add_theme_constant_override("separation", 8)
 	var btn_wish := Button.new()
-	btn_wish.text = _t("★ Impian ART (Wishlist)", "★ ART Dreams (Wishlist)")
+	btn_wish.text = _t("★ Impian ART (%d/4)" % (_save.get("unlocked_wishlist", []) as Array).size(), "★ ART Dreams (%d/4)" % (_save.get("unlocked_wishlist", []) as Array).size())
+	btn_wish.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_style_btn(btn_wish, Color(0.20, 0.44, 0.56), Color(0.96, 0.78, 0.26))
 	btn_wish.pressed.connect(_open_wishlist_modal)
-	_modal_list.add_child(btn_wish)
+	var btn_book := Button.new()
+	btn_book.text = _t("Buku Cerita", "Story Book")
+	btn_book.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_style_btn(btn_book, Color(0.32, 0.28, 0.48), Color(0.96, 0.78, 0.26))
+	btn_book.pressed.connect(_open_storybook_modal)
+	row_extra.add_child(btn_wish)
+	row_extra.add_child(btn_book)
+	_modal_list.add_child(row_extra)
+	_show_modal()
+
+func _open_storybook_modal() -> void:
+	_clear_modal()
+	_modal_title.text = _t("BUKU CERITA PERJALANAN ART", "ART JOURNEY STORY BOOK")
+	for entry in WishlistStory.get_storybook_entries(_save, _loc()):
+		var btn := Button.new()
+		var ok_u := bool(entry["unlocked"])
+		if ok_u:
+			btn.text = "✓ %s" % String(entry["title"])
+			var ch_dict: Dictionary = entry["chapter"]
+			btn.pressed.connect(func(): _open_chapter_modal(ch_dict))
+		else:
+			btn.text = "%s (%s %d XP)" % [String(entry["title"]), _t("Terkunci •", "Locked •"), int(entry["min_xp"])]
+			btn.disabled = true
+		_modal_list.add_child(btn)
 	_show_modal()
 
 func _maybe_show_chapter_modal(tier_id: String) -> void:
@@ -1517,7 +1562,11 @@ func _open_wishlist_modal() -> void:
 				SaveStore.save_to_path(_save)
 				_play_sfx(_wav_fanfare)
 				_show_toast(_t("Impian tercapai: %s! (+%d XP)" % [title, int(item["xp_bonus"])], "Dream achieved: %s! (+%d XP)" % [title, int(item["xp_bonus"])]), "player", "happy")
-				call_deferred("_open_wishlist_modal")
+				var ep := WishlistStory.get_unseen_epilogue(_save)
+				if not ep.is_empty():
+					call_deferred("_open_chapter_modal", ep)
+				else:
+					call_deferred("_open_wishlist_modal")
 				_refresh_hud()
 		)
 		_modal_list.add_child(btn)
@@ -1618,6 +1667,12 @@ func _open_levelup_modal(new_lv: int, res: Dictionary) -> void:
 	pay_lbl.add_theme_color_override("font_color", Color(0.45, 0.94, 0.44))
 	_modal_list.add_child(sub)
 	_modal_list.add_child(pay_lbl)
+	for ul in _pending_level_unlocks:
+		var ul_lbl := Label.new()
+		ul_lbl.text = "★ %s" % String(ul)
+		ul_lbl.add_theme_color_override("font_color", Color(0.98, 0.84, 0.34))
+		_modal_list.add_child(ul_lbl)
+	_pending_level_unlocks = []
 	_show_modal()
 
 func _open_rent_modal(res: Dictionary = {}, leveled_up_to: int = 0) -> void:
@@ -1640,6 +1695,12 @@ func _open_rent_modal(res: Dictionary = {}, leveled_up_to: int = 0) -> void:
 		lv_lbl.text = _t("★ NAIK KE LEVEL %d!" % leveled_up_to, "★ LEVEL UP TO %d!" % leveled_up_to)
 		lv_lbl.add_theme_color_override("font_color", Color(0.98, 0.84, 0.34))
 		_modal_list.add_child(lv_lbl)
+		for ul in _pending_level_unlocks:
+			var ul_lbl := Label.new()
+			ul_lbl.text = "• %s" % String(ul)
+			ul_lbl.add_theme_color_override("font_color", Color(0.55, 0.96, 0.72))
+			_modal_list.add_child(ul_lbl)
+		_pending_level_unlocks = []
 	if not res.is_empty():
 		var sum_lbl := Label.new()
 		var st_txt := _t("Dipecat" if bool(res.get("fired", false)) else "Shift Bagus", "Fired" if bool(res.get("fired", false)) else "Great Shift")
@@ -1818,6 +1879,11 @@ func _open_settings_modal() -> void:
 	btn_wish.text = _t("Impian ART (%d/4)" % (_save.get("unlocked_wishlist", []) as Array).size(), "ART Dreams (%d/4)" % (_save.get("unlocked_wishlist", []) as Array).size())
 	btn_wish.pressed.connect(_open_wishlist_modal)
 	_modal_list.add_child(btn_wish)
+
+	var btn_book := Button.new()
+	btn_book.text = _t("Buku Cerita ART", "ART Story Book")
+	btn_book.pressed.connect(_open_storybook_modal)
+	_modal_list.add_child(btn_book)
 
 	var btn_lang := Button.new()
 	btn_lang.text = _t("Bahasa: Indonesia (Ubah ke EN)", "Language: English (Switch to ID)")
@@ -2268,6 +2334,10 @@ func _build_hud() -> void:
 			var pt := _pending_story_tier
 			_pending_story_tier = ""
 			_maybe_show_chapter_modal(pt)
+		elif not _smoke_mode and _capture_path == "" and bool(_save.get("onboarding_done", false)):
+			var ep := WishlistStory.get_unseen_epilogue(_save)
+			if not ep.is_empty():
+				_open_chapter_modal(ep)
 	)
 	vb.add_child(hdr_pill)
 	vb.add_child(_modal_list)
