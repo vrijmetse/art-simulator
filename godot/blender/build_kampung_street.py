@@ -9,6 +9,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
 from tex_utils import (
     bake_scene_lightmap_uv2,
+    export_room_glb,
     generate_asphalt_textures,
     generate_batu_alam_texture,
     generate_license_plate,
@@ -20,6 +21,7 @@ from tex_utils import (
     generate_turf_texture,
     generate_wood_texture,
     make_pbr_material,
+    polish_scene_textures_1024,
 )
 
 GODOT_DIR = os.path.dirname(SCRIPT_DIR)
@@ -729,7 +731,7 @@ def build_scene():
 
     bake_scene_lightmap_uv2(
         os.path.join(GODOT_DIR, "assets", "lightmaps", "kampung_street_lightmap.png"),
-        size=1024, samples=12,
+        size=1024, samples=14,
         include_substrings=(
             "ground_", "sidewalk_", "road_", "gangground", "gangalley",
             "_body", "_terrace", "_porchroof",
@@ -738,9 +740,8 @@ def build_scene():
         ),
         lift_min=0.38, sun_energy=4.5, sun_rot_deg=(46.0, 0.0, 26.0), ambient_strength=0.34,
     )
-
-    os.makedirs(os.path.dirname(OUT_GLB), exist_ok=True)
-    bpy.ops.export_scene.gltf(filepath=OUT_GLB, export_format='GLB', export_apply=False, export_image_format='JPEG', export_jpeg_quality=70)
+    polish_scene_textures_1024()
+    export_room_glb(OUT_GLB, quality=88)
     print("EXPORTED V4 PERUMAHAN 36/72 STREET:", OUT_GLB, "bytes=", os.path.getsize(OUT_GLB))
 
 

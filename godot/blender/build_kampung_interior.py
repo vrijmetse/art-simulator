@@ -8,8 +8,14 @@ from mathutils import Vector
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
 from tex_utils import (
+    add_galon_dispenser_hd,
+    add_layered_broadleaf_plant,
+    add_magic_com_hd,
+    add_open_standing_fan_hd,
     bake_scene_lightmap_uv2,
+    export_room_glb,
     generate_fabric_weave_texture,
+    generate_foliage_texture,
     generate_plaster_ao_texture,
     generate_tile_textures,
     generate_turf_texture,
@@ -17,6 +23,7 @@ from tex_utils import (
     generate_wood_texture,
     generate_woven_rug_texture,
     make_pbr_material,
+    polish_scene_textures_1024,
     save_rgba_png,
 )
 
@@ -323,6 +330,14 @@ def build_kampung_house():
     import_kenney_glb("KitchenStove", "kitchenStove.glb", (1.52, 1.76, 0.0), rot_z=0.0, target_height=0.88)
     import_kenney_glb("TrashCan", "trashcan.glb", (2.15, 1.25, 0.0), rot_z=0.0, scale=1.65)
 
+    # HD Layered Broadleaf Plant + HD Fan + HD Magic Com + HD Galon Dispenser
+    mat_pot = make_solid_mat("KampungPot", (0.68, 0.30, 0.18), 0.72)
+    mat_soil = make_solid_mat("KampungSoil", (0.16, 0.11, 0.08), 0.92)
+    leaf_alb = generate_foliage_texture(TEX_DIR, "kampung_plant_hd", (0.14, 0.44, 0.16))
+    mat_leaf = make_pbr_material("KampungPlantLeaf", leaf_alb, 0.66)
+    add_layered_broadleaf_plant(-2.12, -1.65, mat_pot, mat_soil, mat_leaf, prefix="KampungPlant", scale=0.88)
+    add_open_standing_fan_hd(-2.10, 0.35, mat_dark, mat_teal, mat_metal, scale=0.92)
+
     # Green 3kg LPG Canister (Tabung Gas Melon) beside stove
     bpy.ops.mesh.primitive_uv_sphere_add(segments=18, ring_count=12, radius=0.155, location=(2.15, 1.78, 0.19))
     bpy.ops.object.shade_smooth()
@@ -331,31 +346,20 @@ def build_kampung_house():
     bpy.ops.object.shade_smooth()
     bpy.context.active_object.data.materials.append(mat_lpg_green)
 
-    # Indonesian Water Dispenser + Blue Aqua Galon Jug
-    add_beveled_box("DispenserBody", (0.32, 0.32, 0.88), (2.12, -0.45, 0.44), mat_ceramic_w, 0.018)
-    add_beveled_box("DispenserTapHot", (0.03, 0.03, 0.05), (1.94, -0.39, 0.70), mat_coral, 0.005)
-    add_beveled_box("DispenserTapCold", (0.03, 0.03, 0.05), (1.94, -0.51, 0.70), mat_teal, 0.005)
-    bpy.ops.mesh.primitive_cylinder_add(vertices=18, radius=0.13, depth=0.33, location=(2.12, -0.45, 1.05))
-    bpy.ops.object.shade_smooth()
-    bpy.context.active_object.data.materials.append(mat_aqua_blue)
-    bpy.ops.mesh.primitive_cylinder_add(vertices=16, radius=0.048, depth=0.08, location=(2.12, -0.45, 1.24))
-    bpy.ops.object.shade_smooth()
-    bpy.context.active_object.data.materials.append(mat_aqua_blue)
+    # Indonesian HD Water Dispenser + Clear PET Blue Aqua Galon Jug on Stand
+    add_beveled_box("DispenserStand", (0.34, 0.34, 0.46), (2.12, -0.45, 0.23), mat_wood, 0.015)
+    add_galon_dispenser_hd(2.12, -0.45, 0.46, mat_ceramic_w, mat_dark, mat_coral, mat_aqua_blue, prefix="Galon")
+    add_magic_com_hd(1.12, 1.74, 0.88, mat_ceramic_w, mat_coral, mat_metal, mat_dark)
 
     bake_scene_lightmap_uv2(
         os.path.join(GODOT_DIR, "assets", "lightmaps", "room_kampung_house_lightmap.png"),
-        size=1024, samples=16, lift_min=0.34, sun_energy=4.2, sun_rot_deg=(48.0, 0.0, 28.0), ambient_strength=0.32,
+        size=1024, samples=14,
+        exclude_substrings=("tree", "bush", "flower", "planter", "glass", "window", "kampungplantblade_", "fanspoke_", "fanhubbadge", "fanbtn_", "galonaquabottle", "galonwaterfill", "galonlabelband", "galoncap", "galontap", "magiccomled"),
+        lift_min=0.34, sun_energy=4.2, sun_rot_deg=(48.0, 0.0, 28.0), ambient_strength=0.32,
     )
     bake_cycles_ao(samples=6, ao_min=0.86, ao_max=1.0)
-
-    os.makedirs(os.path.dirname(OUT_GLB), exist_ok=True)
-    bpy.ops.export_scene.gltf(
-        filepath=OUT_GLB,
-        export_format='GLB',
-        export_apply=False,
-        export_image_format='JPEG',
-        export_jpeg_quality=75,
-    )
+    polish_scene_textures_1024()
+    export_room_glb(OUT_GLB, quality=88)
     print("EXPORTED KAMPUNG HOUSE:", OUT_GLB, "bytes=", os.path.getsize(OUT_GLB))
 
 

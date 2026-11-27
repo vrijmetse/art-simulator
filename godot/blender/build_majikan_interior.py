@@ -9,7 +9,12 @@ from mathutils import Vector
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
 from tex_utils import (
+    add_galon_dispenser_hd,
+    add_layered_broadleaf_plant,
+    add_magic_com_hd,
+    add_open_standing_fan_hd,
     bake_scene_lightmap_uv2,
+    export_room_glb,
     generate_fabric_weave_texture,
     generate_foliage_texture,
     generate_plaster_ao_texture,
@@ -19,6 +24,7 @@ from tex_utils import (
     generate_wood_texture,
     generate_woven_rug_texture,
     make_pbr_material,
+    polish_scene_textures_1024,
     save_rgba_png,
 )
 
@@ -332,16 +338,9 @@ def build_majikan_living():
     import_kenney_glb("Toaster", "toaster.glb", (1.92, 2.18, 0.90), rot_z=0.15, scale=1.65)
     import_kenney_glb("TrashCan", "trashcan.glb", (2.82, 1.55, 0.0), rot_z=0.0, scale=1.85)
 
-    # Indonesian Signature Details:
-    # 1. Rice Cooker (Magic Com) on Kitchen Cabinet
-    bpy.ops.mesh.primitive_cylinder_add(vertices=18, radius=0.11, depth=0.16, location=(1.28, 2.14, 0.98))
-    bpy.ops.object.shade_smooth()
-    bpy.context.active_object.data.materials.append(mat_ceramic_w)
-    bpy.ops.mesh.primitive_cylinder_add(vertices=18, radius=0.112, depth=0.035, location=(1.28, 2.14, 1.07))
-    bpy.ops.object.shade_smooth()
-    bpy.context.active_object.data.materials.append(mat_dark)
-    add_beveled_box("MagicComHandle", (0.07, 0.03, 0.025), (1.28, 2.14, 1.10), mat_metal, 0.005)
-    add_beveled_box("MagicComBtn", (0.04, 0.02, 0.03), (1.28, 2.025, 0.97), mat_coral, 0.004)
+    # Indonesian Signature Details (HD):
+    # 1. Spun Rice Cooker (Magic Com) on Kitchen Cabinet
+    add_magic_com_hd(1.28, 2.14, 0.90, mat_ceramic_w, mat_coral, mat_metal, mat_dark)
 
     # 2. Green 3kg LPG Canister (Tabung Gas Melon!) beside counter
     bpy.ops.mesh.primitive_uv_sphere_add(segments=18, ring_count=12, radius=0.16, location=(3.02, 2.18, 0.20))
@@ -351,17 +350,15 @@ def build_majikan_living():
     bpy.ops.object.shade_smooth()
     bpy.context.active_object.data.materials.append(mat_lpg_green)
 
-    # 3. Tall Indonesian Water Dispenser + Blue Aqua Galon Jug
-    add_beveled_box("DispenserBody", (0.34, 0.34, 0.92), (2.75, -0.55, 0.46), mat_ceramic_w, 0.02)
-    add_beveled_box("DispenserTray", (0.26, 0.14, 0.04), (2.56, -0.55, 0.62), mat_dark, 0.008)
-    add_beveled_box("DispenserTapHot", (0.03, 0.03, 0.05), (2.56, -0.49, 0.72), mat_coral, 0.005)
-    add_beveled_box("DispenserTapCold", (0.03, 0.03, 0.05), (2.56, -0.61, 0.72), mat_teal, 0.005)
-    bpy.ops.mesh.primitive_cylinder_add(vertices=18, radius=0.135, depth=0.34, location=(2.75, -0.55, 1.09))
-    bpy.ops.object.shade_smooth()
-    bpy.context.active_object.data.materials.append(mat_aqua_blue)
-    bpy.ops.mesh.primitive_cylinder_add(vertices=16, radius=0.05, depth=0.08, location=(2.75, -0.55, 1.29))
-    bpy.ops.object.shade_smooth()
-    bpy.context.active_object.data.materials.append(mat_aqua_blue)
+    # 3. Tall Indonesian HD Water Dispenser + Clear PET Blue Aqua Galon Jug + Layered Plant + HD Fan
+    add_beveled_box("DispenserStand", (0.36, 0.36, 0.48), (2.75, -0.55, 0.24), mat_wood, 0.015)
+    add_galon_dispenser_hd(2.75, -0.55, 0.48, mat_ceramic_w, mat_dark, mat_coral, mat_aqua_blue, prefix="Galon")
+    mat_pot = make_solid_mat("MajikanPot", (0.68, 0.30, 0.18), 0.72)
+    mat_soil = make_solid_mat("MajikanSoil", (0.16, 0.11, 0.08), 0.92)
+    leaf_alb = generate_foliage_texture(TEX_DIR, "majikan_plant_hd", (0.14, 0.44, 0.16))
+    mat_leaf = make_pbr_material("MajikanPlantLeaf", leaf_alb, 0.66)
+    add_layered_broadleaf_plant(-2.78, -2.05, mat_pot, mat_soil, mat_leaf, prefix="MajikanPlant", scale=0.95)
+    add_open_standing_fan_hd(2.80, 0.65, mat_dark, mat_teal, mat_metal, scale=0.98)
 
     # 4. Sandals by entry (front-right)
     for sx, sy, srot in [(2.45, -2.15, 0.15), (2.60, -2.18, 0.05)]:
@@ -370,17 +367,14 @@ def build_majikan_living():
 
     bake_scene_lightmap_uv2(
         os.path.join(GODOT_DIR, "assets", "lightmaps", "room_majikan_living_lightmap.png"),
-        size=1024, samples=16, lift_min=0.34, sun_energy=4.2, sun_rot_deg=(48.0, 0.0, 28.0), ambient_strength=0.32,
+        size=1024, samples=14,
+        exclude_substrings=("tree", "bush", "flower", "planter", "glass", "window", "majikanplantblade_", "fanspoke_", "fanhubbadge", "fanbtn_", "galonaquabottle", "galonwaterfill", "galonlabelband", "galoncap", "galontap", "magiccomled"),
+        lift_min=0.34, sun_energy=4.2, sun_rot_deg=(48.0, 0.0, 28.0), ambient_strength=0.32,
     )
     # Bake subtle Cycles AO (no double-darkening with UV2 lightmap)
     bake_cycles_ao(samples=6, ao_min=0.86, ao_max=1.0)
-
-    os.makedirs(os.path.dirname(OUT_GLB), exist_ok=True)
-    bpy.ops.export_scene.gltf(
-        filepath=OUT_GLB,
-        export_format='GLB',
-        export_apply=False,
-    )
+    polish_scene_textures_1024()
+    export_room_glb(OUT_GLB, quality=88)
     print("EXPORTED MAJIKAN LIVING:", OUT_GLB, "bytes=", os.path.getsize(OUT_GLB))
 
 

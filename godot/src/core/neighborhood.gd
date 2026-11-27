@@ -246,3 +246,29 @@ static func claim_tip(state: Dictionary, npc_id: String, date_key: String) -> Di
 	next["balance_rp"] = int(state.get("balance_rp", 0)) + int(found["tip_rp"])
 	next["xp"] = int(state.get("xp", 0)) + 4
 	return {"claimed": true, "tip_rp": int(found["tip_rp"]), "state": next}
+
+static func get_reactive_greeting(npc_id: String, tier_id: String, phase: String, weather: String, locale: String = "id") -> String:
+	var en := (locale == "en")
+	if weather == "hujan":
+		match npc_id:
+			"bang_ojek":
+				return "Rain is pouring! Grab your raincoat before heading out." if en else "Wah hujan turun nih! Pakai jas hujan dulu sebelum jalan ya Mbak."
+			"pak_rt":
+				return "During heavy rain, clean gutters keep our whole street dry. Thank you!" if en else "Musim hujan gini selokan bersih bikin gang aman dari banjir. Makasih ya!"
+			"ibu_sari", "ibu_melati", "ibu_citra":
+				return "It's raining outside—careful on the wet porch tiles, have a warm tea!" if en else "Di luar lagi hujan, hati-hati terasnya licin ya. Jangan lupa minum teh hangat!"
+			_:
+				return "Stay dry in this rain and keep up the warm spirit today!" if en else "Hati-hati di tengah hujan ya, tetap semangat kerja hari ini!"
+	if phase == "malam" or phase == "sore":
+		if npc_id == "mbak_dewi" or npc_id == "kakak_maya" or npc_id == "kakak_nadine":
+			return "Evening already! Don't forget to rest after wrapping up today." if en else "Udah sore menuju malam nih! Jangan lupa istirahat habis beres-beres ya."
+		if npc_id == "pak_agus" or npc_id == "pak_budi" or npc_id == "pak_hendra":
+			return "Working hard into the evening! Remember to grab dinner and recharge." if en else "Masih semangat sampai malam, jangan lupa makan malam dan jaga kesehatan!"
+	if tier_id == "cluster_elite" and (npc_id == "pak_rt" or npc_id == "ibu_citra" or npc_id == "pak_hendra"):
+		return "From a small kos to Elite Cluster—everyone here respects your dedication!" if en else "Dari kamar kos sampai dipercaya di Cluster Elite—warga bangga sama ketekunanmu!"
+	elif tier_id == "perumahan_45" and (npc_id == "ibu_melati" or npc_id == "ibu_sari"):
+		return "So happy to hear you got your own live-in room in Tipe 45 now!" if en else "Senang dengar sekarang kamu sudah punya kamar sendiri di Rumah Tipe 45!"
+	for spec in NEIGHBORS:
+		if String(spec.get("id", "")) == npc_id:
+			return String(spec.get("greeting_en" if en else "greeting_id", ""))
+	return "Have a great shift today!" if en else "Semangat kerja hari ini ya!"

@@ -26,21 +26,29 @@ def make_mat(name, rgb, roughness=0.55, metallic=0.0, emission=0.0):
     return mat
 
 
-def add_box(name, loc, scale, mat):
+def add_box(name, loc, scale, mat, bevel=0.028):
     bpy.ops.mesh.primitive_cube_add(size=1.0, location=loc)
     obj = bpy.context.active_object
     obj.name = name
     obj.scale = scale
+    bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+    if bevel > 0.0:
+        b = obj.modifiers.new("Bevel", 'BEVEL')
+        b.width = bevel
+        b.segments = 1
+        bpy.ops.object.modifier_apply(modifier="Bevel")
+    bpy.ops.object.shade_smooth()
     obj.data.materials.append(mat)
     return obj
 
 
-def add_cyl(name, loc, radius, depth, rot_euler, mat, verts=12):
+def add_cyl(name, loc, radius, depth, rot_euler, mat, verts=16):
     bpy.ops.mesh.primitive_cylinder_add(
         vertices=verts, radius=radius, depth=depth, location=loc, rotation=rot_euler
     )
     obj = bpy.context.active_object
     obj.name = name
+    bpy.ops.object.shade_smooth()
     obj.data.materials.append(mat)
     return obj
 
@@ -94,20 +102,21 @@ def build_angkot():
     objs.append(add_box("RearWindow", (-1.28, 0.0, 1.12), (0.06, 0.96, 0.36), mat_glass))
     objs.append(add_box("SideWindows", (-0.14, 0.0, 1.12), (1.85, 1.20, 0.36), mat_glass))
 
-    # Bumpers
-    objs.append(add_box("FrontBumper", (1.39, 0.0, 0.34), (0.10, 1.26, 0.16), mat_bumper))
-    objs.append(add_box("RearBumper", (-1.39, 0.0, 0.34), (0.10, 1.26, 0.16), mat_bumper))
+    # Bumpers & Plate
+    objs.append(add_box("FrontBumper", (1.39, 0.0, 0.34), (0.10, 1.26, 0.16), mat_bumper, bevel=0.02))
+    objs.append(add_box("RearBumper", (-1.39, 0.0, 0.34), (0.10, 1.26, 0.16), mat_bumper, bevel=0.02))
+    objs.append(add_box("FrontPlate", (1.445, 0.0, 0.34), (0.02, 0.34, 0.10), mat_bumper, bevel=0.004))
 
     # Headlights & taillights
     for sy in (-0.42, 0.42):
-        objs.append(add_box(f"Head_{sy}", (1.39, sy, 0.56), (0.05, 0.20, 0.12), mat_headlight))
-        objs.append(add_box(f"Tail_{sy}", (-1.39, sy, 0.56), (0.05, 0.18, 0.14), mat_taillight))
+        objs.append(add_box(f"Head_{sy}", (1.39, sy, 0.56), (0.05, 0.20, 0.12), mat_headlight, bevel=0.01))
+        objs.append(add_box(f"Tail_{sy}", (-1.39, sy, 0.56), (0.05, 0.18, 0.14), mat_taillight, bevel=0.01))
 
     # 4 Wheels (radius 0.24 -> center at z=0.24)
     for wx in (-0.82, 0.84):
         for wy in (-0.60, 0.60):
-            objs.append(add_cyl(f"Tire_{wx}_{wy}", (wx, wy, 0.24), 0.24, 0.16, (math.pi / 2.0, 0.0, 0.0), mat_tire, verts=12))
-            objs.append(add_cyl(f"Rim_{wx}_{wy}", (wx, wy, 0.24), 0.13, 0.17, (math.pi / 2.0, 0.0, 0.0), mat_rim, verts=10))
+            objs.append(add_cyl(f"Tire_{wx}_{wy}", (wx, wy, 0.24), 0.24, 0.16, (math.pi / 2.0, 0.0, 0.0), mat_tire, verts=16))
+            objs.append(add_cyl(f"Rim_{wx}_{wy}", (wx, wy, 0.24), 0.13, 0.17, (math.pi / 2.0, 0.0, 0.0), mat_rim, verts=12))
 
     join_and_export(objs, OUT_ANGKOT, "VehAngkot")
 
@@ -132,11 +141,13 @@ def build_motor():
     objs.append(add_box("FrontShield", (0.38, 0.0, 0.60), (0.20, 0.30, 0.44), mat_body))
     objs.append(add_box("Seat", (-0.18, 0.0, 0.64), (0.58, 0.24, 0.11), mat_seat))
 
-    # Handlebars & fork
-    objs.append(add_box("Handlebar", (0.36, 0.0, 0.86), (0.07, 0.56, 0.06), mat_metal))
-    objs.append(add_box("Headlight", (0.49, 0.0, 0.76), (0.06, 0.14, 0.10), mat_headlight))
-    objs.append(add_box("Taillight", (-0.54, 0.0, 0.56), (0.05, 0.12, 0.08), mat_taillight))
-    objs.append(add_cyl("Exhaust", (-0.28, -0.16, 0.24), 0.04, 0.52, (0.0, math.pi / 2.0, 0.0), mat_metal, verts=8))
+    # Handlebars & fork + mirrors
+    objs.append(add_box("Handlebar", (0.36, 0.0, 0.86), (0.07, 0.56, 0.06), mat_metal, bevel=0.015))
+    objs.append(add_box("MirrorL", (0.35, -0.24, 0.96), (0.04, 0.10, 0.07), mat_seat, bevel=0.01))
+    objs.append(add_box("MirrorR", (0.35, 0.24, 0.96), (0.04, 0.10, 0.07), mat_seat, bevel=0.01))
+    objs.append(add_box("Headlight", (0.49, 0.0, 0.76), (0.06, 0.14, 0.10), mat_headlight, bevel=0.01))
+    objs.append(add_box("Taillight", (-0.54, 0.0, 0.56), (0.05, 0.12, 0.08), mat_taillight, bevel=0.01))
+    objs.append(add_cyl("Exhaust", (-0.28, -0.16, 0.24), 0.04, 0.52, (0.0, math.pi / 2.0, 0.0), mat_metal, verts=10))
 
     join_and_export(objs, OUT_MOTOR, "VehMotor")
 

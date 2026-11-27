@@ -6,16 +6,23 @@ import bpy
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
 from tex_utils import (
+    add_layered_broadleaf_plant,
+    add_open_standing_fan_hd,
     bake_scene_lightmap_uv2,
+    ensure_uv0,
+    export_room_glb,
     generate_fabric_weave_texture,
     generate_foliage_texture,
     generate_plaster_ao_texture,
+    generate_rattan_textures,
     generate_tile_textures,
     generate_turf_texture,
     generate_wall_art_padi,
     generate_woven_rug_texture,
     generate_wood_texture,
     make_pbr_material,
+    polish_scene_textures_1024,
+    spin_profile,
 )
 
 GODOT_DIR = os.path.dirname(SCRIPT_DIR)
@@ -203,9 +210,28 @@ def build_neighbor_room():
     add_box("NbRug", (2.05, 1.50, 0.024), (-0.35, -0.35, 0.014), mat_rug, 0.01)
     add_box("NbPouf", (0.46, 0.46, 0.26), (-1.15, -0.65, 0.13), mat_terracotta, 0.04)
 
-    # 4. Potted Plant on RIGHT front corner (1.72, -1.05 -> Godot +1.72, +1.05) + Laundry Basket
-    import_kenney_glb("NbPlant", "pottedPlant.glb", (1.72, -1.05, 0.0), rot_z=0.45, target_height=0.95)
-    add_box("NbLaundryBin", (0.38, 0.38, 0.44), (-1.75, -1.05, 0.22), mat_terracotta, 0.03)
+    # 4. Sculpted Layered Plant + Rattan Laundry Hamper + HD Standing Fan
+    mat_pot = make_solid_mat("NbPot", (0.68, 0.30, 0.18), 0.72)
+    mat_soil = make_solid_mat("NbSoil", (0.16, 0.11, 0.08), 0.92)
+    leaf_alb = generate_foliage_texture(TEX_DIR, "nb_plant_hd", (0.14, 0.44, 0.16))
+    mat_leaf = make_pbr_material("NbPlantLeaf", leaf_alb, 0.66)
+    rattan_alb, rattan_nrm = generate_rattan_textures(TEX_DIR, "nb_rattan_hd", size=512)
+    mat_rattan = make_pbr_material("NbRattan", rattan_alb, 0.78, rattan_nrm, 0.50, (2.0, 2.0))
+    mat_metal = make_solid_mat("NbMetal", (0.74, 0.76, 0.80), 0.25, 0.85)
+    mat_teal = make_solid_mat("NbTeal", (0.18, 0.52, 0.50), 0.72)
+
+    add_layered_broadleaf_plant(1.72, -1.05, mat_pot, mat_soil, mat_leaf, prefix="NbPlant", scale=0.95)
+    basket_prof = [
+        (0.001, 0.0), (0.145, 0.0), (0.155, 0.02), (0.205, 0.40),
+        (0.220, 0.42), (0.220, 0.44), (0.200, 0.44), (0.190, 0.40),
+        (0.140, 0.02), (0.001, 0.02),
+    ]
+    spin_profile("NbLaundryBin", basket_prof, (-1.75, -1.05, 0.0), mat_rattan, steps=24, uv_mode='SMART')
+    add_open_standing_fan_hd(-1.82, 0.78, mat_dark, mat_teal, mat_metal, scale=0.92)
+    add_box("NbCrownBack", (4.76, 0.08, 0.08), (0.0, 2.29, 2.70), mat_wood, 0.01)
+    add_box("NbCrownLeft", (0.08, 4.76, 0.08), (-2.29, 0.0, 2.70), mat_wood, 0.01)
+    add_box("NbDadoBack", (4.74, 0.04, 0.04), (0.0, 2.29, 0.85), mat_wood, 0.006)
+    add_box("NbDadoLeft", (0.04, 4.74, 0.04), (-2.29, 0.0, 0.85), mat_wood, 0.006)
 
     # 5. Sapu broom leaning near desk
     bpy.ops.mesh.primitive_cylinder_add(vertices=8, radius=0.018, depth=1.16, location=(-1.38, 1.86, 0.62), rotation=(0, math.radians(8), 0))
@@ -214,12 +240,14 @@ def build_neighbor_room():
 
     bake_scene_lightmap_uv2(
         os.path.join(GODOT_DIR, "assets", "lightmaps", "kos_neighbor_room_lightmap.png"),
-        size=1024, samples=16, lift_min=0.34, sun_energy=4.2, sun_rot_deg=(48.0, 0.0, 28.0), ambient_strength=0.32,
+        size=1024, samples=14,
+        exclude_substrings=("tree", "bush", "flower", "planter", "glass", "window", "nbplantblade_", "fanspoke_", "fanhubbadge", "fanbtn_"),
+        lift_min=0.34, sun_energy=4.2, sun_rot_deg=(48.0, 0.0, 28.0), ambient_strength=0.32,
     )
+    polish_scene_textures_1024()
 
     total_verts = sum(len(o.data.vertices) for o in bpy.data.objects if o.type == 'MESH' and o.data)
-    os.makedirs(os.path.dirname(OUT_GLB), exist_ok=True)
-    bpy.ops.export_scene.gltf(filepath=OUT_GLB, export_format='GLB', export_apply=False, export_image_format='JPEG')
+    export_room_glb(OUT_GLB, quality=88)
     print(f"EXPORTED KOS NEIGHBOR ROOM: {OUT_GLB} verts={total_verts} bytes={os.path.getsize(OUT_GLB)}")
 
 

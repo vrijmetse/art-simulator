@@ -15,6 +15,7 @@ from build_kampung_street import (
     make_solid_mat,
 )
 from tex_utils import (
+    export_room_glb,
     generate_batu_alam_texture,
     generate_plaster_ao_texture,
     generate_terracotta_textures,
@@ -22,6 +23,7 @@ from tex_utils import (
     generate_turf_texture,
     generate_wood_texture,
     make_pbr_material,
+    polish_scene_textures_1024,
 )
 
 GODOT_DIR = os.path.dirname(SCRIPT_DIR)
@@ -231,11 +233,10 @@ def build_gang_kampung():
             "leaves": (0.16, 0.36, 0.15), "flowers": (0.90, 0.30, 0.46),
         })
 
-    bake_gang_lightmap_uv2(OUT_LM, size=1024, samples=20)
+    bake_gang_lightmap_uv2(OUT_LM, size=1024, samples=14)
     bake_cycles_ao()
-
-    os.makedirs(os.path.dirname(OUT_GLB), exist_ok=True)
-    bpy.ops.export_scene.gltf(filepath=OUT_GLB, export_format='GLB', export_apply=False, export_image_format='JPEG', export_jpeg_quality=85)
+    polish_scene_textures_1024()
+    export_room_glb(OUT_GLB, quality=88)
     print("EXPORTED HIGH-DETAIL GANG KAMPUNG:", OUT_GLB, "bytes=", os.path.getsize(OUT_GLB))
 
 

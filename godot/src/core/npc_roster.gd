@@ -85,8 +85,8 @@ static func get_shift_npcs(tier_id: String) -> Array:
 					"label_id": "Kakak Nadine",
 					"label_en": "Kakak Nadine",
 					"model_path": "res://assets/models/char_kakak.glb",
-					"pos": Vector3(1.15, 0.0, 0.35),
-					"rot_y": 1.15,
+					"pos": Vector3(-0.20, 0.0, 0.10),
+					"rot_y": -0.45,
 					"anim": "Idle",
 				},
 				{
@@ -95,8 +95,8 @@ static func get_shift_npcs(tier_id: String) -> Array:
 					"label_id": "Mbak Rina",
 					"label_en": "Mbak Rina",
 					"model_path": "res://assets/models/char_rina.glb",
-					"pos": Vector3(2.15, 0.0, 0.55),
-					"rot_y": -1.35,
+					"pos": Vector3(0.65, 0.0, -0.65),
+					"rot_y": 0.45,
 					"anim": "Idle",
 				},
 			]

@@ -227,3 +227,30 @@ static func advance_tutorial(save: Dictionary, target_step: int = -1) -> Diction
 	else:
 		nxt["tutorial_step"] = clampi(cur + 1, 0, 4)
 	return nxt
+
+const MILESTONE_QUOTES := {
+	"kamar_kos": {
+		"id": "\"Kamar kos boleh sempit, tapi mimpiku harus tetap luas.\"",
+		"en": "\"My kos room may be small, but my dreams will always be big.\"",
+	},
+	"kampung": {
+		"id": "\"Satu rumah percaya, satu gang ikut tersenyum ramah.\"",
+		"en": "\"Earn one family's trust, and the whole kampung smiles with you.\"",
+	},
+	"perumahan_36": {
+		"id": "\"Keringat hari ini adalah bekal kiriman kampung bulan depan.\"",
+		"en": "\"Today's hard work pays for tomorrow's support back home.\"",
+	},
+	"perumahan_45": {
+		"id": "\"Punya kamar sendiri tanpa sewa—napas terasa lebih lega.\"",
+		"en": "\"A clean live-in room with zero rent—every step feels lighter.\"",
+	},
+	"cluster_elite": {
+		"id": "\"Dari sapu ijuk di kosan hingga dipercaya menjaga Cluster Elite!\"",
+		"en": "\"From a humble broom in a kos room to caring for Elite Cluster homes!\"",
+	},
+}
+
+static func get_tier_milestone_quote(tier_id: String, locale: String = "id") -> String:
+	var entry: Dictionary = MILESTONE_QUOTES.get(tier_id, MILESTONE_QUOTES["kamar_kos"])
+	return String(entry.get("en" if locale == "en" else "id", ""))

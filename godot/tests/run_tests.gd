@@ -1114,5 +1114,156 @@ func _initialize() -> void:
 	_assert_true("platform=\"iOS\"" in ep_txt, "export_presets.cfg includes iOS export preset")
 	_assert_true(FileAccess.file_exists(ProjectSettings.globalize_path("res://../.github/workflows/ios-build.yml")), "iOS macOS GitHub workflow exists")
 
+	# 32. Production HD Visual Core (AgX, RID-Cached Unified Pass, Layer-0 Sharpen, Atmosphere Sync)
+	_assert_true(ResourceLoader.exists("res://shaders/hd_detail.gdshader"), "hd_detail.gdshader exists")
+	_assert_true(ResourceLoader.exists("res://shaders/hd_sharpen.gdshader"), "hd_sharpen.gdshader exists")
+	var hd_detail_sh := load("res://shaders/hd_detail.gdshader") as Shader
+	var hd_sharp_sh := load("res://shaders/hd_sharpen.gdshader") as Shader
+	_assert_true(hd_detail_sh != null and hd_sharp_sh != null, "HD production shaders load")
+
+	var cache_test := {}
+	var shared_mat := StandardMaterial3D.new()
+	shared_mat.resource_name = "FloorTile"
+	var m1 := MeshInstance3D.new()
+	var m2 := MeshInstance3D.new()
+	var arr_lm := []
+	arr_lm.resize(Mesh.ARRAY_MAX)
+	arr_lm[Mesh.ARRAY_VERTEX] = PackedVector3Array([Vector3.ZERO, Vector3.RIGHT, Vector3.FORWARD])
+	arr_lm[Mesh.ARRAY_TEX_UV] = PackedVector2Array([Vector2.ZERO, Vector2.RIGHT, Vector2.DOWN])
+	arr_lm[Mesh.ARRAY_TEX_UV2] = PackedVector2Array([Vector2.ZERO, Vector2.RIGHT, Vector2.DOWN])
+	arr_lm[Mesh.ARRAY_COLOR] = PackedColorArray([Color.WHITE, Color.WHITE, Color.WHITE])
+	var am_lm := ArrayMesh.new()
+	am_lm.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr_lm)
+	am_lm.surface_set_material(0, shared_mat)
+	m1.name = "FloorSlab"
+	m1.mesh = am_lm
+	m2.name = "FloorTrim"
+	m2.mesh = am_lm
+	var test_root := Node3D.new()
+	test_root.add_child(m1)
+	test_root.add_child(m2)
+	var ol_mat := ArtSceneVisuals.ensure_detail_outline_material()
+	_assert_true(ol_mat != null, "ensure_detail_outline_material returns ShaderMaterial")
+	var lm_u_img := Image.create(8, 8, false, Image.FORMAT_RGBA8)
+	lm_u_img.fill(Color(0.8, 0.78, 0.75, 1.0))
+	var lm_u_tex := ImageTexture.create_from_image(lm_u_img)
+	ArtSceneVisuals.apply_unified_material_pass(test_root, true, false, ol_mat, cache_test, lm_u_tex, true)
+	var ov1 := m1.get_surface_override_material(0) as StandardMaterial3D
+	var ov2 := m2.get_surface_override_material(0) as StandardMaterial3D
+	_assert_true(ov1 != null and ov1 == ov2, "RID material cache shares override across matching surfaces")
+	_assert_true(absf(ov1.roughness - 0.20) < 0.01, "floor tile gets crisp 0.20 roughness")
+	_assert_true(ov1.detail_enabled and ov1.detail_albedo == lm_u_tex, "unified pass folds UV2 lightmap cleanly")
+	_assert_true(ov1.vertex_color_use_as_albedo, "unified pass folds COLOR_0 AO cleanly")
+	test_root.free()
+
+	var mg_ps := load("res://scenes/main_game.tscn") as PackedScene
+	_assert_true(mg_ps != null, "main_game.tscn loads")
+	if mg_ps != null:
+		var mg_inst := mg_ps.instantiate()
+		var wenv := mg_inst.find_child("WorldEnvironment", true, false) as WorldEnvironment
+		var sunl := mg_inst.find_child("SunLight", true, false) as DirectionalLight3D
+		var sp_layer := mg_inst.find_child("SharpenPost", true, false) as CanvasLayer
+		var hud_layer := mg_inst.find_child("HUD", true, false) as CanvasLayer
+		_assert_true(wenv != null and wenv.environment.tonemap_mode == Environment.TONE_MAPPER_AGX, "main_game uses AgX tonemapper")
+		_assert_true(wenv != null and absf(wenv.environment.glow_bloom) < 0.001, "main_game disables soft bloom haze")
+		_assert_true(sunl != null and sunl.directional_shadow_mode == DirectionalLight3D.SHADOW_ORTHOGONAL, "main_game uses tight orthogonal shadow map")
+		_assert_true(sp_layer != null and hud_layer != null and sp_layer.layer == 0 and sp_layer.layer < hud_layer.layer, "SharpenPost sits on layer 0 below HUD")
+		mg_inst.free()
+
+	_assert_true("MagicComBody" in ArtAtmosphere.RICE_COOKER_NODES, "Atmosphere RICE_COOKER_NODES covers Formula 2 MagicComBody")
+	_assert_true("FanHubBadge" in ArtAtmosphere.FAN_NODES, "Atmosphere FAN_NODES covers Formula 2 FanHubBadge")
+
+	# 33. Formula 1 Cast Rollout (15 Characters: Casual Walk Posture, Sculpted Hair, Zero Sphere Caps, Vert Budget)
+	var hero_chars := ["char_art", "char_art_hijab", "char_art_pro", "char_art_elite"]
+	var npc_chars := ["char_ibu", "char_kakak", "char_budi", "char_dewi", "char_pak_rt", "char_ojek", "char_kurir", "char_pelajar", "char_hendra", "char_rina", "char_agus"]
+	for cname in hero_chars + npc_chars:
+		var c_ps := load("res://assets/models/%s.glb" % cname) as PackedScene
+		_assert_true(c_ps != null, "character loads: " + cname)
+		if c_ps != null:
+			var ci := c_ps.instantiate()
+			var split_verts := 0
+			var has_sphere_cap := false
+			var cq := [ci]
+			while cq.size() > 0:
+				var cnode = cq.pop_back()
+				if cnode is MeshInstance3D:
+					var cmi := cnode as MeshInstance3D
+					var nm := cmi.name.to_lower()
+					if "haircap" in nm or "ponytailcap" in nm or "cepolbun" in nm:
+						has_sphere_cap = true
+					if cmi.mesh != null:
+						for s in range(cmi.mesh.get_surface_count()):
+							split_verts += cmi.mesh.surface_get_arrays(s)[Mesh.ARRAY_VERTEX].size()
+				for ch in cnode.get_children():
+					cq.append(ch)
+			var cap_limit := 14500 if (cname in hero_chars) else 10500
+			_assert_true(split_verts <= cap_limit, "%s split verts (%d) <= %d" % [cname, split_verts, cap_limit])
+			if cname in ["char_art", "char_art_pro", "char_art_elite", "char_dewi", "char_pelajar"]:
+				_assert_true(not has_sphere_cap, "%s replaces sphere HairCap with sculpted hair" % cname)
+			ci.free()
+
+	var walk_ps := load("res://assets/models/char_art.glb") as PackedScene
+	if walk_ps != null:
+		var wi := walk_ps.instantiate()
+		root.add_child(wi)
+		var wap := wi.find_child("AnimationPlayer", true, false) as AnimationPlayer
+		var wskel := wi.find_child("Skeleton3D", true, false) as Skeleton3D
+		_assert_true(wap != null and wskel != null, "char_art has AnimationPlayer + Skeleton3D")
+		if wap != null and wskel != null:
+			var w_clip := ""
+			for aname in wap.get_animation_list():
+				if aname.to_lower() == "walk" or aname.to_lower().begins_with("walk_"):
+					w_clip = aname
+					break
+			_assert_true(w_clip != "", "char_art has Walk clip")
+			if w_clip != "":
+				wap.play(w_clip)
+				wap.seek(0.25, true)
+				wap.advance(0.0)
+				var b_sp := wskel.find_bone("spine_01")
+				var b_nk := wskel.find_bone("neck_01")
+				var b_la := wskel.find_bone("lowerarm_l")
+				var b_ra := wskel.find_bone("lowerarm_r")
+				_assert_true(b_sp >= 0 and b_nk >= 0 and b_la >= 0 and b_ra >= 0, "char_art skeleton has spine/neck/lowerarm bones")
+				if b_sp >= 0 and b_nk >= 0 and b_la >= 0 and b_ra >= 0:
+					var sp_deg := rad_to_deg(wskel.get_bone_pose_rotation(b_sp).get_angle())
+					var nk_deg := rad_to_deg(wskel.get_bone_pose_rotation(b_nk).get_angle())
+					var la_deg := rad_to_deg(wskel.get_bone_pose_rotation(b_la).get_angle())
+					var ra_deg := rad_to_deg(wskel.get_bone_pose_rotation(b_ra).get_angle())
+					_assert_true(sp_deg < 10.0 and nk_deg < 10.0, "char_art Walk upright spine/neck (<10 deg, got %.1f/%.1f)" % [sp_deg, nk_deg])
+					_assert_true(la_deg < 40.0 and ra_deg < 40.0, "char_art Walk relaxed elbows (<40 deg, got %.1f/%.1f)" % [la_deg, ra_deg])
+		root.remove_child(wi)
+		wi.free()
+
+	# 34. Reactive Dialogue, Story Milestones & Chore Juice
+	var g_rain_id: String = Neighborhood.get_reactive_greeting("bang_ojek", "kamar_kos", "pagi", "hujan", "id")
+	var g_rain_en: String = Neighborhood.get_reactive_greeting("bang_ojek", "kamar_kos", "pagi", "hujan", "en")
+	var g_sun_id: String = Neighborhood.get_reactive_greeting("bang_ojek", "kamar_kos", "pagi", "cerah", "id")
+	_assert_true(g_rain_id != "" and g_rain_id != g_sun_id and ("hujan" in g_rain_id.to_lower()), "Bang Ojek reacts to rain in Indonesian")
+	_assert_true(g_rain_en != "" and ("rain" in g_rain_en.to_lower()) and not ("hujan" in g_rain_en.to_lower()), "Bang Ojek reacts to rain in English without ID leak")
+
+	var g_elite_id: String = Neighborhood.get_reactive_greeting("pak_rt", "cluster_elite", "siang", "cerah", "id")
+	var g_kos_id: String = Neighborhood.get_reactive_greeting("pak_rt", "kamar_kos", "siang", "cerah", "id")
+	_assert_true(g_elite_id != g_kos_id and ("elite" in g_elite_id.to_lower()), "Pak RT reacts to Cluster Elite career growth")
+
+	var g_night_id: String = Neighborhood.get_reactive_greeting("mbak_dewi", "kamar_kos", "malam", "cerah", "id")
+	var g_day_id: String = Neighborhood.get_reactive_greeting("mbak_dewi", "kamar_kos", "pagi", "cerah", "id")
+	_assert_true(g_night_id != g_day_id, "Mbak Dewi reacts to malam/night phase")
+
+	for t_dict in CareerTiers.TIERS:
+		var tid := String(t_dict["id"])
+		var q_id: String = ArtWishlistStory.get_tier_milestone_quote(tid, "id")
+		var q_en: String = ArtWishlistStory.get_tier_milestone_quote(tid, "en")
+		_assert_true(q_id.length() > 15 and q_en.length() > 15 and q_id != q_en, "Milestone quote localized for " + tid)
+
+	var mg_txt := FileAccess.get_file_as_string("res://src/scenes/main_game.gd")
+	_assert_true("get_reactive_greeting" in mg_txt, "main_game uses ArtNeighborhood.get_reactive_greeting")
+	_assert_true("_cam_punch" in mg_txt, "main_game includes chore completion micro-camera punch")
+	var elite_npcs: Array = NpcRoster.get_shift_npcs("cluster_elite")
+	for enpc in elite_npcs:
+		if String(enpc.get("id", "")) == "kakak_nadine":
+			var npos: Vector3 = enpc.get("pos", Vector3.ZERO)
+			_assert_true(npos.x < 0.0, "Kakak Nadine spawns clear of cluster_elite marble kitchen island")
+
 	print("GODOT TDD RESULT: %d passed, %d failed" % [_passed, _failed])
 	quit(0 if _failed == 0 else 1)

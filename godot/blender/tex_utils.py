@@ -650,3 +650,326 @@ def bake_scene_lightmap_uv2(
     bpy.data.materials.remove(bake_mat)
     bpy.data.images.remove(bake_img)
     print("BAKED SCENE LIGHTMAP UV2:", out_png_path, "targets=", len(target_objs))
+
+
+def ensure_uv0(obj, mode: str = 'CUBE'):
+    if obj.type != 'MESH':
+        return
+    if not obj.data.uv_layers:
+        obj.data.uv_layers.new(name="UVMap")
+    obj.data.uv_layers.active = obj.data.uv_layers[0]
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.select_all(action='DESELECT')
+    obj.select_set(True)
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_all(action='SELECT')
+    if mode == 'RESET':
+        bpy.ops.uv.reset()
+    elif mode == 'SMART':
+        bpy.ops.uv.smart_project(angle_limit=math.radians(66), island_margin=0.01)
+    else:
+        cube_sz = max(0.2, max(obj.dimensions) * 0.6)
+        bpy.ops.uv.cube_project(cube_size=cube_sz)
+    bpy.ops.object.mode_set(mode='OBJECT')
+
+
+def spin_profile(name: str, profile_rz, loc, mat, steps: int = 24, smooth: bool = True, uv_mode: str = 'CUBE', rot=(0.0, 0.0, 0.0)):
+    import bmesh
+    mesh = bpy.data.meshes.new(name)
+    obj = bpy.data.objects.new(name, mesh)
+    bpy.context.collection.objects.link(obj)
+    bm = bmesh.new()
+    verts = [bm.verts.new((r, 0.0, z)) for r, z in profile_rz]
+    for i in range(len(verts) - 1):
+        bm.edges.new((verts[i], verts[i + 1]))
+    bmesh.ops.spin(
+        bm,
+        geom=bm.verts[:] + bm.edges[:],
+        cent=(0.0, 0.0, 0.0),
+        axis=(0.0, 0.0, 1.0),
+        angle=math.radians(360.0),
+        steps=steps,
+        use_merge=True,
+    )
+    bmesh.ops.remove_doubles(bm, verts=bm.verts[:], dist=1e-4)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    if smooth:
+        for f in bm.faces:
+            f.smooth = True
+    bm.to_mesh(mesh)
+    bm.free()
+    obj.location = loc
+    obj.rotation_euler = rot
+    bpy.context.view_layer.objects.active = obj
+    if smooth:
+        bpy.ops.object.shade_smooth()
+    obj.data.materials.append(mat)
+    ensure_uv0(obj, mode=uv_mode)
+    return obj
+
+
+def generate_rattan_textures(tex_dir: str, prefix: str = "rattan_woven_hd", size: int = 1024):
+    yy, xx = np.mgrid[0:size, 0:size].astype(np.float32)
+    cells = 16.0
+    u = (xx / size) * cells
+    v = (yy / size) * cells
+    iu = np.floor(u).astype(np.int32)
+    iv = np.floor(v).astype(np.int32)
+    fu = u - iu
+    fv = v - iv
+
+    horiz_on_top = ((iu + iv) % 2) == 0
+    h_arch = np.sin(np.clip(fv, 0.0, 1.0) * math.pi)
+    v_arch = np.sin(np.clip(fu, 0.0, 1.0) * math.pi)
+    height = np.where(horiz_on_top, h_arch * 0.85 + 0.15, v_arch * 0.85 + 0.15)
+    fiber = 0.06 * np.sin((np.where(horiz_on_top, fv, fu)) * 28.0)
+    height = np.clip(height + fiber, 0.0, 1.0)
+
+    r = 0.56 + 0.26 * height
+    g = 0.42 + 0.22 * height
+    b = 0.24 + 0.14 * height
+    alb_rgba = np.stack([r, g, b, np.ones_like(r)], axis=-1).astype(np.float32)
+    alb_img = save_rgba_png(f"{prefix}_alb", alb_rgba, tex_dir, non_color=False)
+    nrm_img = save_rgba_png(f"{prefix}_nrm", _height_to_normal(height, 2.6), tex_dir, non_color=True)
+    return alb_img, nrm_img
+
+
+def add_sculpted_plant_blade(name: str, base_loc, angle_z: float, length: float, width: float, arch_out: float, leaf_mat):
+    import bmesh
+    mesh = bpy.data.meshes.new(name)
+    obj = bpy.data.objects.new(name, mesh)
+    bpy.context.collection.objects.link(obj)
+    bm = bmesh.new()
+    segs = 8
+    rows = []
+    for i in range(segs + 1):
+        t = i / float(segs)
+        y_loc = arch_out * (t ** 1.35)
+        z_loc = length * (t - 0.32 * t * t)
+        w = width * math.sin(math.pi * (t ** 0.72)) if i < segs else 0.0
+        if i == segs:
+            rows.append([bm.verts.new((0.0, y_loc, z_loc))])
+        else:
+            rows.append([
+                bm.verts.new((-w * 0.5, y_loc, z_loc + w * 0.16)),
+                bm.verts.new((0.0, y_loc, z_loc)),
+                bm.verts.new((w * 0.5, y_loc, z_loc + w * 0.16)),
+            ])
+    for i in range(segs - 1):
+        r0, r1 = rows[i], rows[i + 1]
+        bm.faces.new((r0[0], r0[1], r1[1], r1[0]))
+        bm.faces.new((r0[1], r0[2], r1[2], r1[1]))
+    r_last = rows[segs - 1]
+    tip = rows[segs][0]
+    bm.faces.new((r_last[0], r_last[1], tip))
+    bm.faces.new((r_last[1], r_last[2], tip))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    bm.to_mesh(mesh)
+    bm.free()
+    obj.location = base_loc
+    obj.rotation_euler = (0.0, 0.0, angle_z)
+    bpy.context.view_layer.objects.active = obj
+    sub = obj.modifiers.new("Subsurf", 'SUBSURF')
+    sub.levels = 1
+    sub.render_levels = 1
+    bpy.ops.object.modifier_apply(modifier="Subsurf")
+    bpy.ops.object.shade_smooth()
+    obj.data.materials.append(leaf_mat)
+    ensure_uv0(obj, mode='SMART')
+    return obj
+
+
+def add_layered_broadleaf_plant(x: float, y: float, pot_mat, soil_mat, leaf_mat, prefix: str = "Plant", scale: float = 1.0):
+    def _cyl(nm, r, d, loc, verts=16):
+        bpy.ops.mesh.primitive_cylinder_add(vertices=verts, radius=r, depth=d, location=loc)
+        o = bpy.context.active_object
+        o.name = nm
+        bpy.ops.object.shade_smooth()
+        return o
+
+    _cyl(f"{prefix}Saucer", 0.21 * scale, 0.035 * scale, (x, y, 0.018 * scale), 18).data.materials.append(pot_mat)
+    bpy.ops.mesh.primitive_cone_add(vertices=18, radius1=0.14 * scale, radius2=0.19 * scale, depth=0.34 * scale, location=(x, y, 0.20 * scale))
+    pot = bpy.context.active_object
+    pot.name = f"{prefix}PotBody"
+    bpy.ops.object.shade_smooth()
+    pot.data.materials.append(pot_mat)
+    _cyl(f"{prefix}PotRim", 0.205 * scale, 0.055 * scale, (x, y, 0.365 * scale), 18).data.materials.append(pot_mat)
+    _cyl(f"{prefix}Soil", 0.175 * scale, 0.03 * scale, (x, y, 0.35 * scale), 14).data.materials.append(soil_mat)
+    for i in range(10):
+        ang = i * (2.0 * math.pi / 10.0) + (0.18 if i % 2 == 0 else -0.14)
+        blade_len = (0.44 + (i % 3) * 0.13) * scale
+        blade_w = (0.095 + (i % 2) * 0.022) * scale
+        arch_out = (0.18 + (i % 3) * 0.075) * scale
+        rad_off = (0.02 + (i % 3) * 0.022) * scale
+        add_sculpted_plant_blade(
+            f"{prefix}Blade_{i}",
+            (x + math.cos(ang) * rad_off, y + math.sin(ang) * rad_off, 0.35 * scale),
+            ang, blade_len, blade_w, arch_out, leaf_mat,
+        )
+
+
+def add_open_standing_fan_hd(x: float, y: float, dark_mat, teal_mat, metal_mat, scale: float = 1.0):
+    def _cyl(nm, r, d, loc, rot=(0.0, 0.0, 0.0), verts=14, mat=metal_mat):
+        bpy.ops.mesh.primitive_cylinder_add(vertices=verts, radius=r, depth=d, location=loc, rotation=rot)
+        o = bpy.context.active_object
+        o.name = nm
+        bpy.ops.object.shade_smooth()
+        o.data.materials.append(mat)
+        return o
+
+    def _box(nm, sz, loc, mat, bev=0.003, rot=(0.0, 0.0, 0.0)):
+        bpy.ops.mesh.primitive_cube_add(size=1.0, location=loc, rotation=rot)
+        o = bpy.context.active_object
+        o.name = nm
+        o.scale = sz
+        bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+        if bev > 0:
+            b = o.modifiers.new("Bevel", 'BEVEL')
+            b.width = bev
+            b.segments = 2
+            bpy.ops.object.modifier_apply(modifier="Bevel")
+        bpy.ops.object.shade_smooth()
+        o.data.materials.append(mat)
+        ensure_uv0(o, mode='CUBE')
+        return o
+
+    _cyl("FanBase", 0.18 * scale, 0.036 * scale, (x, y, 0.018 * scale), verts=16, mat=dark_mat)
+    _cyl("FanPole", 0.018 * scale, 0.92 * scale, (x, y, 0.48 * scale), verts=12, mat=metal_mat)
+    hz = 0.98 * scale
+    cowl_prof = [(0.001, -0.07 * scale), (0.042 * scale, -0.06 * scale), (0.058 * scale, -0.02 * scale), (0.055 * scale, 0.04 * scale), (0.028 * scale, 0.065 * scale), (0.001, 0.07 * scale)]
+    spin_profile("FanMotorCowl", cowl_prof, (x, y + 0.03 * scale, hz), dark_mat, steps=20, rot=(math.pi * 0.5, 0, 0))
+    for r_name, ry in (("FanGuardRingFront", y - 0.065 * scale), ("FanGuardRingBack", y - 0.005 * scale)):
+        bpy.ops.mesh.primitive_torus_add(
+            major_radius=0.19 * scale, minor_radius=0.008 * scale, major_segments=24, minor_segments=8,
+            location=(x, ry, hz), rotation=(math.pi * 0.5, 0, 0)
+        )
+        ring = bpy.context.active_object
+        ring.name = r_name
+        bpy.ops.object.shade_smooth()
+        ring.data.materials.append(metal_mat)
+        ensure_uv0(ring, mode='CUBE')
+    for s in range(4):
+        ang = s * (math.pi / 4.0)
+        _cyl(f"FanSpoke_{s}", 0.0018 * scale, 0.365 * scale, (x, y - 0.065 * scale, hz), rot=(0.0, ang, 0.0), verts=6, mat=metal_mat)
+    _cyl("FanHubBadge", 0.036 * scale, 0.016 * scale, (x, y - 0.068 * scale, hz), rot=(math.pi * 0.5, 0.0, 0.0), verts=14, mat=teal_mat)
+    for bi in range(3):
+        _box(f"FanBtn_{bi}", (0.018 * scale, 0.022 * scale, 0.014 * scale), (x + (-0.03 + bi * 0.03) * scale, y - 0.11 * scale, 0.038 * scale), teal_mat if bi == 1 else metal_mat, 0.003 * scale)
+    for b in range(3):
+        ang = b * (2.0 * math.pi / 3.0)
+        _box(f"FanBlade_{b}", (0.055 * scale, 0.008 * scale, 0.155 * scale), (x + math.cos(ang) * 0.08 * scale, y - 0.035 * scale, hz + math.sin(ang) * 0.08 * scale), teal_mat, 0.004 * scale, (0.28, ang, 0.0))
+
+
+def add_galon_dispenser_hd(x: float, y: float, z: float, white_mat, dark_mat, hot_mat, cold_mat, prefix: str = "Galon"):
+    def _mat(nm, rgba, rgh=0.12, alpha=1.0):
+        m = bpy.data.materials.new(nm)
+        m.use_nodes = True
+        bsdf = m.node_tree.nodes["Principled BSDF"]
+        bsdf.inputs["Base Color"].default_value = rgba
+        bsdf.inputs["Roughness"].default_value = rgh
+        if alpha < 1.0:
+            bsdf.inputs["Alpha"].default_value = alpha
+            m.blend_method = 'BLEND'
+        return m
+
+    def _cyl(nm, r, d, loc, mat, rot=(0.0, 0.0, 0.0), verts=20):
+        bpy.ops.mesh.primitive_cylinder_add(vertices=verts, radius=r, depth=d, location=loc, rotation=rot)
+        o = bpy.context.active_object
+        o.name = nm
+        bpy.ops.object.shade_smooth()
+        o.data.materials.append(mat)
+        return o
+
+    disp_prof = [(0.001, 0.0), (0.142, 0.0), (0.145, 0.03), (0.138, 0.29), (0.145, 0.31), (0.125, 0.32), (0.001, 0.32)]
+    spin_profile(f"{prefix}DispenserTower", disp_prof, (x, y, z), white_mat, steps=28)
+    _cyl(f"{prefix}TapHot", 0.012, 0.035, (x - 0.13, y - 0.08, z + 0.18), hot_mat, rot=(math.radians(45), math.pi * 0.5, 0), verts=10)
+    _cyl(f"{prefix}TapCold", 0.012, 0.035, (x - 0.07, y - 0.13, z + 0.18), cold_mat, rot=(math.radians(45), math.pi * 0.5, 0), verts=10)
+
+    mat_water = _mat(f"{prefix}WaterFillMat", (0.12, 0.54, 0.88, 1.0), 0.10, 0.58)
+    mat_pet = _mat(f"{prefix}PETMat", (0.58, 0.84, 0.98, 1.0), 0.06, 0.32)
+    mat_lbl = _mat(f"{prefix}LabelMat", (0.08, 0.38, 0.78, 1.0), 0.32, 1.0)
+    _cyl(f"{prefix}WaterFill", 0.122, 0.22, (x, y, z + 0.48), mat_water, verts=24)
+    _cyl(f"{prefix}LabelBand", 0.140, 0.065, (x, y, z + 0.56), mat_lbl, verts=28)
+    _cyl(f"{prefix}Cap", 0.042, 0.035, (x, y, z + 0.335), mat_lbl, verts=16)
+    galon_prof = [
+        (0.001, 0.0), (0.038, 0.0), (0.038, 0.04), (0.125, 0.09),
+        (0.138, 0.14), (0.130, 0.17), (0.138, 0.20), (0.130, 0.23),
+        (0.138, 0.26), (0.130, 0.29), (0.138, 0.33), (0.120, 0.37),
+        (0.065, 0.395), (0.001, 0.40),
+    ]
+    g_obj = spin_profile(f"{prefix}AquaBottle", galon_prof, (x, y, z + 0.32), mat_pet, steps=32, uv_mode='SMART')
+    g_obj.data.use_auto_smooth = False
+
+
+def add_magic_com_hd(x: float, y: float, z: float, body_mat, lid_mat, metal_mat, dark_mat):
+    mc_body_prof = [(0.001, 0.0), (0.125, 0.0), (0.132, 0.03), (0.132, 0.17), (0.122, 0.19), (0.001, 0.19)]
+    spin_profile("MagicComBody", mc_body_prof, (x, y, z), body_mat, steps=24)
+    mc_lid_prof = [(0.001, 0.0), (0.124, 0.0), (0.118, 0.025), (0.075, 0.052), (0.001, 0.058)]
+    spin_profile("MagicComLid", mc_lid_prof, (x, y, z + 0.19), lid_mat, steps=24)
+    bpy.ops.mesh.primitive_cylinder_add(vertices=12, radius=0.022, depth=0.024, location=(x, y, z + 0.252))
+    v = bpy.context.active_object
+    v.name = "MagicComVent"
+    bpy.ops.object.shade_smooth()
+    v.data.materials.append(metal_mat)
+    mat_led = bpy.data.materials.new("MagicComLedGlow")
+    mat_led.use_nodes = True
+    bsdf = mat_led.node_tree.nodes["Principled BSDF"]
+    bsdf.inputs["Base Color"].default_value = (1.0, 0.48, 0.12, 1.0)
+    bsdf.inputs["Emission Color"].default_value = (1.0, 0.48, 0.12, 1.0)
+    bsdf.inputs["Emission Strength"].default_value = 1.6
+    bpy.ops.mesh.primitive_cube_add(size=1.0, location=(x - 0.12, y - 0.04, z + 0.08))
+    led = bpy.context.active_object
+    led.name = "MagicComLED"
+    led.scale = (0.012, 0.024, 0.014)
+    bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+    led.data.materials.append(mat_led)
+
+
+def polish_scene_textures_1024():
+    """Fast C-buffer 1024px upscale + micro-contrast polish, skipping uniform swatches (std < 0.01) to prevent VRAM bloat."""
+    seen_imgs = set()
+    for img in bpy.data.images:
+        if img.name in seen_imgs:
+            continue
+        if any(skip in img.name.lower() for skip in ("render", "viewer", "lightmap", "normal", "_nrm")):
+            continue
+        seen_imgs.add(img.name)
+        w, h = img.size[0], img.size[1]
+        if w <= 0 or h <= 0:
+            continue
+        flat = np.empty(w * h * 4, dtype=np.float32)
+        img.pixels.foreach_get(flat)
+        px = flat.reshape(-1, 4)
+        # Skip uniform/solid swatches (e.g., flat Kenney colormaps or solid buffers)
+        if float(np.std(px[:, :3])) < 0.01:
+            img.pack()
+            continue
+        if w < 1024:
+            nw = 1024
+            nh = max(64, int(round(h * (1024.0 / w))))
+            img.scale(nw, nh)
+            w, h = nw, nh
+            flat = np.empty(w * h * 4, dtype=np.float32)
+            img.pixels.foreach_get(flat)
+            px = flat.reshape(-1, 4)
+        px[:, :3] = np.clip((px[:, :3] - 0.5) * 1.08 + 0.5, 0.0, 1.0)
+        new_img = bpy.data.images.new(f"{img.name}_hd", width=w, height=h, alpha=True, float_buffer=False)
+        new_img.colorspace_settings.name = img.colorspace_settings.name
+        new_img.pixels.foreach_set(flat)
+        new_img.pack()
+        for m in bpy.data.materials:
+            if m and m.use_nodes:
+                for node in m.node_tree.nodes:
+                    if node.type == 'TEX_IMAGE' and node.image == img:
+                        node.image = new_img
+        seen_imgs.add(new_img.name)
+
+
+def export_room_glb(filepath: str, quality: int = 88):
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+    bpy.ops.export_scene.gltf(
+        filepath=filepath,
+        export_format='GLB',
+        export_apply=False,
+        export_image_format='JPEG',
+        export_jpeg_quality=quality,
+    )

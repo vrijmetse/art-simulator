@@ -8,17 +8,24 @@ from mathutils import Vector
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
 from tex_utils import (
+    add_layered_broadleaf_plant,
+    add_open_standing_fan_hd,
     bake_scene_lightmap_uv2,
+    export_room_glb,
     generate_fabric_weave_texture,
+    generate_foliage_texture,
     generate_laptop_ui,
     generate_plaster_ao_texture,
+    generate_rattan_textures,
     generate_tile_textures,
     generate_turf_texture,
     generate_wall_art_padi,
     generate_wood_texture,
     generate_woven_rug_texture,
     make_pbr_material,
+    polish_scene_textures_1024,
     save_rgba_png,
+    spin_profile,
 )
 
 GODOT_DIR = os.path.dirname(SCRIPT_DIR)
@@ -306,14 +313,24 @@ def build_kamar_art_small():
     add_beveled_box("SmallWallFrame", (0.44, 0.03, 0.34), (-0.88, 1.49, 1.45), mat_wood, 0.01)
     add_beveled_box("SmallWallArt", (0.36, 0.02, 0.26), (-0.88, 1.475, 1.45), mat_cream, 0.004)
 
-    # Compact standing fan (clear of bed & plant)
-    add_open_standing_fan(-0.08, -0.78, mat_dark, mat_teal, mat_metal, scale=0.85)
+    # Compact standing fan (HD) & layered plant
+    mat_pot = make_solid_mat("SmallPot", (0.68, 0.30, 0.18), 0.72)
+    mat_soil = make_solid_mat("SmallSoil", (0.16, 0.11, 0.08), 0.92)
+    leaf_alb = generate_foliage_texture(TEX_DIR, "small_plant_hd", (0.14, 0.44, 0.16))
+    mat_leaf = make_pbr_material("SmallLeaf", leaf_alb, 0.66)
+    rattan_alb, rattan_nrm = generate_rattan_textures(TEX_DIR, "small_rattan_hd", size=512)
+    mat_rattan = make_pbr_material("SmallRattan", rattan_alb, 0.78, rattan_nrm, 0.50, (2.0, 2.0))
+    add_open_standing_fan_hd(-0.08, -0.78, mat_dark, mat_teal, mat_metal, scale=0.85)
+    add_layered_broadleaf_plant(-1.25, -1.12, mat_pot, mat_soil, mat_leaf, prefix="SmallPlant", scale=0.72)
 
-    # Laundry basket + sapu ijuk broom
-    bpy.ops.mesh.primitive_cone_add(vertices=14, radius1=0.15, radius2=0.20, depth=0.40, location=(1.10, 0.15, 0.20))
-    bpy.ops.object.shade_smooth()
-    bpy.context.active_object.data.materials.append(mat_wicker)
-    add_beveled_box("LaundryCloth", (0.22, 0.20, 0.07), (1.10, 0.15, 0.42), mat_teal, 0.025)
+    # Spun rattan laundry basket + sapu ijuk broom
+    basket_prof = [
+        (0.001, 0.0), (0.135, 0.0), (0.145, 0.02), (0.185, 0.38),
+        (0.200, 0.40), (0.200, 0.42), (0.180, 0.42), (0.172, 0.38),
+        (0.130, 0.02), (0.001, 0.02),
+    ]
+    spin_profile("LaundryBasket", basket_prof, (1.10, 0.15, 0.0), mat_rattan, steps=24, uv_mode='SMART')
+    add_beveled_box("LaundryCloth", (0.22, 0.20, 0.07), (1.10, 0.15, 0.40), mat_teal, 0.025)
 
     bpy.ops.mesh.primitive_cylinder_add(vertices=8, radius=0.016, depth=1.12, location=(1.38, -0.45, 0.62), rotation=(math.radians(6), 0, 0))
     bpy.ops.object.shade_smooth()
@@ -322,16 +339,13 @@ def build_kamar_art_small():
 
     bake_scene_lightmap_uv2(
         os.path.join(GODOT_DIR, "assets", "lightmaps", "kamar_art_small_lightmap.png"),
-        size=1024, samples=16, lift_min=0.34, sun_energy=4.2, sun_rot_deg=(48.0, 0.0, 28.0), ambient_strength=0.32,
+        size=1024, samples=14,
+        exclude_substrings=("tree", "bush", "flower", "planter", "glass", "window", "smallplantblade_", "fanspoke_", "fanhubbadge", "fanbtn_"),
+        lift_min=0.34, sun_energy=4.2, sun_rot_deg=(48.0, 0.0, 28.0), ambient_strength=0.32,
     )
     bake_cycles_ao(samples=6, ao_min=0.86, ao_max=1.0)
-
-    os.makedirs(os.path.dirname(OUT_SMALL), exist_ok=True)
-    bpy.ops.export_scene.gltf(
-        filepath=OUT_SMALL,
-        export_format='GLB',
-        export_apply=False,
-    )
+    polish_scene_textures_1024()
+    export_room_glb(OUT_SMALL, quality=88)
     print("EXPORTED KAMAR ART SMALL:", OUT_SMALL, "bytes=", os.path.getsize(OUT_SMALL))
 
 
@@ -429,7 +443,16 @@ def build_kamar_art_large():
     add_beveled_box("LaptopBase", (0.36, 0.25, 0.02), (0.95, 1.86, 0.77), mat_dark, 0.008)
     add_beveled_box("LaptopScreen", (0.32, 0.01, 0.20), (0.95, 1.97, 0.88), mat_screen, 0.0, (math.radians(-15), 0, 0))
 
-    # Full Wardrobe + Vanity Mirror
+    # Full Wardrobe + Vanity Mirror + HD Fan & Layered Plant
+    mat_pot = make_solid_mat("LargePot", (0.68, 0.30, 0.18), 0.72)
+    mat_soil = make_solid_mat("LargeSoil", (0.16, 0.11, 0.08), 0.92)
+    leaf_alb = generate_foliage_texture(TEX_DIR, "large_plant_hd", (0.14, 0.44, 0.16))
+    mat_leaf = make_pbr_material("LargeLeaf", leaf_alb, 0.66)
+    mat_metal = make_solid_mat("LargeMetal", (0.74, 0.76, 0.80), 0.25, 0.85)
+    mat_teal = make_solid_mat("LargeTeal", (0.18, 0.52, 0.50), 0.72)
+    add_open_standing_fan_hd(2.35, 1.35, mat_dark, mat_teal, mat_metal, scale=1.0)
+    add_layered_broadleaf_plant(-2.05, -2.25, mat_pot, mat_soil, mat_leaf, prefix="LargePlant", scale=0.95)
+
     add_beveled_box("WardrobeBody", (0.56, 0.86, 1.94), (-2.02, -1.45, 0.97), mat_wood, 0.025)
     add_beveled_box("WardHandleL", (0.04, 0.025, 0.14), (-1.72, -1.40, 0.98), mat_brass, 0.005)
     add_beveled_box("WardHandleR", (0.04, 0.025, 0.14), (-1.72, -1.50, 0.98), mat_brass, 0.005)
@@ -438,16 +461,13 @@ def build_kamar_art_large():
 
     bake_scene_lightmap_uv2(
         os.path.join(GODOT_DIR, "assets", "lightmaps", "kamar_art_large_lightmap.png"),
-        size=1024, samples=16, lift_min=0.34, sun_energy=4.2, sun_rot_deg=(48.0, 0.0, 28.0), ambient_strength=0.32,
+        size=1024, samples=14,
+        exclude_substrings=("tree", "bush", "flower", "planter", "glass", "window", "largeplantblade_", "fanspoke_", "fanhubbadge", "fanbtn_"),
+        lift_min=0.34, sun_energy=4.2, sun_rot_deg=(48.0, 0.0, 28.0), ambient_strength=0.32,
     )
     bake_cycles_ao(samples=6, ao_min=0.86, ao_max=1.0)
-
-    os.makedirs(os.path.dirname(OUT_LARGE), exist_ok=True)
-    bpy.ops.export_scene.gltf(
-        filepath=OUT_LARGE,
-        export_format='GLB',
-        export_apply=False,
-    )
+    polish_scene_textures_1024()
+    export_room_glb(OUT_LARGE, quality=88)
     print("EXPORTED KAMAR ART LARGE:", OUT_LARGE, "bytes=", os.path.getsize(OUT_LARGE))
 
 

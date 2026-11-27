@@ -93,10 +93,14 @@ var _pending_level_unlocks: Array = []
 var _shift_event: Dictionary = {}
 var _clock_accum := 0.0
 var _late_night_warned_day := 0
+var _cam_punch := 0.0
 var _last_prayer_id := ""
 var _is_sleeping := false
 var _tasks_collapsed := false
 var _btn_tasks_toggle: Button
+var _stage_mat_cache: Dictionary = {}
+var _actor_mat_cache: Dictionary = {}
+var _outline_mat: ShaderMaterial = null
 
 # HUD nodes
 var _lbl_balance: Label
@@ -443,6 +447,10 @@ func _refresh_atmosphere() -> void:
 	_cur_weather = Atmosphere.get_weather(day, bool(_save.get("weather_fx", true)))
 	var env := world_env.environment if world_env != null else null
 	Atmosphere.apply_lighting(sun_light, bounce_light, env, _cur_phase, _cur_weather)
+	if sun_light != null:
+		sun_light.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL
+		sun_light.directional_shadow_max_distance = 16.0 if _world_mode == "street" else 11.0
+		sun_light.shadow_blur = 0.85 if _world_mode == "street" else 0.72
 	Atmosphere.sync_stage_lights(stage_root, _world_mode, _cur_phase)
 	if _rain_particles != null:
 		_rain_particles.emitting = (_world_mode == "street" and _cur_weather == "hujan")
@@ -477,8 +485,14 @@ func _spawn_street_traffic(tier_id: String) -> void:
 		_traffic_items.append(item.duplicate(true))
 		_traffic_nodes.append(v_inst)
 
+func _ensure_outline() -> ShaderMaterial:
+	if _outline_mat == null:
+		_outline_mat = SceneVisuals.ensure_detail_outline_material()
+	return _outline_mat
+
 func _load_stage_glb(glb_path: String) -> void:
 	_fan_blades.clear()
+	_stage_mat_cache.clear()
 	for c in stage_root.get_children():
 		c.queue_free()
 	var resolved := glb_path
@@ -488,13 +502,10 @@ func _load_stage_glb(glb_path: String) -> void:
 	if packed != null:
 		var inst := packed.instantiate()
 		stage_root.add_child(inst)
-		SceneVisuals.apply_baked_ao(inst)
 		var stage_base := resolved.get_file().get_basename()
 		var lm_path := "res://assets/lightmaps/%s_lightmap.png" % stage_base
-		if ResourceLoader.exists(lm_path):
-			var lm_tex := load(lm_path) as Texture2D
-			if lm_tex != null:
-				SceneVisuals.apply_lightmap(inst, lm_tex)
+		var lm_tex: Texture2D = load(lm_path) as Texture2D if ResourceLoader.exists(lm_path) else null
+		SceneVisuals.apply_unified_material_pass(inst, true, false, _ensure_outline(), _stage_mat_cache, lm_tex, true)
 		if "kos_room" in resolved:
 			Atmosphere.apply_kos_upgrades_visual(inst, _save.get("unlocked_kos_upgrades", []))
 			for fb_name in ["FanBlade_0", "FanBlade_1", "FanBlade_2", "FanBlade_3"]:
@@ -508,6 +519,7 @@ func _sync_player_outfit() -> void:
 	var skin_hex := String(_save.get("skin_hex", "#B87A4B"))
 	var model_path := Progression.resolve_player_model_path(_save)
 	player.load_outfit(oid, model_path, hex, skin_hex)
+	SceneVisuals.apply_unified_material_pass(player, false, true, _ensure_outline(), _actor_mat_cache)
 
 func _clear_npcs() -> void:
 	if _npcs_root == null:
@@ -532,7 +544,7 @@ func _spawn_npcs(npc_list: Array) -> void:
 		var inst := ps.instantiate() as Node3D
 		inst.scale = Vector3(0.92, 0.92, 0.92)
 		holder.add_child(inst)
-		SceneVisuals.apply_character_polish(inst)
+		SceneVisuals.apply_unified_material_pass(inst, false, true, _ensure_outline(), _actor_mat_cache)
 		SceneVisuals.attach_contact_shadow(holder, 0.36)
 
 		var target_anim := String(npc.get("anim", "Idle")).to_lower()
@@ -864,14 +876,14 @@ func _talk_to_street_npc(npc: Dictionary) -> void:
 		})
 		SaveStore.save_to_path(_save)
 		_play_sfx(_wav_coin)
-		var greet := _t("Semangat kerja hari ini ya!", "Have a great shift today!")
-		for spec in Neighborhood.NEIGHBORS:
-			if String(spec.get("id", "")) == nid:
-				greet = String(spec.get("greeting_en" if _loc() == "en" else "greeting_id", greet))
-				break
+		var cur_tier := String(_save.get("active_tier_id", "kamar_kos"))
+		var greet := Neighborhood.get_reactive_greeting(nid, cur_tier, _cur_phase, _cur_weather, _loc())
+		_spawn_float_popup(player.position + Vector3(0.0, 1.85, 0.0), "+%s  +4 XP" % I18n.format_balance(tip_rp, _loc()))
 		_show_toast("%s: \"%s\" (+%s, +12 %s)" % [nname, greet, I18n.format_balance(tip_rp, _loc()), _t("Semangat", "Mood")], nid, "happy")
 	else:
-		_show_toast("%s: \"%s\"" % [nname, _t("Semangat kerjanya hari ini ya!", "Have a great shift today!")], nid, "neutral")
+		var cur_tier_idle := String(_save.get("active_tier_id", "kamar_kos"))
+		var greet_idle := Neighborhood.get_reactive_greeting(nid, cur_tier_idle, _cur_phase, _cur_weather, _loc())
+		_show_toast("%s: \"%s\"" % [nname, greet_idle], nid, "neutral")
 	_refresh_hud()
 
 func _nearest_shift_npc(max_dist: float = 1.75) -> Dictionary:
@@ -1032,6 +1044,7 @@ func _finish_active_chore() -> void:
 		var popup_txt := "+%s  +%d XP%s" % [I18n.format_balance(total_c_rp, _loc()), int(res["xp_gain"]), " ⚡" if boost_rp > 0 else ""]
 		_spawn_float_popup(player.position + Vector3(0.0, 1.85, 0.0), popup_txt)
 		_burst_chore_sparkles(player.position)
+		_cam_punch = 0.24
 		_show_toast(popup_txt)
 		for npc in _shift_npcs_data:
 			var n3d = npc.get("node", null)
@@ -1178,7 +1191,11 @@ func _process(delta: float) -> void:
 		cam.look_at(player.position + Vector3(0.62, 0.92, 0.0), Vector3.UP)
 		return
 
+	if _cam_punch > 0.0:
+		_cam_punch = maxf(0.0, _cam_punch - delta * 1.45)
+
 	var cam_offset := Vector3(2.90, 2.95, 3.85) if _world_mode == "street" else Vector3(3.15, 3.10, 3.50)
+	cam_offset *= (1.0 - _cam_punch * 0.14)
 	var cam_target := player.position + cam_offset
 	cam.position = cam.position.lerp(cam_target, minf(1.0, delta * 5.0))
 	cam.look_at(player.position + Vector3(0.0, 0.80, -0.35), Vector3.UP)
@@ -1873,6 +1890,15 @@ func _open_chapter_modal(ch: Dictionary) -> void:
 	body.add_theme_color_override("font_color", Color(0.95, 0.94, 0.90))
 	hdr_row.add_child(body)
 	_modal_list.add_child(hdr_row)
+	var ch_tier := String(ch.get("tier_id", "kamar_kos"))
+	var q_txt := WishlistStory.get_tier_milestone_quote(ch_tier, _loc())
+	if q_txt != "":
+		var qlbl := Label.new()
+		qlbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		qlbl.custom_minimum_size = Vector2(400, 0)
+		qlbl.text = q_txt
+		qlbl.add_theme_color_override("font_color", Color(0.96, 0.82, 0.38))
+		_modal_list.add_child(qlbl)
 	_show_modal()
 
 func _open_wishlist_modal() -> void:

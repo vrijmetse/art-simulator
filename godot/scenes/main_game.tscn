@@ -1,7 +1,8 @@
-[gd_scene load_steps=10 format=3]
+[gd_scene load_steps=12 format=3]
 
 [ext_resource type="Script" path="res://src/scenes/main_game.gd" id="1"]
 [ext_resource type="Script" path="res://src/scenes/player_controller.gd" id="2"]
+[ext_resource type="Shader" path="res://shaders/hd_sharpen.gdshader" id="3"]
 
 [sub_resource type="ProceduralSkyMaterial" id="SkyMat"]
 sky_top_color = Color(0.45, 0.74, 0.94, 1)
@@ -17,21 +18,26 @@ background_mode = 2
 sky = SubResource("SkyRes")
 ambient_light_source = 3
 ambient_light_sky_contribution = 0.22
-ambient_light_energy = 0.34
-tonemap_mode = 1
-tonemap_exposure = 1.0
-tonemap_white = 1.35
+ambient_light_energy = 0.28
+tonemap_mode = 4
+tonemap_exposure = 0.94
+tonemap_white = 1.6
 ssao_enabled = false
 sdfgi_enabled = false
 glow_enabled = true
-glow_intensity = 0.34
+glow_intensity = 0.24
 glow_strength = 0.85
-glow_bloom = 0.04
-glow_hdr_threshold = 1.08
+glow_bloom = 0.0
+glow_hdr_threshold = 1.15
 adjustment_enabled = true
-adjustment_brightness = 1.0
-adjustment_contrast = 1.08
-adjustment_saturation = 1.24
+adjustment_brightness = 1.01
+adjustment_contrast = 1.12
+adjustment_saturation = 1.20
+
+[sub_resource type="ShaderMaterial" id="SharpenMat"]
+shader = ExtResource("3")
+shader_parameter/sharpen_amount = 0.34
+shader_parameter/vignette_strength = 0.10
 
 [sub_resource type="WorldBoundaryShape3D" id="FloorShape"]
 
@@ -48,12 +54,12 @@ environment = SubResource("GameEnv")
 [node name="SunLight" type="DirectionalLight3D" parent="."]
 transform = Transform3D(0.82, -0.34, 0.46, 0, 0.80, 0.60, -0.57, -0.49, 0.66, 6.0, 9.5, 5.5)
 light_color = Color(1.0, 0.90, 0.74, 1)
-light_energy = 1.20
+light_energy = 1.05
 shadow_enabled = true
-shadow_blur = 2.2
-shadow_bias = 0.025
-directional_shadow_mode = 1
-directional_shadow_blend_splits = true
+shadow_blur = 0.72
+shadow_bias = 0.014
+directional_shadow_mode = 0
+directional_shadow_max_distance = 11.0
 
 [node name="GroundBounceLight" type="DirectionalLight3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, -0.82, -0.57, 0, 0.57, -0.82, 0, -2, 0)
@@ -86,4 +92,17 @@ current = true
 
 [node name="SfxPlayer" type="AudioStreamPlayer" parent="."]
 
+[node name="SharpenPost" type="CanvasLayer" parent="."]
+layer = 0
+
+[node name="SharpenRect" type="ColorRect" parent="SharpenPost"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+material = SubResource("SharpenMat")
+
 [node name="HUD" type="CanvasLayer" parent="."]
+layer = 1

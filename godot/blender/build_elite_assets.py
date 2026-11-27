@@ -8,10 +8,14 @@ from mathutils import Vector
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
 from tex_utils import (
+    add_galon_dispenser_hd,
+    add_layered_broadleaf_plant,
     bake_scene_lightmap_uv2,
+    export_room_glb,
     generate_asphalt_textures,
     generate_batu_alam_texture,
     generate_fabric_weave_texture,
+    generate_foliage_texture,
     generate_plaster_ao_texture,
     generate_sidewalk_concrete_texture,
     generate_tile_textures,
@@ -20,6 +24,7 @@ from tex_utils import (
     generate_wood_texture,
     generate_woven_rug_texture,
     make_pbr_material,
+    polish_scene_textures_1024,
     save_rgba_png,
 )
 
@@ -314,24 +319,29 @@ def build_elite_living():
     import_kenney_glb("KitchenStove", "kitchenStove.glb", (3.25, -1.25, 0.0), rot_z=-math.pi * 0.5, target_height=0.92)
     import_kenney_glb("CoffeeMachine", "kitchenCoffeeMachine.glb", (3.22, -0.35, 0.92), rot_z=-math.pi * 0.5, scale=1.70)
 
-    # Kitchen Island
+    # Kitchen Island + HD Galon Dispenser & Layered Plant
     add_beveled_box("IslandBase", (1.10, 2.20, 0.88), (1.45, -0.35, 0.44), mat_wood, 0.02)
     add_beveled_box("IslandTop", (1.22, 2.32, 0.06), (1.45, -0.35, 0.91), mat_marble_top, 0.015)
+    mat_ceramic_w = make_solid_mat("EliteDispenserWhite", (0.94, 0.94, 0.92), 0.30)
+    mat_coral = make_solid_mat("EliteCoral", (0.84, 0.22, 0.18), 0.34)
+    mat_aqua = make_solid_mat("EliteAqua", (0.18, 0.56, 0.88), 0.20)
+    add_beveled_box("EliteDispenserStand", (0.36, 0.36, 0.48), (3.25, -2.05, 0.24), mat_wood, 0.015)
+    add_galon_dispenser_hd(3.25, -2.05, 0.48, mat_ceramic_w, mat_dark, mat_coral, mat_aqua, prefix="Galon")
+    mat_pot = make_solid_mat("ElitePot", (0.68, 0.30, 0.18), 0.72)
+    mat_soil = make_solid_mat("EliteSoil", (0.16, 0.11, 0.08), 0.92)
+    leaf_alb = generate_foliage_texture(TEX_DIR, "elite_plant_hd", (0.14, 0.44, 0.16))
+    mat_leaf = make_pbr_material("ElitePlantLeaf", leaf_alb, 0.66)
+    add_layered_broadleaf_plant(-3.20, -2.35, mat_pot, mat_soil, mat_leaf, prefix="ElitePlant", scale=0.98)
 
     bake_scene_lightmap_uv2(
         os.path.join(GODOT_DIR, "assets", "lightmaps", "room_elite_living_lightmap.png"),
-        size=1024, samples=16, lift_min=0.34, sun_energy=4.2, sun_rot_deg=(48.0, 0.0, 32.0), ambient_strength=0.32,
+        size=1024, samples=14,
+        exclude_substrings=("tree", "bush", "flower", "planter", "glass", "window", "eliteplantblade_", "galonaquabottle", "galonwaterfill", "galonlabelband", "galoncap", "galontap"),
+        lift_min=0.34, sun_energy=4.2, sun_rot_deg=(48.0, 0.0, 32.0), ambient_strength=0.32,
     )
     bake_cycles_ao(samples=6, ao_min=0.86, ao_max=1.0)
-
-    os.makedirs(os.path.dirname(OUT_ELITE_LIVING), exist_ok=True)
-    bpy.ops.export_scene.gltf(
-        filepath=OUT_ELITE_LIVING,
-        export_format='GLB',
-        export_apply=False,
-        export_image_format='JPEG',
-        export_jpeg_quality=75,
-    )
+    polish_scene_textures_1024()
+    export_room_glb(OUT_ELITE_LIVING, quality=88)
     print("EXPORTED ELITE LIVING:", OUT_ELITE_LIVING, "bytes=", os.path.getsize(OUT_ELITE_LIVING))
 
 
@@ -398,19 +408,12 @@ def build_elite_street():
 
     bake_scene_lightmap_uv2(
         os.path.join(GODOT_DIR, "assets", "lightmaps", "cluster_elite_street_lightmap.png"),
-        size=1024, samples=16, lift_min=0.38, sun_energy=4.5, sun_rot_deg=(46.0, 0.0, 26.0), ambient_strength=0.34,
+        size=1024, samples=14, lift_min=0.38, sun_energy=4.5, sun_rot_deg=(46.0, 0.0, 26.0), ambient_strength=0.34,
     )
     # Bake subtle Cycles AO on architecture only (no double-darkening with UV2 lightmap)
     bake_cycles_ao(samples=4, ao_min=0.86, ao_max=1.0, target_objs=arch_objs)
-
-    os.makedirs(os.path.dirname(OUT_ELITE_STREET), exist_ok=True)
-    bpy.ops.export_scene.gltf(
-        filepath=OUT_ELITE_STREET,
-        export_format='GLB',
-        export_apply=False,
-        export_image_format='JPEG',
-        export_jpeg_quality=72,
-    )
+    polish_scene_textures_1024()
+    export_room_glb(OUT_ELITE_STREET, quality=88)
     print("EXPORTED ELITE STREET:", OUT_ELITE_STREET, "bytes=", os.path.getsize(OUT_ELITE_STREET))
 
 

@@ -2,8 +2,16 @@ class_name ArtAtmosphere
 extends RefCounted
 
 const AC_NODES := ["IndoorAC", "IndoorACVent"]
-const FAN_NODES := ["FanBlade_0", "FanBlade_1", "FanBlade_2", "FanBlade_3", "Cylinder_006", "Cylinder_007", "Sphere", "Torus_001"]
-const RICE_COOKER_NODES := ["RiceCookerStand", "Cylinder_008", "Cylinder_009"]
+const FAN_NODES := [
+	"FanBase", "FanPole", "FanMotorCowl", "FanGuardRingFront", "FanGuardRingBack",
+	"FanSpoke_0", "FanSpoke_1", "FanSpoke_2", "FanSpoke_3", "FanHubBadge",
+	"FanBtn_0", "FanBtn_1", "FanBtn_2", "FanBlade_0", "FanBlade_1", "FanBlade_2", "FanBlade_3",
+	"Cylinder_006", "Cylinder_007", "Sphere", "Torus_001",
+]
+const RICE_COOKER_NODES := [
+	"RiceCookerStand", "MagicComBody", "MagicComLid", "MagicComVent", "MagicComHandle", "MagicComLED",
+	"Cylinder_008", "Cylinder_009",
+]
 
 static func get_phase(_world_mode: String, _day: int, shift_elapsed_s: float) -> String:
 	var t := maxf(0.0, shift_elapsed_s)
@@ -22,58 +30,59 @@ static func get_weather(day: int, weather_fx: bool) -> String:
 
 static func apply_lighting(sun: DirectionalLight3D, bounce: DirectionalLight3D, env: Environment, phase: String, weather: String) -> void:
 	var sun_col := Color(1.0, 0.94, 0.80)
-	var sun_energy := 1.08
+	var sun_energy := 1.00
 	var bounce_col := Color(0.92, 0.82, 0.68)
-	var bounce_energy := 0.20
+	var bounce_energy := 0.22
 	var amb_col := Color(0.76, 0.82, 0.92)
-	var amb_energy := 0.34
-	var adj_sat := 1.24
-	var adj_con := 1.08
+	var amb_energy := 0.28
+	var adj_sat := 1.20
+	var adj_con := 1.12
 	var sky_top := Color(0.18, 0.56, 0.94)
 
 	match phase:
 		"pagi":
-			sun_col = Color(1.0, 0.86, 0.62)
-			sun_energy = 1.05
-			bounce_col = Color(0.76, 0.72, 0.68)
-			bounce_energy = 0.14
+			sun_col = Color(1.0, 0.88, 0.68)
+			sun_energy = 0.98
+			bounce_col = Color(0.84, 0.78, 0.70)
+			bounce_energy = 0.20
 			amb_col = Color(0.46, 0.58, 0.84)
-			amb_energy = 0.22
+			amb_energy = 0.24
 			sky_top = Color(0.18, 0.52, 0.90)
 		"siang":
-			sun_col = Color(1.0, 0.94, 0.80)
-			sun_energy = 1.12
-			bounce_col = Color(0.80, 0.78, 0.74)
-			bounce_energy = 0.14
+			sun_col = Color(1.0, 0.94, 0.82)
+			sun_energy = 1.04
+			bounce_col = Color(0.86, 0.82, 0.76)
+			bounce_energy = 0.20
 			amb_col = Color(0.50, 0.66, 0.90)
-			amb_energy = 0.24
+			amb_energy = 0.26
 			sky_top = Color(0.14, 0.54, 0.96)
 		"sore":
-			sun_col = Color(1.0, 0.60, 0.32)
-			sun_energy = 0.96
-			bounce_col = Color(0.76, 0.54, 0.48)
-			bounce_energy = 0.14
+			sun_col = Color(1.0, 0.64, 0.36)
+			sun_energy = 0.90
+			bounce_col = Color(0.78, 0.56, 0.48)
+			bounce_energy = 0.18
 			amb_col = Color(0.42, 0.48, 0.74)
-			amb_energy = 0.22
-			adj_sat = 1.26
+			amb_energy = 0.24
+			adj_sat = 1.18
+			adj_con = 1.14
 			sky_top = Color(0.20, 0.32, 0.68)
 		"malam":
 			sun_col = Color(0.44, 0.56, 0.90)
 			sun_energy = 0.44
 			bounce_col = Color(0.28, 0.38, 0.64)
-			bounce_energy = 0.14
+			bounce_energy = 0.16
 			amb_col = Color(0.24, 0.30, 0.52)
 			amb_energy = 0.24
-			adj_sat = 1.14
-			adj_con = 1.06
+			adj_sat = 1.08
+			adj_con = 1.08
 			sky_top = Color(0.08, 0.14, 0.32)
 
 	if weather == "hujan":
 		sun_energy *= 0.68
 		bounce_energy *= 0.82
 		amb_energy *= 0.86
-		adj_sat = 1.12
-		adj_con = 1.06
+		adj_sat = 1.06
+		adj_con = 1.08
 		sun_col = sun_col.lerp(Color(0.62, 0.72, 0.86), 0.42)
 		amb_col = amb_col.lerp(Color(0.54, 0.64, 0.78), 0.42)
 		sky_top = sky_top.lerp(Color(0.36, 0.46, 0.58), 0.55)
