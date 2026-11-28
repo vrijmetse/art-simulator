@@ -936,8 +936,8 @@ func _initialize() -> void:
 	sv_char.add_child(sv_mi)
 	ArtSceneVisuals.apply_character_polish(sv_char)
 	var polished_mat := sv_mi.get_active_material(0) as StandardMaterial3D
-	_assert_true(polished_mat != null and polished_mat.rim_enabled, "apply_character_polish enables rim light")
-	_assert_true(polished_mat != null and polished_mat.rim >= 0.20, "character rim >= 0.20")
+	_assert_true(polished_mat != null and polished_mat.rim_enabled, "apply_character_polish enables subtle rim light")
+	_assert_true(polished_mat != null and polished_mat.rim <= 0.08 and polished_mat.roughness >= 0.72, "character polish keeps rim subtle (<=0.08) and matte roughness (>=0.72)")
 	ArtSceneVisuals.attach_contact_shadow(sv_char, 0.38)
 	ArtSceneVisuals.attach_contact_shadow(sv_char, 0.38)
 	var cs_count := 0
@@ -1151,7 +1151,7 @@ func _initialize() -> void:
 	var ov1 := m1.get_surface_override_material(0) as StandardMaterial3D
 	var ov2 := m2.get_surface_override_material(0) as StandardMaterial3D
 	_assert_true(ov1 != null and ov1 == ov2, "RID material cache shares override across matching surfaces")
-	_assert_true(absf(ov1.roughness - 0.20) < 0.01, "floor tile gets crisp 0.20 roughness")
+	_assert_true(absf(ov1.roughness - 0.56) < 0.01 and ov1.metallic_specular <= 0.26, "floor tile gets satin 0.56 roughness without harsh glare hotspot")
 	_assert_true(ov1.detail_enabled and ov1.detail_albedo == lm_u_tex, "unified pass folds UV2 lightmap cleanly")
 	_assert_true(ov1.vertex_color_use_as_albedo, "unified pass folds COLOR_0 AO cleanly")
 	test_root.free()
@@ -1464,6 +1464,59 @@ func _initialize() -> void:
 	_assert_true(not ("(+Mood)" in mg_src.split("\"Telp Keluarga")[0].substr(max(0, mg_src.find("\"chat\"")))), "phone_chat ID copy uses (+Semangat) without mixed English (+Mood)")
 	_assert_true("font_disabled_color" in mg_src and "_fit_modal_scroll_height" in mg_src, "main_game sets high-contrast font_disabled_color and content-fit modal scroll height")
 	_assert_true("\"Sholat / Doa (+12 Semangat)\"" in mg_src, "settings prayer button uses Indonesian +12 Semangat without mixed Mood")
+
+	# 42. Round 5 World, 3D Character Material, Sky Horizon, Street Spacing, Umbrella & HUD/Dialogue/Spotlight Polish
+	var ws_src := FileAccess.get_file_as_string("res://src/core/wishlist_story.gd")
+	_assert_true(not ("Rp150.000" in ws_src), "wishlist_story formats Rp 150.000 with space (no Rp150.000)")
+
+	var r5_env := Environment.new()
+	var r5_sky_mat := ProceduralSkyMaterial.new()
+	var r5_sky := Sky.new()
+	r5_sky.sky_material = r5_sky_mat
+	r5_env.sky = r5_sky
+	var atmo_inst = ArtAtmosphere.new()
+	atmo_inst.call("apply_lighting", null, null, r5_env, "siang", "cerah", "street")
+	_assert_true(r5_sky_mat.ground_bottom_color.g > 0.28 and r5_sky_mat.ground_horizon_color.b > 0.40, "street daytime sky sets lush non-black ground/horizon instead of black void")
+
+	var NpcRosterScript = load("res://src/core/npc_roster.gd")
+	var kg_cfg: Dictionary = NpcRosterScript.get_street_config("kampung")
+	var kg_npcs: Array = kg_cfg.get("street_npcs", [])
+	var min_npc_dist := 99.0
+	for i in range(kg_npcs.size()):
+		for j in range(i + 1, kg_npcs.size()):
+			var p1: Vector3 = kg_npcs[i]["pos"]
+			var p2: Vector3 = kg_npcs[j]["pos"]
+			var d_xz := Vector2(p1.x - p2.x, p1.z - p2.z).length()
+			if d_xz < min_npc_dist:
+				min_npc_dist = d_xz
+	_assert_true(min_npc_dist >= 1.75, "kampung street NPCs spaced >= 1.75m apart to avoid nameplate collisions")
+
+	var sp_src := FileAccess.get_file_as_string("res://src/core/street_patrols.gd")
+	_assert_true("Vector3(0.26" in sp_src or "Vector3(-0.26" in sp_src, "rain umbrella offsets handle beside shoulder rather than piercing torso")
+
+	var r5_char := Node3D.new()
+	var r5_mi := MeshInstance3D.new()
+	var r5_sphere := SphereMesh.new()
+	var r5_mat := StandardMaterial3D.new()
+	r5_mat.resource_name = "HairBlack"
+	r5_mat.roughness = 0.25
+	r5_mat.metallic_specular = 0.85
+	r5_sphere.material = r5_mat
+	r5_mi.mesh = r5_sphere
+	r5_char.add_child(r5_mi)
+	ArtSceneVisuals.apply_unified_material_pass(r5_char, false, false, null, {})
+	var r5_cov: StandardMaterial3D = r5_mi.get_surface_override_material(0) as StandardMaterial3D
+	_assert_true(r5_cov != null and r5_cov.roughness >= 0.72 and r5_cov.metallic_specular <= 0.22, "character hair/hat/shoe material pass clamps plastic glare (roughness>=0.72, spec<=0.22)")
+	r5_char.free()
+
+	var PortraitsCls = load("res://src/core/portraits.gd")
+	_assert_true(PortraitsCls.get_ui_icon("app_chat") != null, "app_chat UI icon loads cleanly for street Ngobrol dock button")
+	_assert_true("Atmosphere.apply_lighting(sun_light, bounce_light, env, _cur_phase, _cur_weather, _world_mode)" in mg_src, "main_game passes _world_mode into Atmosphere.apply_lighting")
+	_assert_true("Portraits.get_ui_icon(\"app_chat\")" in mg_src, "main_game swaps street action dock icon to app_chat")
+	_assert_true("call_deferred(\"_position_spotlight_widgets\")" in mg_src and not ("_spotlight_hand.offset_top =" in mg_src), "main_game defers spotlight positioning and animates _spotlight_hand.position.y without offset_top stretch")
+	_assert_true("(_spotlight_wrap != null and _spotlight_wrap.visible)" in mg_src.split("var hide_labels :=")[1].split("\n")[0], "world Label3D hides while spotlight tutorial is visible and restores automatically")
+	_assert_true("_call_banner != null and _call_banner.visible" in mg_src.split("func _show_toast")[1].split("func ")[0], "_show_toast suppresses non-urgent overlap when call banner is active")
+	_assert_true("spk_row.add_child(_dlg_phone_badge)" in mg_src, "dialogue TELP badge renders inline beside speaker name instead of over portrait")
 
 	print("GODOT TDD RESULT: %d passed, %d failed" % [_passed, _failed])
 	quit(0 if _failed == 0 else 1)

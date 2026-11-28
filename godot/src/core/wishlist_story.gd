@@ -330,7 +330,7 @@ static func get_intro_cutscene_beats(player_name: String, locale: String = "id")
 				"phone": true,
 				"speaker_id": "ibu_kampung",
 				"speaker": "Mom in the Village (on the phone)",
-				"text": "%s, your little sister just passed school admission! We need Rp150.000 before Day 10 for her uniform and registration." % nm,
+				"text": "%s, your little sister just passed school admission! We need Rp 150.000 before Day 10 for her uniform and registration." % nm,
 			},
 			{
 				"phone": false,
@@ -350,7 +350,7 @@ static func get_intro_cutscene_beats(player_name: String, locale: String = "id")
 			"phone": true,
 			"speaker_id": "ibu_kampung",
 			"speaker": "Ibu di Kampung (Telepon)",
-			"text": "Nak %s, adikmu baru lulus masuk sekolah! Ibu butuh bantuan Rp150.000 sebelum Hari ke-10 buat daftar ulang dan seragam." % nm,
+			"text": "Nak %s, adikmu baru lulus masuk sekolah! Ibu butuh bantuan Rp 150.000 sebelum Hari ke-10 buat daftar ulang dan seragam." % nm,
 		},
 		{
 			"phone": false,

@@ -583,7 +583,7 @@ static func get_spotlight_tutorial_steps(locale: String = "id") -> Array:
 			"step": 0,
 			"target": "shift",
 			"title": "Start Shift" if en else "Mulai Shift",
-			"text": "Tap Start Shift (or step outside) to go to your employer's house and earn Rp." if en else "Ketuk Mulai Shift (atau keluar kamar) untuk bantu rumah majikan dan dapat gaji Rp.",
+			"text": "Tap Start Shift (or step outside) to help an employer's home and earn daily pay!" if en else "Ketuk Mulai Shift (atau keluar kamar) untuk bantu rumah majikan dan terima gaji harian!",
 		},
 		{
 			"step": 1,

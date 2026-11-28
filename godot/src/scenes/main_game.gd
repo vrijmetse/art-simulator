@@ -133,7 +133,9 @@ var _tr_vbox: VBoxContainer
 var _br_vbox: VBoxContainer
 var _stars_row: HBoxContainer
 var _dock_labels: Dictionary = {}
+var _dock_icons: Dictionary = {}
 var _dock_badges: Dictionary = {}
+var _spotlight_target_ctrl: Control
 var _active_slot := 1
 var _confirm_delete_slot := 0
 var _title_wrap: Control
@@ -156,7 +158,8 @@ var _dlg_queue: Array = []
 var _dlg_on_done: Callable
 var _spotlight_wrap: Control
 var _spotlight_ring: Panel
-var _spotlight_hand: TextureRect
+var _spotlight_hand: Control
+var _spotlight_hand_base_pos := Vector2.ZERO
 var _spotlight_card: PanelContainer
 var _spotlight_title: Label
 var _spotlight_body: Label
@@ -427,6 +430,9 @@ func _get_player_portrait_tex(mood: String = "neutral") -> Texture2D:
 func _show_toast(msg: String, speaker_id: String = "", mood: String = "happy") -> void:
 	if _toast_lbl == null or _toast_panel == null:
 		return
+	if _call_banner != null and _call_banner.visible:
+		_toast_panel.visible = false
+		return
 	_toast_lbl.text = msg
 	if _toast_portrait != null:
 		if speaker_id == "player":
@@ -494,12 +500,14 @@ func _build_rain_particles() -> void:
 	_rain_particles.initial_velocity_max = 8.5
 	_rain_particles.emitting = false
 	var drop := BoxMesh.new()
-	drop.size = Vector3(0.018, 0.26, 0.018)
+	drop.size = Vector3(0.010, 0.36, 0.010)
 	var dmat := StandardMaterial3D.new()
-	dmat.albedo_color = Color(0.72, 0.86, 0.98, 0.65)
+	dmat.albedo_color = Color(0.84, 0.92, 1.0, 0.50)
 	dmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	dmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	drop.material = dmat
+	_rain_particles.amount = 180
+	_rain_particles.lifetime = 0.65
 	_rain_particles.mesh = drop
 	add_child(_rain_particles)
 
@@ -535,7 +543,7 @@ func _refresh_atmosphere() -> void:
 	_cur_phase = LifeRhythm.get_phase_from_minutes(g_min)
 	_cur_weather = Atmosphere.get_weather(day, bool(_save.get("weather_fx", true)))
 	var env := world_env.environment if world_env != null else null
-	Atmosphere.apply_lighting(sun_light, bounce_light, env, _cur_phase, _cur_weather)
+	Atmosphere.apply_lighting(sun_light, bounce_light, env, _cur_phase, _cur_weather, _world_mode)
 	if sun_light != null:
 		sun_light.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL
 		sun_light.directional_shadow_max_distance = 16.0 if _world_mode == "street" else 11.0
@@ -754,10 +762,11 @@ func _enter_home_mode() -> void:
 	player.cancel_movement()
 	_spawn_npcs(NpcRoster.get_home_npcs(tier_id))
 	_clear_street_traffic()
-	_spawn_portal("exit_street", Vector3(0.45, 0.0, 1.15), Color(0.96, 0.78, 0.24), "Keluar Kamar", "Step Outside")
+	var is_small_art := "kamar_art_small" in home_glb
+	_spawn_portal("exit_street", Vector3(0.08, 0.0, 1.15) if is_small_art else Vector3(0.45, 0.0, 1.15), Color(0.96, 0.78, 0.24), "Keluar Kamar", "Step Outside")
 	_spawn_portal("sleep_bed", Vector3(-0.95, 0.0, -0.85), Color(0.45, 0.74, 0.96), "Tidur di Kasur", "Sleep to Recharge")
 	if bool(_save.get("prayer_reminders", true)):
-		_spawn_portal("pray_mat", Vector3(1.20, 0.0, 0.95), Color(0.32, 0.84, 0.62), "Sholat / Doa", "Pray")
+		_spawn_portal("pray_mat", Vector3(0.65, 0.0, 0.95) if is_small_art else Vector3(1.20, 0.0, 0.95), Color(0.32, 0.84, 0.62), "Sholat / Doa", "Pray")
 	_refresh_atmosphere()
 	_refresh_hud()
 
@@ -1248,7 +1257,7 @@ func _process(delta: float) -> void:
 	var ui_cover := (_title_wrap != null and _title_wrap.visible) or (_onboarding_wrap != null and _onboarding_wrap.visible) or (_modal_backdrop != null and _modal_backdrop.visible) or (_dialogue_bar != null and _dialogue_bar.visible) or (_phone_os_wrap != null and _phone_os_wrap.visible)
 	if _spotlight_wrap != null and _spotlight_wrap.visible and _spotlight_hand != null:
 		_spotlight_t += delta * 5.0
-		_spotlight_hand.offset_top = sin(_spotlight_t) * 6.0
+		_spotlight_hand.position.y = _spotlight_hand_base_pos.y + sin(_spotlight_t) * 6.0
 	if not ui_cover and bool(_save.get("onboarding_done", false)):
 		var prev_orders: Array = _save.get("courier_orders", [])
 		if not prev_orders.is_empty():
@@ -1311,13 +1320,15 @@ func _process(delta: float) -> void:
 	if _world_mode == "street" and _street_npcs_data.size() > 0:
 		StreetPatrols.step_patrols(_street_npcs_data, _street_cfg, player.position, delta, _cur_weather == "hujan")
 
-	# Wayfinding Label3D fade: hide during UI overlays/dialogue/phone, show cleanly within 3.2m
-	var hide_labels := ui_cover or (_dialogue_bar != null and _dialogue_bar.visible) or (_phone_os_wrap != null and _phone_os_wrap.visible)
+	var np := _nearest_portal()
+	var sn := _nearest_street_npc()
+	# Wayfinding Label3D fade: hide during UI overlays/dialogue/phone/spotlight or when _world_prompt announces the portal
+	var hide_labels := ui_cover or (_dialogue_bar != null and _dialogue_bar.visible) or (_phone_os_wrap != null and _phone_os_wrap.visible) or (_spotlight_wrap != null and _spotlight_wrap.visible)
 	for pnode in _portal_nodes:
 		if is_instance_valid(pnode):
 			var p_lbl3d := pnode.find_child("_Label3D", false, false) as Label3D
 			if p_lbl3d != null:
-				p_lbl3d.visible = (not hide_labels) and pnode.position.distance_to(player.position) <= 3.2
+				p_lbl3d.visible = (not hide_labels) and pnode != np and pnode.position.distance_to(player.position) <= 3.2
 	for s_npc in _street_npcs_data:
 		var sn_node = s_npc.get("node", null)
 		if sn_node != null and is_instance_valid(sn_node):
@@ -1325,8 +1336,6 @@ func _process(delta: float) -> void:
 			if n_lbl3d != null:
 				n_lbl3d.visible = (not hide_labels) and sn_node.position.distance_to(player.position) <= 3.2
 
-	var np := _nearest_portal()
-	var sn := _nearest_street_npc()
 	var show_key := _show_keyboard_hints()
 	if ui_cover or (_dialogue_bar != null and _dialogue_bar.visible) or (_phone_os_wrap != null and _phone_os_wrap.visible):
 		if _world_prompt != null:
@@ -1672,13 +1681,15 @@ func _refresh_hud() -> void:
 		hint_row.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		hint_row.text = Atmosphere.format_tasks_hint(_loc(), _show_keyboard_hints())
 		hint_row.add_theme_font_size_override("font_size", 11)
-		hint_row.add_theme_color_override("font_color", Color(0.72, 0.88, 0.98))
+		hint_row.add_theme_color_override("font_color", Color(0.88, 0.92, 0.98))
 		_tasks_list.add_child(hint_row)
 		_tasks_list.visible = not _tasks_collapsed
 		_tasks_card.visible = true
 
 		_set_dock_label("shift", _t("Selesai", "Finish") if done_n >= tot_n else (_t("Pulang", "Leave") if done_n > 0 else _t("Batal", "Cancel")))
 		_btn_action.visible = true
+		if _dock_icons.has("action"):
+			(_dock_icons["action"] as TextureRect).texture = Portraits.get_ui_icon("icon_broom")
 		_set_dock_label("action", _t("Kerjakan", "Chore"))
 	else:
 		var max_e := Progression.get_max_energy(_save)
@@ -1706,11 +1717,19 @@ func _refresh_hud() -> void:
 			if near_p != null:
 				var p_raw := String(near_p.get_meta("label_en" if _loc() == "en" else "label_id", _t("Masuk", "Enter")))
 				_set_dock_label("action", p_raw.split(" ")[0] if p_raw.length() > 8 else p_raw)
+				if _dock_icons.has("action"):
+					(_dock_icons["action"] as TextureRect).texture = Portraits.get_ui_icon("icon_door")
 			elif not near_n.is_empty():
 				_set_dock_label("action", _t("Ngobrol", "Chat"))
+				if _dock_icons.has("action"):
+					(_dock_icons["action"] as TextureRect).texture = Portraits.get_ui_icon("app_chat")
 			else:
-				_set_dock_label("action", _t("Masuk", "Enter"))
+				_set_dock_label("action", _t("Ngobrol", "Chat"))
+				if _dock_icons.has("action"):
+					(_dock_icons["action"] as TextureRect).texture = Portraits.get_ui_icon("app_chat")
 		else:
+			if _dock_icons.has("action"):
+				(_dock_icons["action"] as TextureRect).texture = Portraits.get_ui_icon("icon_door")
 			_set_dock_label("action", _t("Keluar", "Outside"))
 	if _world_prompt != null and ui_cover:
 		_world_prompt.visible = false
@@ -1802,6 +1821,8 @@ func _show_modal() -> void:
 func _refresh_call_banner() -> void:
 	var active_call := _in_shift and bool(_call_state.get("active_call", false))
 	_call_banner.visible = active_call
+	if active_call and _toast_panel != null:
+		_toast_panel.visible = false
 	_refresh_tutorial_banner()
 	if active_call:
 		var pers := MajikanProfiles.get_personality(String(_call_state.get("personality", "ramah")))
@@ -2757,6 +2778,7 @@ func _make_dock_icon_btn(key: String, icon_name: String, badge_col: Color = Colo
 	wrap.add_child(ic_box)
 	wrap.add_child(lbl)
 	_dock_labels[key] = lbl
+	_dock_icons[key] = icon_rect
 	_dock_badges[key] = badge
 	return {"wrap": wrap, "btn": btn, "badge": badge, "lbl": lbl}
 
@@ -2776,10 +2798,12 @@ func _build_hud() -> void:
 	var dark_ink := Color(0.11, 0.09, 0.06)
 	var light_ink := Color(0.97, 0.96, 0.93)
 
-	# 1. TOP-LEFT FRAMELESS WARUNG-LIFE TYPOGRAPHIC HUD (Big Clock + 5 Stars + Both ENERGI & SEMANGAT Bars)
-	_tl_card = MarginContainer.new()
-	_tl_card.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	_tl_card.position = Vector2(18, 12)
+	# 1. TOP-LEFT COHESIVE GLASS HUD (Big Clock + 5 Stars + Both ENERGI & SEMANGAT Bars)
+	var tl_panel := PanelContainer.new()
+	tl_panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	tl_panel.position = Vector2(14, 10)
+	tl_panel.add_theme_stylebox_override("panel", _make_box(Color(0.06, 0.08, 0.12, 0.74), Color(0.95, 0.78, 0.26, 0.42), 12, 10, 6))
+	_tl_card = tl_panel
 	var tl_v := VBoxContainer.new()
 	tl_v.add_theme_constant_override("separation", 4)
 
@@ -2860,8 +2884,11 @@ func _build_hud() -> void:
 	_lbl_level_badge.add_theme_color_override("font_color", dark_ink)
 	lv_pill.add_child(_lbl_level_badge)
 
+	var bal_pill := PanelContainer.new()
+	bal_pill.add_theme_stylebox_override("panel", _make_box(Color(0.06, 0.08, 0.12, 0.74), Color(0.95, 0.78, 0.26, 0.42), 10, 10, 4))
 	_lbl_balance = Label.new()
-	_shadow_label(_lbl_balance, 23, Color(0.44, 0.96, 0.44), 6)
+	_shadow_label(_lbl_balance, 21, Color(0.44, 0.96, 0.44), 5)
+	bal_pill.add_child(_lbl_balance)
 
 	_btn_map = Button.new()
 	_btn_settings = Button.new()
@@ -2870,7 +2897,7 @@ func _build_hud() -> void:
 	_btn_map.pressed.connect(_open_map_modal)
 	_btn_settings.pressed.connect(_open_settings_modal)
 	top_r_row.add_child(lv_pill)
-	top_r_row.add_child(_lbl_balance)
+	top_r_row.add_child(bal_pill)
 	top_r_row.add_child(_btn_map)
 	top_r_row.add_child(_btn_settings)
 	_tr_vbox.add_child(top_r_row)
@@ -3029,12 +3056,15 @@ func _build_hud() -> void:
 			return
 		_open_phone_os("home")
 	)
-	_hp_bottom_left = d_ph["wrap"]
+	var hp_panel := PanelContainer.new()
+	hp_panel.add_theme_stylebox_override("panel", _make_box(Color(0.06, 0.08, 0.12, 0.74), Color(0.95, 0.78, 0.26, 0.42), 12, 6, 4))
+	hp_panel.add_child(d_ph["wrap"])
+	_hp_bottom_left = hp_panel
 	_hp_bottom_left.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-	_hp_bottom_left.offset_left = 18
+	_hp_bottom_left.offset_left = 14
 	_hp_bottom_left.offset_right = 88
-	_hp_bottom_left.offset_top = -94
-	_hp_bottom_left.offset_bottom = -16
+	_hp_bottom_left.offset_top = -100
+	_hp_bottom_left.offset_bottom = -12
 	hud.add_child(_hp_bottom_left)
 
 	# 5. BOTTOM-RIGHT FRAMELESS 3D PROP ICON DOCK (Warung Life Pattern!)
@@ -3084,7 +3114,10 @@ func _build_hud() -> void:
 
 	for dw in [d_act["wrap"], d_shift["wrap"], d_car["wrap"], d_ward["wrap"], d_up["wrap"]]:
 		dock.add_child(dw)
-	_br_vbox.add_child(dock)
+	var dock_scrim := PanelContainer.new()
+	dock_scrim.add_theme_stylebox_override("panel", _make_box(Color(0.06, 0.08, 0.12, 0.76), Color(0.95, 0.78, 0.26, 0.42), 14, 8, 5))
+	dock_scrim.add_child(dock)
+	_br_vbox.add_child(dock_scrim)
 	hud.add_child(_br_vbox)
 
 	_build_courier_toast()
@@ -3477,31 +3510,33 @@ func _build_dialogue_bar() -> void:
 	_dlg_portrait.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_dlg_portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_dlg_portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	_dlg_phone_badge = Label.new()
-	_dlg_phone_badge.text = _t("📞 TELP", "📞 CALL")
-	_dlg_phone_badge.position = Vector2(4, 4)
-	_dlg_phone_badge.add_theme_stylebox_override("normal", _make_box(Color(0.10, 0.54, 0.32, 0.94), Color(0.96, 0.84, 0.34), 6, 5, 1))
-	_dlg_phone_badge.add_theme_font_size_override("font_size", 10)
-	_dlg_phone_badge.add_theme_color_override("font_color", Color(1, 1, 1))
 	p_over.add_child(_dlg_portrait)
-	p_over.add_child(_dlg_phone_badge)
 	_dlg_portrait_wrap.add_child(p_over)
 
 	var tv := VBoxContainer.new()
 	tv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	tv.add_theme_constant_override("separation", 6)
+	var spk_row := HBoxContainer.new()
+	spk_row.add_theme_constant_override("separation", 8)
 	_dlg_speaker = Label.new()
 	_dlg_speaker.add_theme_font_size_override("font_size", 15)
 	_dlg_speaker.add_theme_color_override("font_color", Color(0.36, 0.88, 0.98))
+	_dlg_phone_badge = Label.new()
+	_dlg_phone_badge.text = _t("📞 TELP", "📞 CALL")
+	_dlg_phone_badge.add_theme_stylebox_override("normal", _make_box(Color(0.10, 0.54, 0.32, 0.94), Color(0.96, 0.84, 0.34), 6, 6, 2))
+	_dlg_phone_badge.add_theme_font_size_override("font_size", 11)
+	_dlg_phone_badge.add_theme_color_override("font_color", Color(1, 1, 1))
+	spk_row.add_child(_dlg_speaker)
+	spk_row.add_child(_dlg_phone_badge)
 	_dlg_body = Label.new()
 	_dlg_body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_dlg_body.add_theme_font_size_override("font_size", 15)
 	_dlg_body.add_theme_color_override("font_color", Color(0.97, 0.96, 0.93))
 	_dlg_next = Label.new()
 	_dlg_next.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_dlg_next.add_theme_font_size_override("font_size", 12)
-	_dlg_next.add_theme_color_override("font_color", Color(0.96, 0.82, 0.34))
-	tv.add_child(_dlg_speaker)
+	_dlg_next.add_theme_font_size_override("font_size", 13)
+	_dlg_next.add_theme_color_override("font_color", Color(0.99, 0.88, 0.36))
+	tv.add_child(spk_row)
 	tv.add_child(_dlg_body)
 	tv.add_child(_dlg_next)
 
@@ -3612,13 +3647,20 @@ func _build_spotlight_overlay() -> void:
 	_spotlight_ring.add_theme_stylebox_override("panel", _make_box(Color(0, 0, 0, 0), Color(0.98, 0.84, 0.24, 0.98), 16, 0, 0))
 	_spotlight_wrap.add_child(_spotlight_ring)
 
-	_spotlight_hand = TextureRect.new()
-	_spotlight_hand.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_spotlight_hand.custom_minimum_size = Vector2(48, 48)
-	_spotlight_hand.size = Vector2(48, 48)
-	_spotlight_hand.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	_spotlight_hand.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	_spotlight_hand.texture = Portraits.get_ui_icon("icon_hand_pointer")
+	var hand_badge := PanelContainer.new()
+	hand_badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hand_badge.custom_minimum_size = Vector2(56, 56)
+	hand_badge.size = Vector2(56, 56)
+	hand_badge.add_theme_stylebox_override("panel", _make_box(Color(0.08, 0.10, 0.14, 0.90), Color(0.98, 0.84, 0.24, 0.98), 28, 6, 6))
+	var hand_tex := TextureRect.new()
+	hand_tex.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hand_tex.flip_v = true
+	hand_tex.modulate = Color(1.0, 0.90, 0.42, 1.0)
+	hand_tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	hand_tex.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	hand_tex.texture = Portraits.get_ui_icon("icon_hand_pointer")
+	hand_badge.add_child(hand_tex)
+	_spotlight_hand = hand_badge
 	_spotlight_wrap.add_child(_spotlight_hand)
 
 	_spotlight_card = PanelContainer.new()
@@ -3656,6 +3698,7 @@ func _build_spotlight_overlay() -> void:
 	sv.add_child(btn_r)
 	_spotlight_card.add_child(sv)
 	_spotlight_wrap.add_child(_spotlight_card)
+	_spotlight_wrap.move_child(_spotlight_hand, _spotlight_wrap.get_child_count() - 1)
 	hud.add_child(_spotlight_wrap)
 
 func _refresh_spotlight() -> void:
@@ -3682,22 +3725,32 @@ func _refresh_spotlight() -> void:
 		_:
 			tgt_ctrl = _btn_shift
 	if tgt_ctrl == null:
+		_spotlight_target_ctrl = null
 		_spotlight_wrap.visible = false
 		return
-	var r := tgt_ctrl.get_global_rect().grow(6.0)
-	var vp := get_viewport().get_visible_rect().size
-	_spotlight_ring.position = r.position
-	_spotlight_ring.size = r.size
-	_spotlight_hand.position = Vector2(clampf(r.position.x + r.size.x * 0.5 - 20.0, 8.0, vp.x - 56.0), clampf(r.position.y - 44.0, 8.0, vp.y - 56.0))
-	var card_w := 268.0
-	var card_x := clampf(r.position.x - card_w + 24.0, 14.0, vp.x - card_w - 14.0)
-	var card_y := clampf(r.position.y - 178.0, 56.0, vp.y - 165.0)
-	_spotlight_card.position = Vector2(card_x, card_y)
+	_spotlight_target_ctrl = tgt_ctrl
 	_spotlight_title.text = String(st["title"])
 	_spotlight_body.text = String(st["text"])
 	_spotlight_btn_ok.text = _t("Mengerti", "Got it")
 	_spotlight_btn_skip.text = _t("Lewati", "Skip")
 	_spotlight_wrap.visible = true
+	_position_spotlight_widgets()
+	call_deferred("_position_spotlight_widgets")
+
+func _position_spotlight_widgets() -> void:
+	if _spotlight_wrap == null or not _spotlight_wrap.visible or _spotlight_target_ctrl == null or not is_instance_valid(_spotlight_target_ctrl):
+		return
+	var r := _spotlight_target_ctrl.get_global_rect().grow(6.0)
+	var vp := get_viewport().get_visible_rect().size
+	_spotlight_ring.position = r.position
+	_spotlight_ring.size = r.size
+	_spotlight_hand_base_pos = Vector2(clampf(r.position.x + r.size.x * 0.5 - 28.0, 8.0, vp.x - 64.0), clampf(r.position.y - 62.0, 8.0, vp.y - 64.0))
+	_spotlight_hand.size = Vector2(56, 56)
+	_spotlight_hand.position = _spotlight_hand_base_pos
+	var card_w := 268.0
+	var card_x := clampf(r.position.x - card_w + 24.0, 14.0, vp.x - card_w - 14.0)
+	var card_y := clampf(r.position.y - 262.0, 56.0, vp.y - 210.0)
+	_spotlight_card.position = Vector2(card_x, card_y)
 
 func _build_courier_toast() -> void:
 	_courier_toast = PanelContainer.new()

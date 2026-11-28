@@ -134,18 +134,18 @@ static func sync_player_umbrella(player_node: Node3D, should_show: bool) -> Node
 	if umbrella == null:
 		umbrella = Node3D.new()
 		umbrella.name = "UmbrellaProp"
-		umbrella.position = Vector3(0.24, 1.58, 0.05)
-		umbrella.rotation_degrees = Vector3(-8.0, 0.0, -10.0)
+		umbrella.position = Vector3(0.26, 1.66, 0.12)
+		umbrella.rotation_degrees = Vector3(-5.0, 0.0, -5.0)
 
 		var handle := MeshInstance3D.new()
 		handle.name = "Handle"
 		var handle_mesh := CylinderMesh.new()
 		handle_mesh.top_radius = 0.014
 		handle_mesh.bottom_radius = 0.014
-		handle_mesh.height = 0.78
+		handle_mesh.height = 0.64
 		handle_mesh.radial_segments = 8
 		handle.mesh = handle_mesh
-		handle.position = Vector3(0.0, -0.35, 0.0)
+		handle.position = Vector3(0.0, -0.28, 0.0)
 		var handle_mat := StandardMaterial3D.new()
 		handle_mat.albedo_color = Color("#5C3A21")
 		handle_mat.roughness = 0.7

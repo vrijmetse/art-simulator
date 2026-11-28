@@ -52,9 +52,35 @@ def make_solid_mat(name, rgb, roughness=0.78, metallic=0.0, emission=0.0, alpha=
 
 
 def rebuild_kenney_pbr_material(mat):
-    """Strip KHR_materials_unlit and rebuild a clean PBR Principled BSDF mapped by material name."""
+    """Strip KHR_materials_unlit/emission while preserving BSDF_PRINCIPLED + ImageTexture + Alpha CLIP trees."""
     if not mat:
         return
+    if mat.use_nodes and mat.node_tree:
+        bsdf_ex = next((n for n in mat.node_tree.nodes if n.type == 'BSDF_PRINCIPLED'), None)
+        has_tex = any(n.type == 'TEX_IMAGE' and n.image is not None for n in mat.node_tree.nodes)
+        if bsdf_ex is not None and has_tex:
+            mname = mat.name.lower()
+            if "metal" not in mname and "glass" not in mname:
+                bsdf_ex.inputs["Roughness"].default_value = max(0.58, float(bsdf_ex.inputs["Roughness"].default_value))
+                bsdf_ex.inputs["Metallic"].default_value = 0.0
+            if "Emission Strength" in bsdf_ex.inputs:
+                bsdf_ex.inputs["Emission Strength"].default_value = 0.0
+            return
+    saved_img = None
+    saved_col = None
+    if mat.use_nodes and mat.node_tree:
+        for n in mat.node_tree.nodes:
+            if n.type == 'TEX_IMAGE' and n.image is not None:
+                saved_img = n.image
+                break
+            if n.type == 'BSDF_PRINCIPLED':
+                c = n.inputs["Base Color"].default_value
+                if tuple(round(x, 3) for x in c[:3]) not in ((0.8, 0.8, 0.8), (1.0, 1.0, 1.0), (0.0, 0.0, 0.0)):
+                    saved_col = tuple(c)
+            elif n.type in ('EMISSION', 'BACKGROUND') and "Color" in n.inputs:
+                c = n.inputs["Color"].default_value
+                if tuple(round(x, 3) for x in c[:3]) not in ((0.8, 0.8, 0.8), (1.0, 1.0, 1.0), (0.0, 0.0, 0.0)):
+                    saved_col = tuple(c)
     mat.use_nodes = True
     nt = mat.node_tree
     nt.nodes.clear()
@@ -64,6 +90,15 @@ def rebuild_kenney_pbr_material(mat):
     bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled")
     bsdf.location = (0, 0)
     nt.links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
+
+    if saved_img is not None:
+        tex_n = nt.nodes.new("ShaderNodeTexImage")
+        tex_n.location = (-280, 0)
+        tex_n.image = saved_img
+        nt.links.new(tex_n.outputs["Color"], bsdf.inputs["Base Color"])
+        bsdf.inputs["Roughness"].default_value = 0.62
+        bsdf.inputs["Metallic"].default_value = 0.0
+        return
 
     mname = mat.name.lower()
     if "wooddark" in mname:
@@ -103,8 +138,8 @@ def rebuild_kenney_pbr_material(mat):
         roughness = 0.34
         metallic = 0.0
     else:
-        color = (0.76, 0.73, 0.68, 1.0)
-        roughness = 0.60
+        color = saved_col if saved_col is not None else (0.76, 0.73, 0.68, 1.0)
+        roughness = 0.62
         metallic = 0.0
 
     bsdf.inputs["Base Color"].default_value = color
@@ -415,28 +450,31 @@ def build_elite_street():
 
     arch_objs = []
 
-    # Ground: Asphalt road + Sidewalk + Manicured Lawn
-    arch_objs.append(add_beveled_box("Road", (22.0, 5.0, 0.12), (0.0, -3.5, -0.06), mat_asphalt, 0.0))
-    arch_objs.append(add_beveled_box("Sidewalk", (22.0, 2.2, 0.16), (0.0, -0.2, 0.02), mat_paving, 0.02))
-    arch_objs.append(add_beveled_box("Lawn", (22.0, 9.0, 0.14), (0.0, 5.2, 0.01), mat_grass, 0.0))
+    # Ground: Asphalt road (top -0.08) + Sidewalk (top 0.00) + Manicured Lawn (top 0.00)
+    arch_objs.append(add_beveled_box("Road", (22.0, 5.0, 0.12), (0.0, -3.5, -0.14), mat_asphalt, 0.0))
+    arch_objs.append(add_beveled_box("Sidewalk", (22.0, 2.2, 0.16), (0.0, -0.2, -0.08), mat_paving, 0.02))
+    arch_objs.append(add_beveled_box("Lawn", (22.0, 9.0, 0.14), (0.0, 5.2, -0.07), mat_grass, 0.0))
 
-    # Two Modern 2-Story Indonesian Tropical Luxury Cluster Houses
+    # Two Modern 2-Story Indonesian Tropical Luxury Cluster Houses (positioned slightly back so full 2F facade sits in frame)
     for hx in (-4.8, 4.8):
         # Ground floor
-        arch_objs.append(add_beveled_box(f"House_{hx}_GF", (6.2, 5.0, 3.2), (hx, 4.2, 1.60), mat_cream, 0.03, cuts=4))
+        arch_objs.append(add_beveled_box(f"House_{hx}_GF", (6.2, 4.6, 2.0), (hx, 5.1, 1.00), mat_cream, 0.03, cuts=4))
+        # Teak front door + warm porch canopy
+        arch_objs.append(add_beveled_box(f"House_{hx}_Door", (1.05, 0.10, 1.75), (hx - 1.35, 2.76, 0.875), mat_wood, 0.015))
+        arch_objs.append(add_beveled_box(f"House_{hx}_Canopy", (3.6, 0.95, 0.14), (hx - 0.1, 2.35, 1.98), mat_charcoal, 0.015))
         # Second floor cantilevered volume
-        arch_objs.append(add_beveled_box(f"House_{hx}_2F", (6.6, 5.4, 3.0), (hx, 4.0, 4.70), mat_charcoal, 0.03, cuts=4))
+        arch_objs.append(add_beveled_box(f"House_{hx}_2F", (6.6, 5.0, 1.75), (hx, 4.9, 2.88), mat_charcoal, 0.03, cuts=4))
         # Teak wood soffit & facade slats
-        arch_objs.append(add_beveled_box(f"House_{hx}_TeakAccent", (2.8, 0.12, 2.8), (hx - 1.5, 1.28, 4.70), mat_wood, 0.015))
+        arch_objs.append(add_beveled_box(f"House_{hx}_TeakAccent", (2.8, 0.12, 1.60), (hx - 1.5, 2.38, 2.88), mat_wood, 0.015))
         # Flat tropical overhang roof
-        arch_objs.append(add_beveled_box(f"House_{hx}_Roof", (7.2, 6.0, 0.24), (hx, 3.9, 6.32), mat_charcoal, 0.03))
+        arch_objs.append(add_beveled_box(f"House_{hx}_Roof", (7.2, 5.6, 0.22), (hx, 4.8, 3.86), mat_charcoal, 0.03))
         # Large panoramic windows
-        arch_objs.append(add_beveled_box(f"House_{hx}_WinGF", (2.6, 0.08, 2.2), (hx + 1.2, 1.68, 1.40), mat_glass, 0.0))
-        arch_objs.append(add_beveled_box(f"House_{hx}_Win2F", (3.0, 0.08, 1.8), (hx + 1.4, 1.28, 4.70), mat_glass, 0.0))
+        arch_objs.append(add_beveled_box(f"House_{hx}_WinGF", (2.4, 0.08, 1.45), (hx + 1.25, 2.78, 1.05), mat_glass, 0.0))
+        arch_objs.append(add_beveled_box(f"House_{hx}_Win2F", (2.8, 0.08, 1.15), (hx + 1.4, 2.38, 2.88), mat_glass, 0.0))
         # Batu alam gate pillars
         for px in (hx - 3.2, hx + 3.2):
-            arch_objs.append(add_beveled_box(f"GatePillar_{px}", (0.55, 0.55, 2.10), (px, 1.0, 1.05), mat_batu, 0.02))
-            arch_objs.append(add_beveled_box(f"GateLamp_{px}", (0.28, 0.28, 0.16), (px, 1.0, 2.18), mat_lamp, 0.01))
+            arch_objs.append(add_beveled_box(f"GatePillar_{px}", (0.55, 0.55, 1.65), (px, 1.25, 0.825), mat_batu, 0.02))
+            arch_objs.append(add_beveled_box(f"GateLamp_{px}", (0.28, 0.28, 0.16), (px, 1.25, 1.73), mat_lamp, 0.01))
 
     # Smooth multi-lobe tropical trees for cluster_elite_street
     mat_elite_trunk = make_solid_mat("EliteTreeTrunk", (0.36, 0.23, 0.14), 0.86)
@@ -458,15 +496,17 @@ def build_elite_street():
             cn.data.materials.append(mat_elite_leaf)
 
     for px in (-2.4, 0.0, 2.4):
-        import_kenney_glb(f"Planter_{px}", "planter.glb", (px, 0.9, 0.08), rot_z=0.0, scale=0.65)
-        import_kenney_glb(f"Flower_{px}", "bush-common-flowers.glb", (px, 1.4, 0.08), rot_z=0.4, target_height=0.65)
+        import_kenney_glb(f"Planter_{px}", "planter.glb", (px, 0.9, 0.0), rot_z=0.0, scale=0.65, center_xy=True)
+        import_kenney_glb(f"Flower_{px}", "bush-common-flowers.glb", (px, 1.4, 0.0), rot_z=0.4, target_height=0.65, center_xy=True)
 
-    # Parked sedan cleanly on road edge
-    import_kenney_glb("ParkedSedan", "sedan.glb", (-3.8, -2.15, 0.0), rot_z=-math.pi * 0.5, scale=0.52)
+    # Parked sedan cleanly on road edge (realistic scale & grounded at -0.08)
+    import_kenney_glb("ParkedSedan", "sedan.glb", (-3.8, -2.15, -0.08), rot_z=-math.pi * 0.5, target_height=1.35, center_xy=True)
 
     bake_scene_lightmap_uv2(
         os.path.join(GODOT_DIR, "assets", "lightmaps", "cluster_elite_street_lightmap.png"),
-        size=1024, samples=14, lift_min=0.38, sun_energy=4.5, sun_rot_deg=(46.0, 0.0, 26.0), ambient_strength=0.34,
+        size=1024, samples=14,
+        exclude_substrings=("sedan", "wheel", "body", "planter", "bush", "flower", "tree"),
+        lift_min=0.38, sun_energy=4.5, sun_rot_deg=(46.0, 0.0, 26.0), ambient_strength=0.34,
     )
     # Bake subtle Cycles AO on architecture only (no double-darkening with UV2 lightmap)
     bake_cycles_ao(samples=4, ao_min=0.86, ao_max=1.0, target_objs=arch_objs)

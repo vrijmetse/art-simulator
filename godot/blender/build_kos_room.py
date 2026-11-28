@@ -57,6 +57,21 @@ def make_solid_mat(name, rgb, roughness=0.78, metallic=0.0, emission=0.0, alpha=
 def rebuild_kenney_pbr_material(mat):
     if not mat:
         return
+    saved_img = None
+    saved_col = None
+    if mat.use_nodes and mat.node_tree:
+        for n in mat.node_tree.nodes:
+            if n.type == 'TEX_IMAGE' and n.image is not None:
+                saved_img = n.image
+                break
+            if n.type == 'BSDF_PRINCIPLED':
+                c = n.inputs["Base Color"].default_value
+                if tuple(round(x, 3) for x in c[:3]) not in ((0.8, 0.8, 0.8), (1.0, 1.0, 1.0), (0.0, 0.0, 0.0)):
+                    saved_col = tuple(c)
+            elif n.type in ('EMISSION', 'BACKGROUND') and "Color" in n.inputs:
+                c = n.inputs["Color"].default_value
+                if tuple(round(x, 3) for x in c[:3]) not in ((0.8, 0.8, 0.8), (1.0, 1.0, 1.0), (0.0, 0.0, 0.0)):
+                    saved_col = tuple(c)
     mat.use_nodes = True
     nt = mat.node_tree
     nt.nodes.clear()
@@ -66,6 +81,15 @@ def rebuild_kenney_pbr_material(mat):
     bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled")
     bsdf.location = (0, 0)
     nt.links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
+
+    if saved_img is not None:
+        tex_n = nt.nodes.new("ShaderNodeTexImage")
+        tex_n.location = (-280, 0)
+        tex_n.image = saved_img
+        nt.links.new(tex_n.outputs["Color"], bsdf.inputs["Base Color"])
+        bsdf.inputs["Roughness"].default_value = 0.62
+        bsdf.inputs["Metallic"].default_value = 0.0
+        return
 
     mname = mat.name.lower()
     if "wooddark" in mname:
@@ -87,7 +111,7 @@ def rebuild_kenney_pbr_material(mat):
     elif "white" in mname or "ceramic" in mname:
         color, roughness, metallic = (0.90, 0.89, 0.86, 1.0), 0.38, 0.0
     else:
-        color, roughness, metallic = (0.72, 0.68, 0.62, 1.0), 0.65, 0.0
+        color, roughness, metallic = (saved_col if saved_col is not None else (0.72, 0.68, 0.62, 1.0)), 0.65, 0.0
 
     bsdf.inputs["Base Color"].default_value = color
     bsdf.inputs["Roughness"].default_value = roughness
@@ -639,6 +663,7 @@ def build_room():
     add_beveled_box("RiceCookerStand", (0.38, 0.38, 0.42), (1.92, 0.08, 0.21), mat_wood, 0.015)
     add_magic_com_hd(1.92, 0.08, 0.42, mat_white_plastic, mat_terracotta_red, mat_metal, mat_dark)
 
+    add_beveled_box("TvCornerPost", (0.06, 0.06, 0.48), (2.03, 0.14, 0.66), mat_wood, 0.008)
     add_beveled_box("TvCornerShelf", (0.48, 0.34, 0.035), (1.92, 0.08, 0.90), mat_wood, 0.010, rot=(0, 0, math.radians(-55)))
     add_beveled_box("RoomTvBody", (0.44, 0.10, 0.32), (1.92, 0.08, 1.08), mat_dark, 0.015, rot=(0, 0, math.radians(-55)))
     add_beveled_box("RoomTvScreen", (0.38, 0.02, 0.25), (1.88, 0.05, 1.08), mat_tv, 0.0, rot=(0, 0, math.radians(-55)), use_wn=False, reset_uv=True)

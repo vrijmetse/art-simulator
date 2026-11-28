@@ -51,9 +51,35 @@ def make_solid_mat(name, rgb, roughness=0.78, metallic=0.0, emission=0.0, alpha=
 
 
 def rebuild_kenney_pbr_material(mat):
-    """Strip KHR_materials_unlit and rebuild a clean PBR Principled BSDF mapped by material name."""
+    """Strip KHR_materials_unlit/emission while preserving BSDF_PRINCIPLED + ImageTexture + Alpha CLIP trees."""
     if not mat:
         return
+    if mat.use_nodes and mat.node_tree:
+        bsdf_ex = next((n for n in mat.node_tree.nodes if n.type == 'BSDF_PRINCIPLED'), None)
+        has_tex = any(n.type == 'TEX_IMAGE' and n.image is not None for n in mat.node_tree.nodes)
+        if bsdf_ex is not None and has_tex:
+            mname = mat.name.lower()
+            if "metal" not in mname and "glass" not in mname:
+                bsdf_ex.inputs["Roughness"].default_value = max(0.58, float(bsdf_ex.inputs["Roughness"].default_value))
+                bsdf_ex.inputs["Metallic"].default_value = 0.0
+            if "Emission Strength" in bsdf_ex.inputs:
+                bsdf_ex.inputs["Emission Strength"].default_value = 0.0
+            return
+    saved_img = None
+    saved_col = None
+    if mat.use_nodes and mat.node_tree:
+        for n in mat.node_tree.nodes:
+            if n.type == 'TEX_IMAGE' and n.image is not None:
+                saved_img = n.image
+                break
+            if n.type == 'BSDF_PRINCIPLED':
+                c = n.inputs["Base Color"].default_value
+                if tuple(round(x, 3) for x in c[:3]) not in ((0.8, 0.8, 0.8), (1.0, 1.0, 1.0), (0.0, 0.0, 0.0)):
+                    saved_col = tuple(c)
+            elif n.type in ('EMISSION', 'BACKGROUND') and "Color" in n.inputs:
+                c = n.inputs["Color"].default_value
+                if tuple(round(x, 3) for x in c[:3]) not in ((0.8, 0.8, 0.8), (1.0, 1.0, 1.0), (0.0, 0.0, 0.0)):
+                    saved_col = tuple(c)
     mat.use_nodes = True
     nt = mat.node_tree
     nt.nodes.clear()
@@ -63,6 +89,15 @@ def rebuild_kenney_pbr_material(mat):
     bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled")
     bsdf.location = (0, 0)
     nt.links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
+
+    if saved_img is not None:
+        tex_n = nt.nodes.new("ShaderNodeTexImage")
+        tex_n.location = (-280, 0)
+        tex_n.image = saved_img
+        nt.links.new(tex_n.outputs["Color"], bsdf.inputs["Base Color"])
+        bsdf.inputs["Roughness"].default_value = 0.62
+        bsdf.inputs["Metallic"].default_value = 0.0
+        return
 
     mname = mat.name.lower()
     if "wooddark" in mname:
@@ -102,7 +137,7 @@ def rebuild_kenney_pbr_material(mat):
         roughness = 0.38
         metallic = 0.0
     else:
-        color = (0.72, 0.68, 0.62, 1.0)
+        color = saved_col if saved_col is not None else (0.72, 0.68, 0.62, 1.0)
         roughness = 0.65
         metallic = 0.0
 
@@ -362,22 +397,22 @@ def build_majikan_living():
     import_kenney_glb("DiningChair1", "chair.glb", (0.60, -1.15, 0.0), rot_z=0.35, scale=1.85)
     import_kenney_glb("DiningChair2", "chair.glb", (1.70, -1.15, 0.0), rot_z=-0.35, scale=1.85)
 
-    # Curated CC0 Kenney Furniture: Kitchenette + Stove Pan/Pot + Dish Rack
-    import_kenney_glb("Fridge", "kitchenFridge.glb", (-0.10, 2.18, 0.0), rot_z=0.0, target_height=1.70)
-    import_kenney_glb("KitchenSink", "kitchenSink.glb", (0.82, 2.18, 0.0), rot_z=0.0, target_height=0.90)
-    add_beveled_box("DishRack", (0.28, 0.22, 0.05), (0.62, 2.14, 0.925), mat_metal, 0.008)
+    # Curated CC0 Kenney Furniture: Kitchenette + Stove Pan/Pot + Dish Rack (Fridge -> Cab -> Sink -> Stove so DishRack never overlaps Fridge)
+    import_kenney_glb("Fridge", "kitchenFridge.glb", (-0.28, 2.18, 0.0), rot_z=0.0, target_height=1.70)
+    import_kenney_glb("KitchenCab", "kitchenCabinet.glb", (0.62, 2.18, 0.0), rot_z=0.0, target_height=0.90)
+    import_kenney_glb("KitchenSink", "kitchenSink.glb", (1.48, 2.18, 0.0), rot_z=0.0, target_height=0.90)
+    add_beveled_box("DishRack", (0.28, 0.22, 0.05), (1.72, 2.14, 0.925), mat_metal, 0.008)
     for pl in range(3):
-        bpy.ops.mesh.primitive_cylinder_add(vertices=12, radius=0.085, depth=0.016, location=(0.56 + pl * 0.055, 2.14, 1.00), rotation=(0, math.radians(78), 0))
+        bpy.ops.mesh.primitive_cylinder_add(vertices=12, radius=0.085, depth=0.016, location=(1.66 + pl * 0.055, 2.14, 1.00), rotation=(0, math.radians(78), 0))
         bpy.context.active_object.data.materials.append(mat_ceramic_w)
-    import_kenney_glb("KitchenCab", "kitchenCabinet.glb", (1.60, 2.18, 0.0), rot_z=0.0, target_height=0.90)
     import_kenney_glb("KitchenStove", "kitchenStove.glb", (2.36, 2.18, 0.0), rot_z=0.0, target_height=0.90)
     bpy.ops.mesh.primitive_cylinder_add(vertices=14, radius=0.12, depth=0.055, location=(2.24, 2.12, 0.94))
     bpy.context.active_object.data.materials.append(mat_dark)
     add_beveled_box("PanHandle", (0.18, 0.025, 0.018), (2.08, 2.12, 0.945), mat_dark, 0.004)
     bpy.ops.mesh.primitive_cylinder_add(vertices=14, radius=0.095, depth=0.11, location=(2.48, 2.20, 0.965))
     bpy.context.active_object.data.materials.append(mat_metal)
-    import_kenney_glb("CoffeeMachine", "kitchenCoffeeMachine.glb", (1.58, 2.18, 0.90), rot_z=0.0, scale=1.65)
-    import_kenney_glb("Toaster", "toaster.glb", (1.92, 2.18, 0.90), rot_z=0.15, scale=1.65)
+    import_kenney_glb("CoffeeMachine", "kitchenCoffeeMachine.glb", (0.64, 2.18, 0.90), rot_z=0.0, scale=1.65)
+    import_kenney_glb("Toaster", "toaster.glb", (0.98, 2.18, 0.90), rot_z=0.15, scale=1.65)
     import_kenney_glb("TrashCan", "trashcan.glb", (2.82, 1.55, 0.0), rot_z=0.0, scale=1.85)
     # Iconic Indonesian green 3kg LPG gas canister ("Gas Melon") + Wall Calendar + Spice Jars
     mat_lpg_green = make_solid_mat("LpgMelonGreen", (0.18, 0.56, 0.26), 0.36)

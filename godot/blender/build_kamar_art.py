@@ -17,6 +17,7 @@ from tex_utils import (
     generate_laptop_ui,
     generate_plaster_ao_texture,
     generate_rattan_textures,
+    generate_sajadah_texture,
     generate_tile_textures,
     generate_turf_texture,
     generate_wall_art_padi,
@@ -52,9 +53,35 @@ def make_solid_mat(name, rgb, roughness=0.78, metallic=0.0, emission=0.0, alpha=
 
 
 def rebuild_kenney_pbr_material(mat):
-    """Strip KHR_materials_unlit and rebuild a clean PBR Principled BSDF mapped by material name."""
+    """Strip KHR_materials_unlit/emission while preserving BSDF_PRINCIPLED + ImageTexture + Alpha CLIP trees."""
     if not mat:
         return
+    if mat.use_nodes and mat.node_tree:
+        bsdf_ex = next((n for n in mat.node_tree.nodes if n.type == 'BSDF_PRINCIPLED'), None)
+        has_tex = any(n.type == 'TEX_IMAGE' and n.image is not None for n in mat.node_tree.nodes)
+        if bsdf_ex is not None and has_tex:
+            mname = mat.name.lower()
+            if "metal" not in mname and "glass" not in mname:
+                bsdf_ex.inputs["Roughness"].default_value = max(0.58, float(bsdf_ex.inputs["Roughness"].default_value))
+                bsdf_ex.inputs["Metallic"].default_value = 0.0
+            if "Emission Strength" in bsdf_ex.inputs:
+                bsdf_ex.inputs["Emission Strength"].default_value = 0.0
+            return
+    saved_img = None
+    saved_col = None
+    if mat.use_nodes and mat.node_tree:
+        for n in mat.node_tree.nodes:
+            if n.type == 'TEX_IMAGE' and n.image is not None:
+                saved_img = n.image
+                break
+            if n.type == 'BSDF_PRINCIPLED':
+                c = n.inputs["Base Color"].default_value
+                if tuple(round(x, 3) for x in c[:3]) not in ((0.8, 0.8, 0.8), (1.0, 1.0, 1.0), (0.0, 0.0, 0.0)):
+                    saved_col = tuple(c)
+            elif n.type in ('EMISSION', 'BACKGROUND') and "Color" in n.inputs:
+                c = n.inputs["Color"].default_value
+                if tuple(round(x, 3) for x in c[:3]) not in ((0.8, 0.8, 0.8), (1.0, 1.0, 1.0), (0.0, 0.0, 0.0)):
+                    saved_col = tuple(c)
     mat.use_nodes = True
     nt = mat.node_tree
     nt.nodes.clear()
@@ -64,6 +91,15 @@ def rebuild_kenney_pbr_material(mat):
     bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled")
     bsdf.location = (0, 0)
     nt.links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
+
+    if saved_img is not None:
+        tex_n = nt.nodes.new("ShaderNodeTexImage")
+        tex_n.location = (-280, 0)
+        tex_n.image = saved_img
+        nt.links.new(tex_n.outputs["Color"], bsdf.inputs["Base Color"])
+        bsdf.inputs["Roughness"].default_value = 0.62
+        bsdf.inputs["Metallic"].default_value = 0.0
+        return
 
     mname = mat.name.lower()
     if "wooddark" in mname:
@@ -103,7 +139,7 @@ def rebuild_kenney_pbr_material(mat):
         roughness = 0.38
         metallic = 0.0
     else:
-        color = (0.72, 0.68, 0.62, 1.0)
+        color = saved_col if saved_col is not None else (0.72, 0.68, 0.62, 1.0)
         roughness = 0.65
         metallic = 0.0
 
@@ -271,6 +307,9 @@ def build_kamar_art_small():
     wood_alb, wood_nrm, wood_rgh = generate_wood_texture(TEX_DIR, "art_small_wood_v1", (0.38, 0.22, 0.12))
     grass_alb, grass_nrm, grass_rgh = generate_turf_texture(TEX_DIR, "art_small_grass_v1", (0.24, 0.46, 0.20))
     sheet_img = generate_fabric_weave_texture(TEX_DIR, "art_small_sheet_v1", (0.80, 0.78, 0.72))
+    art_img = generate_wall_art_padi(TEX_DIR, "art_small_padi_v1")
+    rug_img = generate_woven_rug_texture(TEX_DIR, "art_small_rug_v1")
+    saj_img = generate_sajadah_texture(TEX_DIR, "art_small_sajadah_v1")
 
     mat_floor = make_pbr_material("SmallFloor", floor_alb, 0.56, floor_nrm, 0.50, (4.6, 4.4), floor_rgh)
     mat_wall = make_pbr_material("SmallWall", wall_alb, 0.90, wall_nrm, 0.45, (1.4, 1.4), wall_rgh)
@@ -278,6 +317,9 @@ def build_kamar_art_small():
     mat_grass = make_pbr_material("YardGrass", grass_alb, 0.92, grass_nrm, 0.55, (4.5, 4.5), grass_rgh)
     mat_patio = make_solid_mat("YardPatio", (0.62, 0.58, 0.52), 0.88)
     mat_cream = make_pbr_material("BedSheet", sheet_img, 0.88, None, 0.0, (2.0, 2.0))
+    mat_art = make_pbr_material("SmallWallArt", art_img, 0.55)
+    mat_rug = make_pbr_material("SmallRug", rug_img, 0.90)
+    mat_sajadah = make_pbr_material("SmallSajadah", saj_img, 0.90)
     mat_teal = make_solid_mat("AccentTeal", (0.18, 0.52, 0.50), 0.76)
     mat_dark = make_solid_mat("DarkAlloy", (0.16, 0.18, 0.22), 0.42, 0.65)
     mat_metal = make_solid_mat("AlloyChrome", (0.72, 0.74, 0.78), 0.25, 0.85)
@@ -290,10 +332,16 @@ def build_kamar_art_small():
     add_beveled_box("YardFenceLeft", (0.24, 10.0, 1.45), (-4.2, 0.0, 0.45), mat_wall, 0.02)
     add_beveled_box("YardPatio", (4.2, 4.2, 0.10), (0.0, 0.0, -0.17), mat_patio, 0.02)
 
-    # Subdivided floor & walls (8 cuts for smooth Cycles AO)
+    # Subdivided floor & walls + skirting/molding (8 cuts for smooth Cycles AO)
     add_beveled_box("FloorSlab", (3.2, 3.2, 0.16), (0.0, 0.0, -0.08), mat_floor, 0.03, cuts=8)
     add_beveled_box("WallBack", (3.2, 0.14, 2.65), (0.0, 1.58, 1.325), mat_wall, 0.025, cuts=8)
     add_beveled_box("WallLeft", (0.14, 3.2, 2.65), (-1.58, 0.0, 1.325), mat_wall, 0.025, cuts=8)
+    add_beveled_box("SmallSkirtBack", (3.16, 0.04, 0.10), (0.0, 1.49, 0.05), mat_wood, 0.008)
+    add_beveled_box("SmallSkirtLeft", (0.04, 3.16, 0.10), (-1.49, 0.0, 0.05), mat_wood, 0.008)
+
+    # Woven Rug & Emerald Sajadah prayer mat at (0.65, -0.95)
+    add_beveled_box("SmallRug", (1.45, 1.15, 0.018), (0.20, -0.15, 0.010), mat_rug, 0.008)
+    add_beveled_box("SmallSajadah", (0.66, 0.98, 0.014), (0.65, -0.95, 0.010), mat_sajadah, 0.005)
 
     # Tiny louvered high window (krepyak) on WallBack
     add_beveled_box("LouverFrame", (0.76, 0.08, 0.46), (0.55, 1.50, 2.08), mat_wood, 0.015)
@@ -307,20 +355,21 @@ def build_kamar_art_small():
     import_kenney_glb("SmallChair", "chairDesk.glb", (0.62, 0.62, 0.0), rot_z=math.pi, scale=1.55, center_xy=True)
     import_kenney_glb("SmallLamp", "lampRoundTable.glb", (0.25, 1.22, 0.595), rot_z=0.0, scale=1.40, center_xy=True)
     import_kenney_glb("SmallBooks", "books.glb", (0.95, 1.22, 0.595), rot_z=0.25, scale=1.45, center_xy=True)
-    import_kenney_glb("SmallPlant", "pottedPlant.glb", (-1.25, -1.12, 0.0), rot_z=0.0, scale=1.60, center_xy=True)
     import_kenney_glb("SmallTrash", "trashcan.glb", (1.28, 1.12, 0.0), rot_z=0.0, scale=1.55, center_xy=True)
 
-    add_beveled_box("SmallWallFrame", (0.44, 0.03, 0.34), (-0.88, 1.49, 1.45), mat_wood, 0.01)
-    add_beveled_box("SmallWallArt", (0.36, 0.02, 0.26), (-0.88, 1.475, 1.45), mat_cream, 0.004)
+    add_beveled_box("SmallWallFrame", (0.58, 0.03, 0.44), (-0.88, 1.49, 1.48), mat_wood, 0.01)
+    add_beveled_box("SmallWallArt", (0.48, 0.02, 0.34), (-0.88, 1.475, 1.48), mat_art, 0.004)
+    add_beveled_box("SmallWallLeftArtFrame", (0.03, 0.56, 0.42), (-1.49, -0.10, 1.48), mat_wood, 0.01)
+    add_beveled_box("SmallWallLeftArtCanvas", (0.02, 0.46, 0.32), (-1.47, -0.10, 1.48), mat_art, 0.004)
 
-    # Compact standing fan (HD) & layered plant
+    # Compact standing fan (HD) & layered plant (clear of exit_room/pray_mat)
     mat_pot = make_solid_mat("SmallPot", (0.68, 0.30, 0.18), 0.72)
     mat_soil = make_solid_mat("SmallSoil", (0.16, 0.11, 0.08), 0.92)
     leaf_alb = generate_foliage_texture(TEX_DIR, "small_plant_hd", (0.14, 0.44, 0.16))
     mat_leaf = make_pbr_material("SmallLeaf", leaf_alb, 0.66)
     rattan_alb, rattan_nrm = generate_rattan_textures(TEX_DIR, "small_rattan_hd", size=512)
     mat_rattan = make_pbr_material("SmallRattan", rattan_alb, 0.78, rattan_nrm, 0.50, (2.0, 2.0))
-    add_open_standing_fan_hd(-0.08, -0.78, mat_dark, mat_teal, mat_metal, scale=0.85)
+    add_open_standing_fan_hd(-1.18, -0.45, mat_dark, mat_teal, mat_metal, scale=0.82)
     add_layered_broadleaf_plant(-1.25, -1.12, mat_pot, mat_soil, mat_leaf, prefix="SmallPlant", scale=0.72)
 
     # Spun rattan laundry basket + sapu ijuk broom
@@ -364,8 +413,9 @@ def build_kamar_art_large():
     rug_img = generate_woven_rug_texture(TEX_DIR, "art_large_rug_v1")
     sheet_img = generate_fabric_weave_texture(TEX_DIR, "art_large_sheet_v1", (0.86, 0.82, 0.74))
     curtain_img = generate_fabric_weave_texture(TEX_DIR, "art_large_curtain_v1", (0.33, 0.52, 0.42))
+    saj_large_img = generate_sajadah_texture(TEX_DIR, "art_large_sajadah_v1")
 
-    mat_floor = make_pbr_material("LargeFloor", floor_alb, 0.50, floor_nrm, 0.55, (4.6, 4.4), floor_rgh)
+    mat_floor = make_pbr_material("LargeFloor", floor_alb, 0.54, floor_nrm, 0.55, (4.6, 4.4), floor_rgh)
     mat_wall = make_pbr_material("LargeWall", wall_alb, 0.88, wall_nrm, 0.45, (1.6, 1.6), wall_rgh)
     mat_wood = make_pbr_material("LargeWood", wood_alb, 0.62, wood_nrm, 0.45, (1.5, 1.5), wood_rgh)
     mat_grass = make_pbr_material("YardGrass", grass_alb, 0.92, grass_nrm, 0.55, (5.0, 5.0), grass_rgh)
@@ -373,8 +423,10 @@ def build_kamar_art_large():
     mat_art = make_pbr_material("LargeWallArt", art_img, 0.55)
     mat_screen = make_pbr_material("LaptopScreen", laptop_img, 0.35)
     mat_rug = make_pbr_material("WovenRug", rug_img, 0.90)
+    mat_sajadah = make_pbr_material("LargeSajadah", saj_large_img, 0.90)
     mat_cream = make_pbr_material("BedSheet", sheet_img, 0.88, None, 0.0, (2.0, 2.0))
     mat_curtain = make_pbr_material("SageCurtain", curtain_img, 0.88, None, 0.0, (1.5, 2.5))
+    mat_gold_pill = make_solid_mat("EliteGoldPillow", (0.86, 0.68, 0.28), 0.78)
 
     mat_brass = make_solid_mat("BrassKnob", (0.78, 0.60, 0.26), 0.30, 0.85)
     mat_dark = make_solid_mat("DarkAlloy", (0.16, 0.18, 0.22), 0.42, 0.65)
@@ -386,10 +438,10 @@ def build_kamar_art_large():
     add_beveled_box("YardFenceLeft", (0.24, 12.0, 1.45), (-5.2, 0.0, 0.45), mat_wall, 0.02)
     add_beveled_box("YardPatio", (6.0, 5.8, 0.10), (0.0, 0.0, -0.17), mat_patio, 0.02)
 
-    # Outdoor garden trees visible through WallBack window
-    import_kenney_glb("GardenTree1", "common-tree-1.glb", (0.15, 3.65, -0.18), rot_z=0.3, target_height=2.85)
-    import_kenney_glb("GardenTree2", "common-tree-2.glb", (1.25, 3.95, -0.18), rot_z=-0.5, target_height=2.55)
-    import_kenney_glb("GardenBush1", "bush-common-flowers.glb", (0.65, 3.15, -0.18), rot_z=0.1, target_height=0.75)
+    # Outdoor garden trees cleanly behind WallBack window (no window clipping)
+    import_kenney_glb("GardenTree1", "common-tree-1.glb", (0.15, 4.35, -0.18), rot_z=0.3, target_height=2.85, center_xy=True)
+    import_kenney_glb("GardenTree2", "common-tree-2.glb", (1.45, 4.55, -0.18), rot_z=-0.5, target_height=2.55, center_xy=True)
+    import_kenney_glb("GardenBush1", "bush-common-flowers.glb", (0.65, 3.65, -0.18), rot_z=0.1, target_height=0.75, center_xy=True)
 
     # Subdivided floor & walls (8 cuts for smooth Cycles AO)
     add_beveled_box("FloorSlab", (5.0, 4.8, 0.16), (0.0, 0.0, -0.08), mat_floor, 0.03, cuts=8)
@@ -423,25 +475,48 @@ def build_kamar_art_large():
             py = 2.21 - (0.018 if p % 2 == 0 else 0.0)
             add_beveled_box(f"CurtainPleat_{side_x}_{p}", (0.068, 0.04, 1.28), (px, py, 1.58), mat_curtain, 0.015)
 
-    # Framed Wall Art on WallLeft
+    # Framed Wall Art on WallLeft & WallBack_Left
     add_beveled_box("WallArtFrame", (0.05, 0.82, 0.66), (-2.385, -0.35, 1.58), mat_wood, 0.015)
     add_beveled_box("WallArtCanvas", (0.02, 0.64, 0.48), (-2.35, -0.35, 1.58), mat_art, 0.0)
+    add_beveled_box("WallBackArtFrame", (0.78, 0.04, 0.58), (-1.35, 2.29, 1.62), mat_wood, 0.015)
+    add_beveled_box("WallBackArtCanvas", (0.62, 0.02, 0.42), (-1.35, 2.26, 1.62), mat_art, 0.0)
 
-    # Woven Rug
-    add_beveled_box("CozyRug", (2.25, 1.65, 0.024), (0.35, -0.45, 0.014), mat_rug, 0.012)
+    # Woven Rug & Emerald Sajadah prayer mat at (1.15, -0.95)
+    add_beveled_box("CozyRug", (2.25, 1.65, 0.024), (0.35, -0.35, 0.014), mat_rug, 0.012)
+    add_beveled_box("LargeSajadah", (0.74, 1.10, 0.016), (1.15, -0.95, 0.014), mat_sajadah, 0.006)
 
-    # Curated CC0 Kenney Furniture: Double Bed, Desk, Chair, Lamp, Plant, Books, Trashcan
-    import_kenney_glb("LargeBed", "bedDouble.glb", (-1.48, 1.25, 0.0), rot_z=0.0, scale=1.85)
-    import_kenney_glb("LargeDesk", "desk.glb", (0.72, 1.92, 0.0), rot_z=0.0, scale=1.85)
-    import_kenney_glb("LargeChair", "chairDesk.glb", (0.72, 1.26, 0.0), rot_z=math.pi, scale=1.85)
-    import_kenney_glb("LargeLamp", "lampRoundTable.glb", (1.35, 1.92, 0.76), rot_z=0.0, scale=1.65)
-    import_kenney_glb("LargeBooks", "books.glb", (0.52, 1.92, 0.76), rot_z=0.25, scale=1.65)
-    import_kenney_glb("LargePlant", "pottedPlant.glb", (-2.05, -1.65, 0.0), rot_z=0.3, scale=1.85)
-    import_kenney_glb("LargeTrash", "trashcan.glb", (1.58, 1.45, 0.0), rot_z=0.0, scale=1.85)
+    # Curated CC0 Kenney Furniture: Double Bed + Dressed Duvet/Pillows, Desk, Chair, Lamp, Books, Trashcan
+    bed_p = import_kenney_glb("LargeBed", "bedDouble.glb", (-1.35, 1.25, 0.0), rot_z=0.0, scale=1.85, center_xy=True)
+    if bed_p:
+        bpy.context.view_layer.update()
+        from mathutils import Vector as _VecB
+        b_pts = [o.matrix_world @ _VecB(c) for o in bed_p.children_recursive if o.type == 'MESH' for c in o.bound_box]
+        if b_pts:
+            bx0, bx1 = min(p.x for p in b_pts), max(p.x for p in b_pts)
+            by0, by1 = min(p.y for p in b_pts), max(p.y for p in b_pts)
+            bz1 = max(p.z for p in b_pts)
+            bcx, bcy = (bx0 + bx1) * 0.5, (by0 + by1) * 0.5
+            matt_z = bz1 * 0.62
+            add_beveled_box("BedDuvet", ((bx1 - bx0) * 0.86, (by1 - by0) * 0.54, 0.09), (bcx, by0 + (by1 - by0) * 0.30, matt_z), mat_curtain, 0.03)
+            add_beveled_box("BedPillowL", (0.38, 0.24, 0.09), (bcx - 0.24, by1 - 0.26, matt_z + 0.04), mat_cream, 0.03)
+            add_beveled_box("BedPillowR", (0.38, 0.24, 0.09), (bcx + 0.24, by1 - 0.26, matt_z + 0.04), mat_cream, 0.03)
+            add_beveled_box("BedThrowGold", (0.34, 0.14, 0.14), (bcx, by1 - 0.40, matt_z + 0.07), mat_gold_pill, 0.04, (math.radians(-18), 0.0, 0.0))
+    desk_p = import_kenney_glb("LargeDesk", "desk.glb", (0.72, 1.88, 0.0), rot_z=0.0, scale=1.85, center_xy=True)
+    desk_top = 0.72
+    if desk_p:
+        bpy.context.view_layer.update()
+        from mathutils import Vector as _Vec
+        d_pts = [o.matrix_world @ _Vec(c) for o in desk_p.children_recursive if o.type == 'MESH' for c in o.bound_box]
+        if d_pts:
+            desk_top = max(p.z for p in d_pts)
+    import_kenney_glb("LargeChair", "chairDesk.glb", (0.72, 1.24, 0.0), rot_z=math.pi * 0.85, scale=1.85, center_xy=True)
+    import_kenney_glb("LargeLamp", "lampRoundTable.glb", (1.25, 1.88, desk_top), rot_z=0.0, scale=1.65, center_xy=True)
+    import_kenney_glb("LargeBooks", "books.glb", (0.28, 1.88, desk_top), rot_z=0.25, scale=1.55, center_xy=True)
+    import_kenney_glb("LargeTrash", "trashcan.glb", (-1.58, -1.92, 0.0), rot_z=0.0, scale=1.65, center_xy=True)
 
     # Laptop on Desk
-    add_beveled_box("LaptopBase", (0.36, 0.25, 0.02), (0.95, 1.86, 0.77), mat_dark, 0.008)
-    add_beveled_box("LaptopScreen", (0.32, 0.01, 0.20), (0.95, 1.97, 0.88), mat_screen, 0.0, (math.radians(-15), 0, 0))
+    add_beveled_box("LaptopBase", (0.36, 0.25, 0.02), (0.78, 1.86, desk_top + 0.01), mat_dark, 0.008)
+    add_beveled_box("LaptopScreen", (0.32, 0.01, 0.20), (0.78, 1.97, desk_top + 0.12), mat_screen, 0.0, (math.radians(-15), 0, 0))
 
     # Full Wardrobe + Vanity Mirror + HD Fan & Layered Plant
     mat_pot = make_solid_mat("LargePot", (0.68, 0.30, 0.18), 0.72)
@@ -450,8 +525,8 @@ def build_kamar_art_large():
     mat_leaf = make_pbr_material("LargeLeaf", leaf_alb, 0.66)
     mat_metal = make_solid_mat("LargeMetal", (0.74, 0.76, 0.80), 0.25, 0.85)
     mat_teal = make_solid_mat("LargeTeal", (0.18, 0.52, 0.50), 0.72)
-    add_open_standing_fan_hd(2.35, 1.35, mat_dark, mat_teal, mat_metal, scale=1.0)
-    add_layered_broadleaf_plant(-2.05, -2.25, mat_pot, mat_soil, mat_leaf, prefix="LargePlant", scale=0.95)
+    add_open_standing_fan_hd(2.05, 1.35, mat_dark, mat_teal, mat_metal, scale=1.0)
+    add_layered_broadleaf_plant(-2.05, -2.05, mat_pot, mat_soil, mat_leaf, prefix="LargePlant", scale=0.95)
 
     add_beveled_box("WardrobeBody", (0.56, 0.86, 1.94), (-2.02, -1.45, 0.97), mat_wood, 0.025)
     add_beveled_box("WardHandleL", (0.04, 0.025, 0.14), (-1.72, -1.40, 0.98), mat_brass, 0.005)

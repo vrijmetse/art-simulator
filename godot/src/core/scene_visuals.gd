@@ -72,9 +72,9 @@ static func apply_unified_material_pass(
 						sm.detail_albedo = lightmap_tex
 					if is_room:
 						if role_tag == "floor" or "tile" in m_low or "floor" in m_low:
-							sm.roughness = 0.20
-							sm.metallic = 0.05
-							sm.metallic_specular = 0.60
+							sm.roughness = 0.56
+							sm.metallic = 0.0
+							sm.metallic_specular = 0.24
 						elif role_tag == "mirror" or "mirror" in m_low:
 							sm.albedo_color = Color(0.58, 0.74, 0.88, 1.0)
 							sm.roughness = 0.08
@@ -101,15 +101,15 @@ static func apply_unified_material_pass(
 							sm.rim = 0.18
 					else:
 						sm.rim_enabled = true
-						sm.rim = 0.14
-						sm.rim_tint = 0.52
+						sm.rim = 0.05
+						sm.rim_tint = 0.35
 						sm.metallic = 0.0
 						if "skin" in m_low:
-							sm.roughness = maxf(sm.roughness, 0.74)
-							sm.metallic_specular = 0.22
+							sm.roughness = maxf(sm.roughness, 0.76)
+							sm.metallic_specular = 0.18
 						elif not ("eye" in m_low or "iris" in m_low or "glass" in m_low or "buckle" in m_low):
-							sm.roughness = maxf(sm.roughness, 0.68)
-							sm.metallic_specular = 0.26
+							sm.roughness = maxf(sm.roughness, 0.78)
+							sm.metallic_specular = minf(sm.metallic_specular, 0.16)
 					if sm.normal_enabled:
 						sm.normal_scale = 1.35
 					if wants_outline and outline_mat != null and sm.transparency == BaseMaterial3D.TRANSPARENCY_DISABLED:
@@ -176,13 +176,15 @@ static func apply_character_polish(node: Node) -> void:
 				if mat is StandardMaterial3D:
 					var sm := (mat as StandardMaterial3D).duplicate() as StandardMaterial3D
 					sm.rim_enabled = true
-					sm.rim = 0.20
-					sm.rim_tint = 0.48
+					sm.rim = 0.05
+					sm.rim_tint = 0.35
 					var rname := sm.resource_name.to_lower()
-					if "skin" in rname and sm.roughness > 0.72:
-						sm.roughness = 0.68
-					elif not ("eye" in rname or "iris" in rname) and sm.roughness < 0.45:
-						sm.roughness = 0.62
+					if "skin" in rname:
+						sm.roughness = maxf(sm.roughness, 0.76)
+						sm.metallic_specular = 0.18
+					elif not ("eye" in rname or "iris" in rname or "glass" in rname or "buckle" in rname):
+						sm.roughness = maxf(sm.roughness, 0.78)
+						sm.metallic_specular = minf(sm.metallic_specular, 0.16)
 					mi.set_surface_override_material(s, sm)
 	for child in node.get_children():
 		apply_character_polish(child)

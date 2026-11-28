@@ -50,9 +50,35 @@ def make_solid_mat(name, rgb, roughness=0.78, metallic=0.0, emission=0.0, alpha=
 
 
 def rebuild_kenney_pbr_material(mat):
-    """Strip KHR_materials_unlit and rebuild a clean PBR Principled BSDF mapped by material name."""
+    """Strip KHR_materials_unlit/emission while preserving BSDF_PRINCIPLED + ImageTexture + Alpha CLIP trees."""
     if not mat:
         return
+    if mat.use_nodes and mat.node_tree:
+        bsdf_ex = next((n for n in mat.node_tree.nodes if n.type == 'BSDF_PRINCIPLED'), None)
+        has_tex = any(n.type == 'TEX_IMAGE' and n.image is not None for n in mat.node_tree.nodes)
+        if bsdf_ex is not None and has_tex:
+            mname = mat.name.lower()
+            if "metal" not in mname and "glass" not in mname:
+                bsdf_ex.inputs["Roughness"].default_value = max(0.58, float(bsdf_ex.inputs["Roughness"].default_value))
+                bsdf_ex.inputs["Metallic"].default_value = 0.0
+            if "Emission Strength" in bsdf_ex.inputs:
+                bsdf_ex.inputs["Emission Strength"].default_value = 0.0
+            return
+    saved_img = None
+    saved_col = None
+    if mat.use_nodes and mat.node_tree:
+        for n in mat.node_tree.nodes:
+            if n.type == 'TEX_IMAGE' and n.image is not None:
+                saved_img = n.image
+                break
+            if n.type == 'BSDF_PRINCIPLED':
+                c = n.inputs["Base Color"].default_value
+                if tuple(round(x, 3) for x in c[:3]) not in ((0.8, 0.8, 0.8), (1.0, 1.0, 1.0), (0.0, 0.0, 0.0)):
+                    saved_col = tuple(c)
+            elif n.type in ('EMISSION', 'BACKGROUND') and "Color" in n.inputs:
+                c = n.inputs["Color"].default_value
+                if tuple(round(x, 3) for x in c[:3]) not in ((0.8, 0.8, 0.8), (1.0, 1.0, 1.0), (0.0, 0.0, 0.0)):
+                    saved_col = tuple(c)
     mat.use_nodes = True
     nt = mat.node_tree
     nt.nodes.clear()
@@ -62,6 +88,15 @@ def rebuild_kenney_pbr_material(mat):
     bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled")
     bsdf.location = (0, 0)
     nt.links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
+
+    if saved_img is not None:
+        tex_n = nt.nodes.new("ShaderNodeTexImage")
+        tex_n.location = (-280, 0)
+        tex_n.image = saved_img
+        nt.links.new(tex_n.outputs["Color"], bsdf.inputs["Base Color"])
+        bsdf.inputs["Roughness"].default_value = 0.62
+        bsdf.inputs["Metallic"].default_value = 0.0
+        return
 
     mname = mat.name.lower()
     if "wooddark" in mname:
@@ -101,7 +136,7 @@ def rebuild_kenney_pbr_material(mat):
         roughness = 0.38
         metallic = 0.0
     else:
-        color = (0.72, 0.68, 0.62, 1.0)
+        color = saved_col if saved_col is not None else (0.72, 0.68, 0.62, 1.0)
         roughness = 0.65
         metallic = 0.0
 
@@ -263,9 +298,9 @@ def build_kampung_house():
     add_beveled_box("OuterYard", (15.0, 15.0, 0.12), (0.0, 0.0, -0.24), mat_grass, 0.0)
     add_beveled_box("YardPatio", (5.8, 5.2, 0.10), (0.0, 0.0, -0.17), mat_patio, 0.02)
 
-    # Outdoor banana & garden greenery visible through krepyak window
-    import_kenney_glb("GardenTree1", "common-tree-1.glb", (0.95, 3.35, -0.18), rot_z=0.3, target_height=2.45)
-    import_kenney_glb("GardenBush1", "bush-common-flowers.glb", (1.65, 2.95, -0.18), rot_z=0.5, target_height=0.72)
+    # Outdoor banana & garden greenery cleanly outside krepyak window
+    import_kenney_glb("GardenTree1", "common-tree-1.glb", (1.15, 3.65, -0.18), rot_z=0.3, target_height=2.45, center_xy=True)
+    import_kenney_glb("GardenBush1", "bush-common-flowers.glb", (1.75, 3.25, -0.18), rot_z=0.5, target_height=0.72, center_xy=True)
     bpy.ops.mesh.primitive_cylinder_add(vertices=8, radius=0.055, depth=1.15, location=(1.85, 3.10, 0.40))
     bpy.context.active_object.data.materials.append(mat_banana)
     for fi in range(6):
@@ -318,17 +353,16 @@ def build_kampung_house():
     # Woven pandan mat (tikar) in living zone
     add_beveled_box("LivingTikar", (2.10, 1.55, 0.018), (-1.15, 0.45, 0.010), mat_tikar, 0.008)
 
-    # Curated CC0 Kenney Furniture: Living & Dining
-    import_kenney_glb("Sofa", "loungeSofa.glb", (-1.15, 1.52, 0.0), rot_z=0.0, scale=1.65)
-    import_kenney_glb("DiningTable", "tableRound.glb", (-1.15, 0.18, 0.0), rot_z=0.0, scale=1.55)
-    import_kenney_glb("DiningChair1", "chair.glb", (-1.82, 0.18, 0.0), rot_z=math.pi * 0.5, scale=1.65)
-    import_kenney_glb("DiningChair2", "chair.glb", (-0.48, 0.18, 0.0), rot_z=-math.pi * 0.5, scale=1.65)
-    import_kenney_glb("LivingPlant", "pottedPlant.glb", (-2.12, 1.68, 0.0), rot_z=0.2, scale=1.55)
+    # Curated CC0 Kenney Furniture: Living & Dining (all centered cleanly)
+    import_kenney_glb("Sofa", "loungeSofa.glb", (-1.15, 1.48, 0.0), rot_z=0.0, scale=1.65, center_xy=True)
+    import_kenney_glb("DiningTable", "tableRound.glb", (-1.15, 0.18, 0.0), rot_z=0.0, scale=1.55, center_xy=True)
+    import_kenney_glb("DiningChair1", "chair.glb", (-1.78, 0.18, 0.0), rot_z=math.pi * 0.5, scale=1.65, center_xy=True)
+    import_kenney_glb("DiningChair2", "chair.glb", (-0.52, 0.18, 0.0), rot_z=-math.pi * 0.5, scale=1.65, center_xy=True)
 
     # Curated CC0 Kenney Furniture: Compact Kitchenette
-    import_kenney_glb("KitchenSink", "kitchenSink.glb", (0.72, 1.76, 0.0), rot_z=0.0, target_height=0.88)
-    import_kenney_glb("KitchenStove", "kitchenStove.glb", (1.52, 1.76, 0.0), rot_z=0.0, target_height=0.88)
-    import_kenney_glb("TrashCan", "trashcan.glb", (2.15, 1.25, 0.0), rot_z=0.0, scale=1.65)
+    import_kenney_glb("KitchenSink", "kitchenSink.glb", (0.72, 1.76, 0.0), rot_z=0.0, target_height=0.88, center_xy=True)
+    import_kenney_glb("KitchenStove", "kitchenStove.glb", (1.52, 1.76, 0.0), rot_z=0.0, target_height=0.88, center_xy=True)
+    import_kenney_glb("TrashCan", "trashcan.glb", (2.18, 1.42, 0.0), rot_z=0.0, scale=1.60, center_xy=True)
 
     # HD Layered Broadleaf Plant + HD Fan + HD Magic Com + HD Galon Dispenser
     mat_pot = make_solid_mat("KampungPot", (0.68, 0.30, 0.18), 0.72)

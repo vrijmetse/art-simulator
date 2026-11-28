@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dcq00j0dv6hlw"
-path="res://.godot/imported/cluster_elite_street_elite_lawn_v1_ph_alb_hd.jpg-4d9e3c37846f41a57ec0f5abcacf4588.ctex"
+path.etc2="res://.godot/imported/cluster_elite_street_elite_lawn_v1_ph_alb_hd.jpg-4d9e3c37846f41a57ec0f5abcacf4588.etc2.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["etc2_astc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "c1c80024079d0d7eec89378feef3652d"
@@ -14,11 +15,11 @@ generator_parameters={
 [deps]
 
 source_file="res://assets/models/cluster_elite_street_elite_lawn_v1_ph_alb_hd.jpg"
-dest_files=["res://.godot/imported/cluster_elite_street_elite_lawn_v1_ph_alb_hd.jpg-4d9e3c37846f41a57ec0f5abcacf4588.ctex"]
+dest_files=["res://.godot/imported/cluster_elite_street_elite_lawn_v1_ph_alb_hd.jpg-4d9e3c37846f41a57ec0f5abcacf4588.etc2.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
@@ -39,5 +40,5 @@ process/premult_alpha=false
 process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
-process/size_limit=0
+process/size_limit=512
 detect_3d/compress_to=1

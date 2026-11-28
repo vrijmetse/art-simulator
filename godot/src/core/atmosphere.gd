@@ -50,7 +50,7 @@ static func get_weather(day: int, weather_fx: bool) -> String:
 		return "cerah"
 	return "hujan" if posmod(maxi(1, day), 3) == 0 else "cerah"
 
-static func apply_lighting(sun: DirectionalLight3D, bounce: DirectionalLight3D, env: Environment, phase: String, weather: String) -> void:
+static func apply_lighting(sun: DirectionalLight3D, bounce: DirectionalLight3D, env: Environment, phase: String, weather: String, world_mode: String = "home") -> void:
 	var sun_col := Color(1.0, 0.94, 0.80)
 	var sun_energy := 1.00
 	var bounce_col := Color(0.92, 0.82, 0.68)
@@ -126,6 +126,23 @@ static func apply_lighting(sun: DirectionalLight3D, bounce: DirectionalLight3D, 
 			var sky_mat := env.sky.sky_material as ProceduralSkyMaterial
 			sky_mat.sky_top_color = sky_top
 			sky_mat.sky_horizon_color = sun_col.lerp(Color(0.86, 0.88, 0.92), 0.30)
+			var g_horizon := Color(0.56, 0.72, 0.86)
+			var g_bottom := Color(0.30, 0.44, 0.26)
+			if phase == "sore":
+				g_horizon = Color(0.84, 0.64, 0.50)
+				g_bottom = Color(0.32, 0.30, 0.24)
+			elif phase == "malam":
+				g_horizon = Color(0.14, 0.20, 0.34)
+				g_bottom = Color(0.08, 0.11, 0.18)
+			if weather == "hujan":
+				g_horizon = g_horizon.lerp(Color(0.52, 0.60, 0.68), 0.55)
+				g_bottom = g_bottom.lerp(Color(0.28, 0.36, 0.34), 0.45)
+			if world_mode == "street":
+				sky_mat.ground_horizon_color = g_horizon
+				sky_mat.ground_bottom_color = g_bottom
+			else:
+				sky_mat.ground_horizon_color = g_horizon.lerp(Color(0.72, 0.78, 0.84), 0.22)
+				sky_mat.ground_bottom_color = g_bottom.lerp(Color(0.24, 0.34, 0.22), 0.25)
 
 static func get_room_lights_config(phase: String) -> Array:
 	var warm := 0.48
