@@ -1587,5 +1587,106 @@ func _initialize() -> void:
 	_assert_true("\"font_focus_color\"" in mg_src, "_style_btn overrides font_focus_color so focused gold CTAs keep dark-ink contrast")
 	_assert_true(load("res://src/scenes/main_game.gd") != null, "main_game.gd compiles cleanly with zero parse errors")
 
+	# 44. Round 7 Exploit Closure, Story Continuity, 3D Skin Tint, BoneAttachment3D Tool, Audio & Responsive Viewports
+	var r7_kb := Progression.create_player_save()
+	r7_kb["day"] = 1
+	var r7_b1 := Progression.record_kasbon(r7_kb, "Warung Bu Tini", 25000)
+	var r7_p1 := Progression.pay_kasbon(r7_b1["save"], String(r7_b1["debt_id"]))
+	_assert_eq(int(r7_p1["save"]["xp"]), 8, "first kasbon repayment on day 1 grants +8 XP")
+	var r7_b2 := Progression.record_kasbon(r7_p1["save"], "Warung Bu Tini", 25000)
+	var r7_p2 := Progression.pay_kasbon(r7_b2["save"], String(r7_b2["debt_id"]))
+	_assert_eq(int(r7_p2["save"]["xp"]), 8, "repeat kasbon repayment same day yields +0 XP (blocks infinite Day-1 XP exploit)")
+	r7_p2["save"]["day"] = 2
+	var r7_b3 := Progression.record_kasbon(r7_p2["save"], "Warung Bu Tini", 25000)
+	var r7_p3 := Progression.pay_kasbon(r7_b3["save"], String(r7_b3["debt_id"]))
+	_assert_eq(int(r7_p3["save"]["xp"]), 16, "kasbon repayment on a new day grants +8 XP again")
+
+	var r7_thr_sv := Progression.create_player_save()
+	r7_thr_sv["day"] = 1
+	r7_thr_sv["balance_rp"] = 0
+	for _sl_i in range(16):
+		var r7_sl := ArtLifeRhythm.sleep_in_bed(r7_thr_sv, [])
+		r7_thr_sv = r7_sl["save"]
+		if int(r7_thr_sv["day"]) >= 16:
+			break
+	_assert_eq(int(r7_thr_sv["balance_rp"]), 0, "0-work rest-only sleep cycle grants 0 Rp THR (blocks sleep THR farm)")
+
+	var r7_up_sv := Progression.create_player_save()
+	r7_up_sv["unlocked_kos_upgrades"] = ["kipas_angin", "kasur_empuk", "magic_com_pro", "ac_hemat"]
+	r7_up_sv["energy"] = 20
+	var r7_up_sl := ArtLifeRhythm.sleep_in_bed(r7_up_sv, [])
+	_assert_eq(int(r7_up_sl["save"]["energy"]), 162, "sleep_in_bed restores full unlocked_kos_upgrades max energy (162)")
+	r7_up_sv["day"] = 10
+	r7_up_sv["energy"] = 150
+	var r7_up_tak := ArtLifeRhythm.claim_takjil(r7_up_sv, 10)
+	_assert_eq(int(r7_up_tak["save"]["energy"]), 162, "claim_takjil respects full unlocked_kos_upgrades max energy (162)")
+
+	var r7_rt := SaveStore.deserialize('{"active_profile_id":"pak_hendra_kampung","kasbon_xp_day":4,"cycle_shifts_worked":3,"rest_only_streak":2}')
+	_assert_eq(String(r7_rt["active_profile_id"]), "pak_agus_kampung", "SaveStore migrates legacy pak_hendra_kampung to pak_agus_kampung")
+	_assert_eq(int(r7_rt.get("kasbon_xp_day", -1)), 4, "SaveStore preserves kasbon_xp_day")
+	_assert_eq(int(r7_rt.get("cycle_shifts_worked", -1)), 3, "SaveStore preserves cycle_shifts_worked")
+	_assert_eq(int(r7_rt.get("rest_only_streak", -1)), 2, "SaveStore preserves rest_only_streak")
+
+	var r7_kp_profs := MajikanProfiles.get_profiles_for_tier("kampung")
+	_assert_true(r7_kp_profs.size() > 0 and String(r7_kp_profs[0]["id"]) == "pak_agus_kampung" and "Agus" in String(r7_kp_profs[0]["name"]), "Kampung employer matches Chapter 2 Pak Agus continuity")
+	_assert_eq(String(MajikanProfiles.get_profile("pak_hendra_kampung").get("id", "")), "pak_agus_kampung", "legacy pak_hendra_kampung lookup resolves to pak_agus_kampung")
+
+	var r7_bima_found := false
+	for npc_d in NpcRoster.get_street_config("kamar_kos").get("street_npcs", []):
+		if String(npc_d.get("id", "")) == "adik_bima":
+			r7_bima_found = true
+	for npc_d in NpcRoster.get_shift_npcs("kampung"):
+		if String(npc_d.get("id", "")) == "adik_bima":
+			r7_bima_found = true
+	_assert_true(r7_bima_found, "adik_bima is placed in kampung world roster (not orphaned)")
+	_assert_true(not String(NpcRoster.get_shift_npc_reaction("adik_bima", "id").get("text", "")).is_empty(), "adik_bima has shift reaction dialogue")
+	var r7_honorific_ok := true
+	for t_id in ["kamar_kos", "kampung", "perumahan_36", "perumahan_45", "cluster_elite"]:
+		for n_d in NpcRoster.get_shift_npcs(t_id):
+			var le := String(n_d.get("label_en", ""))
+			if le.begins_with("Mrs. ") or le.begins_with("Mr. "):
+				r7_honorific_ok = false
+	_assert_true(r7_honorific_ok, "EN NPC labels use consistent Ibu/Pak honorifics across shift & street")
+
+	var PlayerCtrlCls = load("res://src/scenes/player_controller.gd")
+	var r7_pc: Node3D = PlayerCtrlCls.new()
+	r7_pc.load_outfit("starter_kasual", "res://assets/models/char_art.glb", "#4E7D63", "#8F5733")
+	var r7_skin_col := Color.WHITE
+	var r7_pc_stack: Array = [r7_pc]
+	while not r7_pc_stack.is_empty():
+		var cur_n: Node = r7_pc_stack.pop_back()
+		if cur_n is MeshInstance3D and (cur_n as MeshInstance3D).mesh != null:
+			var mi_pc := cur_n as MeshInstance3D
+			for si in range(mi_pc.mesh.get_surface_count()):
+				var r7_am: Material = mi_pc.get_active_material(si)
+				if r7_am is StandardMaterial3D and "human.body" in (r7_am as StandardMaterial3D).resource_name.to_lower():
+					r7_skin_col = (r7_am as StandardMaterial3D).albedo_color
+		for ch in cur_n.get_children():
+			r7_pc_stack.append(ch)
+	_assert_true(not r7_skin_col.is_equal_approx(Color.WHITE), "PlayerController._apply_skin_tint modulates textured Human.body material")
+	var r7_tool1 := ArtStreetPatrols.sync_chore_tool(r7_pc, "broom")
+	var r7_tool2 := ArtStreetPatrols.sync_chore_tool(r7_pc, "sponge")
+	_assert_true(r7_tool1 != null and r7_tool1 == r7_tool2 and r7_tool1.get_parent() is BoneAttachment3D and String((r7_tool1.get_parent() as BoneAttachment3D).bone_name) == "hand_r", "ChoreToolProp attaches to hand_r BoneAttachment3D without duplicating")
+	r7_pc.free()
+
+	var AudioSynthCls = load("res://src/core/audio_synth.gd")
+	var r7_pray_wav = AudioSynthCls.make_prayer_chime()
+	var r7_sleep_wav = AudioSynthCls.make_sleep_lullaby()
+	_assert_true(r7_pray_wav is AudioStreamWAV and (r7_pray_wav as AudioStreamWAV).data.size() > 1000, "AudioSynth.make_prayer_chime returns valid PCM")
+	_assert_true(r7_sleep_wav is AudioStreamWAV and (r7_sleep_wav as AudioStreamWAV).data.size() > 1000, "AudioSynth.make_sleep_lullaby returns valid PCM")
+
+	var rent_fn := mg_src.split("func _open_rent_modal")[1].split("\nfunc ")[0]
+	_assert_true(rent_fn.find("_btn_modal_close.visible = false") < rent_fn.find("_show_modal()"), "_open_rent_modal hides close button BEFORE _show_modal so players cannot skip weekly rent")
+	_assert_true(not ("VERSI 1.5" in mg_src) and not ("VERSION 1.5" in mg_src), "What's New modal matches Version 1.6 (no stale 1.5 string)")
+	_assert_true(not ("(Rp 0)" in mg_src) and not ("Rp 120,000" in mg_src), "main_game uses free/no-pay wording and Indonesian dot-thousand Rp formatting")
+	_assert_true("icon_career" in mg_src.split("\"log\"")[1].split("]")[0], "Phone OS Catatan Harian uses distinct icon_career icon instead of duplicate app_debt/app_guide")
+	_assert_true("anchor_left = 0.5" in mg_src.split("func _build_dialogue_bar")[1].split("\nfunc ")[0], "_dialogue_bar uses bottom-center anchors capped for ultrawide viewports")
+
+	var call_tick_empty: Dictionary = MajikanCall.start_call({}, "Gate")
+	for _t in 10:
+		call_tick_empty = MajikanCall.tick_call(call_tick_empty, 2.0)
+	_assert_true(call_tick_empty.has("trust") and int(call_tick_empty["warnings"]) == 1, "MajikanCall.tick_call never crashes on empty/default state")
+	_assert_true("if _in_shift and bool(_call_state.get(\"active_call\", false)):" in mg_src, "main_game guards MajikanCall loop with _in_shift so calls never fire on Title/Home")
+
 	print("GODOT TDD RESULT: %d passed, %d failed" % [_passed, _failed])
 	quit(0 if _failed == 0 else 1)

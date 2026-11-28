@@ -65,9 +65,20 @@ static func check_prayer_trigger(prev_min: int, cur_min: int, prayed_day: int, d
 			}
 	return {"triggered": false}
 
-static func _get_max_energy_for_save(save: Dictionary) -> int:
-	var owned: Array = save.get("owned_upgrades", [])
-	return 115 if ("kasur_empuk" in owned) else 100
+static func _has_upgrade(save: Dictionary, owned_upgrades: Array, uid: String) -> bool:
+	return (uid in owned_upgrades) or (uid in save.get("owned_upgrades", [])) or (uid in save.get("unlocked_kos_upgrades", []))
+
+static func _get_max_energy_for_save(save: Dictionary, owned_upgrades: Array = []) -> int:
+	var max_e := 100
+	if _has_upgrade(save, owned_upgrades, "kipas_angin"):
+		max_e += 12
+	if _has_upgrade(save, owned_upgrades, "kasur_empuk"):
+		max_e += 15
+	if _has_upgrade(save, owned_upgrades, "magic_com_pro"):
+		max_e += 15
+	if _has_upgrade(save, owned_upgrades, "ac_hemat"):
+		max_e += 20
+	return mini(162, max_e)
 
 static func claim_takjil(save: Dictionary, today_day: int) -> Dictionary:
 	if get_season(today_day) != "ramadhan":
@@ -128,16 +139,19 @@ static func claim_thr_if_eligible(save: Dictionary) -> Dictionary:
 
 static func sleep_in_bed(save: Dictionary, owned_upgrades: Array) -> Dictionary:
 	var nxt := save.duplicate(true)
-	var max_e := 115 if ("kasur_empuk" in owned_upgrades or "kasur_empuk" in nxt.get("owned_upgrades", [])) else 100
+	var max_e := _get_max_energy_for_save(nxt, owned_upgrades)
 	var mood_gain := 22
-	if "kasur_empuk" in owned_upgrades or "kasur_empuk" in nxt.get("owned_upgrades", []):
+	if _has_upgrade(nxt, owned_upgrades, "kasur_empuk"):
 		mood_gain += 6
-	if "ac_hemat" in owned_upgrades or "ac_hemat" in nxt.get("owned_upgrades", []):
+	if _has_upgrade(nxt, owned_upgrades, "ac_hemat"):
 		mood_gain += 4
 
 	var cur_day := maxi(1, int(nxt.get("day", 1)))
 	if not bool(nxt.get("worked_since_sleep", false)):
 		cur_day += 1
+		nxt["rest_only_streak"] = int(nxt.get("rest_only_streak", 0)) + 1
+	else:
+		nxt["rest_only_streak"] = 0
 	nxt["day"] = cur_day
 	nxt["worked_since_sleep"] = false
 	nxt["energy"] = max_e
@@ -152,8 +166,12 @@ static func sleep_in_bed(save: Dictionary, owned_upgrades: Array) -> Dictionary:
 				o["remaining_s"] = 0.0
 		nxt["courier_orders"] = orders
 
-	var thr_res := claim_thr_if_eligible(nxt)
-	nxt = thr_res["save"]
+	var thr_res := {"ok": false, "bonus_rp": 0, "save": nxt}
+	if int(nxt.get("cycle_shifts_worked", 0)) >= 1:
+		thr_res = claim_thr_if_eligible(nxt)
+		nxt = thr_res["save"]
+		if bool(thr_res.get("ok", false)):
+			nxt["cycle_shifts_worked"] = 0
 	return {
 		"ok": true,
 		"day": cur_day,

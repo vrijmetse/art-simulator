@@ -217,22 +217,42 @@ static func _make_cyl_part(part_name: String, top_r: float, bot_r: float, h: flo
 	return mi
 
 
+static func _find_skeleton(node: Node) -> Skeleton3D:
+	if node is Skeleton3D:
+		return node as Skeleton3D
+	for c in node.get_children():
+		var found := _find_skeleton(c)
+		if found != null:
+			return found
+	return null
+
+
 static func sync_chore_tool(player_node: Node3D, tool_id: String) -> Node3D:
 	if player_node == null or not is_instance_valid(player_node):
 		return null
 
 	var clean_id := tool_id.strip_edges().to_lower()
-	var prop := player_node.get_node_or_null("ChoreToolProp") as Node3D
+	var prop := player_node.find_child("ChoreToolProp", true, false) as Node3D
 	if clean_id.is_empty():
 		if prop != null:
 			prop.visible = false
 		return prop
 
+	var skel := _find_skeleton(player_node)
+	var has_hand := (skel != null and skel.find_bone("hand_r") >= 0)
 	if prop == null:
 		prop = Node3D.new()
 		prop.name = "ChoreToolProp"
-		prop.position = Vector3(0.28, 0.92, 0.14)
-		player_node.add_child(prop)
+		if has_hand:
+			var attach := BoneAttachment3D.new()
+			attach.name = "ChoreToolHandR"
+			attach.bone_name = "hand_r"
+			skel.add_child(attach)
+			prop.position = Vector3(0.02, 0.04, 0.03)
+			attach.add_child(prop)
+		else:
+			prop.position = Vector3(0.28, 0.92, 0.14)
+			player_node.add_child(prop)
 
 	if String(prop.get_meta("tool_id", "")) != clean_id:
 		for child in prop.get_children():

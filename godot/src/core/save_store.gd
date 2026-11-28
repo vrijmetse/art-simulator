@@ -218,6 +218,18 @@ static func sanitize(raw: Variant) -> Dictionary:
 					"paid": bool(db.get("paid", false)),
 				})
 	clean["debt_book"] = clean_debts
+	clean["kasbon_xp_day"] = _safe_int(d.get("kasbon_xp_day", 0), 0, 0)
+	clean["cycle_shifts_worked"] = _safe_int(d.get("cycle_shifts_worked", 0), 0, 0)
+	clean["rest_only_streak"] = _safe_int(d.get("rest_only_streak", 0), 0, 0)
+	var raw_prof := String(d.get("active_profile_id", clean.get("active_profile_id", "ibu_kos_melati")))
+	if raw_prof == "pak_hendra_kampung":
+		clean["active_profile_id"] = "pak_agus_kampung"
+		if String(clean.get("active_tier_id", "")) == "kamar_kos" and d.get("active_tier_id", "") == "kampung":
+			clean["active_tier_id"] = "kampung"
+	elif raw_prof != "":
+		var resolved_prof := preload("res://src/core/majikan_profiles.gd").get_profile(raw_prof)
+		if not resolved_prof.is_empty():
+			clean["active_profile_id"] = String(resolved_prof["id"])
 	if d.has("guide_seen"):
 		clean["guide_seen"] = bool(d.get("guide_seen", false))
 	elif int(clean["completed_shifts"]) > 0:

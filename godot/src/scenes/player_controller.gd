@@ -94,12 +94,31 @@ func _apply_skin_tint(node: Node, skin_col: Color) -> void:
 				if mat is StandardMaterial3D:
 					var std := mat as StandardMaterial3D
 					var mname := std.resource_name.to_lower()
-					if ("skin" in mname or "nose" in mname) and std.albedo_texture == null:
+					var is_skin := ("skin" in mname or "nose" in mname or "human.body" in mname or mname == "body") and not ("shoe" in mname or "iris" in mname or "eye" in mname or "hair" in mname)
+					if is_skin:
 						var dup := std.duplicate() as StandardMaterial3D
-						dup.albedo_color = skin_col.darkened(0.08) if "nose" in mname else skin_col
+						if std.albedo_texture == null:
+							dup.albedo_color = skin_col.darkened(0.08) if "nose" in mname else skin_col
+						else:
+							# Neutral-chroma luminance scale over calibrated MakeHuman Indonesian skin (#C68B59)
+							var base_lum := Color.html("#C68B59").get_luminance()
+							var t_lum := skin_col.get_luminance()
+							var lum_s := clampf(t_lum / maxf(0.05, base_lum), 0.70, 1.12)
+							if lum_s < 1.0:
+								dup.albedo_color = Color(clampf(lum_s * 1.03, 0.68, 1.0), clampf(lum_s * 0.97, 0.64, 1.0), clampf(lum_s * 0.93, 0.60, 1.0), 1.0)
+							else:
+								dup.albedo_color = Color(clampf(lum_s * 1.02, 1.0, 1.14), clampf(lum_s * 0.99, 1.0, 1.10), clampf(lum_s * 0.98, 1.0, 1.09), 1.0)
 						mi.set_surface_override_material(s, dup)
 	for child in node.get_children():
 		_apply_skin_tint(child, skin_col)
+
+func reapply_tints() -> void:
+	if _model_root == null:
+		return
+	if Color.html_is_valid(_equipped_color_hex):
+		_apply_outfit_tint(_model_root, Color.html(_equipped_color_hex))
+	if Color.html_is_valid(_equipped_skin_hex):
+		_apply_skin_tint(_model_root, Color.html(_equipped_skin_hex))
 
 func _apply_outfit_tint(node: Node, tint: Color) -> void:
 	if node is MeshInstance3D:

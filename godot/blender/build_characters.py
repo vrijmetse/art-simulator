@@ -173,8 +173,12 @@ def _fix_mh_materials_and_textures(mesh_obj, skin_warmth=None, dark_hair: bool =
                     m.node_tree.links.remove(lk)
             if "Emission Strength" in bsdf.inputs:
                 bsdf.inputs["Emission Strength"].default_value = 0.0
-            if "Roughness" in bsdf.inputs and "iris" not in m.name.lower():
-                if is_body:
+            if "Roughness" in bsdf.inputs:
+                if any(k in mname for k in ("eye", "iris", "cornea")):
+                    bsdf.inputs["Roughness"].default_value = 0.10
+                    if "Specular IOR Level" in bsdf.inputs:
+                        bsdf.inputs["Specular IOR Level"].default_value = 0.65
+                elif is_body:
                     bsdf.inputs["Roughness"].default_value = 0.56
                 elif is_hair:
                     bsdf.inputs["Roughness"].default_value = 0.42
@@ -852,11 +856,21 @@ def _synthesize_mh_action(arm, name: str, key_poses: list):
         pb.rotation_mode = 'QUATERNION'
         pb.rotation_quaternion = (1.0, 0.0, 0.0, 0.0)
         pb.location = (0.0, 0.0, 0.0)
+    stance_defaults = {
+        "clavicle_l": (0.0, 0.0, 2.0),
+        "clavicle_r": (0.0, 0.0, -2.0),
+        "thigh_l": (2.0, 0.0, 1.5),
+        "thigh_r": (2.0, 0.0, -1.5),
+        "calf_l": (-3.0, 0.0, 0.0),
+        "calf_r": (-3.0, 0.0, 0.0),
+    }
     for frame, bone_rots in key_poses:
         bpy.context.scene.frame_set(frame)
         for pb in arm.pose.bones:
             pb.rotation_quaternion = (1.0, 0.0, 0.0, 0.0)
-        for bname, euler_deg in bone_rots.items():
+        merged = dict(stance_defaults)
+        merged.update(bone_rots)
+        for bname, euler_deg in merged.items():
             pb = arm.pose.bones.get(bname)
             if pb:
                 rx, ry, rz = (math.radians(a) for a in euler_deg)

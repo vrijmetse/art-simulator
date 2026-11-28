@@ -208,3 +208,22 @@ static func make_footstep_tick() -> AudioStreamWAV:
 		var env := exp(-t * 10.0)
 		buf[i] = lp * 0.25 * env
 	return _build_wav(buf)
+
+
+static func make_prayer_chime() -> AudioStreamWAV:
+	var total := int(0.75 * SAMPLE_RATE)
+	var buf := PackedFloat32Array()
+	buf.resize(total)
+	_append_kalimba(buf, 0, 392.00, 0.34, 0.26)
+	_append_kalimba(buf, int(0.16 * SAMPLE_RATE), 493.88, 0.36, 0.28)
+	_append_kalimba(buf, int(0.32 * SAMPLE_RATE), 587.33, 0.42, 0.26)
+	return _build_wav(buf)
+
+
+static func make_sleep_lullaby() -> AudioStreamWAV:
+	var total := int(0.68 * SAMPLE_RATE)
+	var buf := PackedFloat32Array()
+	buf.resize(total)
+	_append_kalimba(buf, 0, 523.25, 0.32, 0.22)
+	_append_kalimba(buf, int(0.22 * SAMPLE_RATE), 392.00, 0.44, 0.24)
+	return _build_wav(buf)

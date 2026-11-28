@@ -43,8 +43,8 @@ const PROFILES := [
 		"fire_threshold": 20,
 	},
 	{
-		"id": "pak_hendra_kampung",
-		"name": "Keluarga Pak Hendra",
+		"id": "pak_agus_kampung",
+		"name": "Keluarga Pak Agus & Ibu Tini",
 		"tier_id": "kampung",
 		"personality": "ramah",
 		"kamar_art_variant": "none",
@@ -100,8 +100,9 @@ static func get_personality(personality_id: String) -> Dictionary:
 	return PERSONALITIES.get(personality_id, PERSONALITIES["ramah"])
 
 static func get_profile(profile_id: String) -> Dictionary:
+	var lookup := "pak_agus_kampung" if profile_id == "pak_hendra_kampung" else profile_id
 	for p in PROFILES:
-		if p["id"] == profile_id:
+		if p["id"] == lookup:
 			return p
 	return {}
 

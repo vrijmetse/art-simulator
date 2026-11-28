@@ -84,6 +84,8 @@ var _wav_click: AudioStreamWAV
 var _wav_door: AudioStreamWAV
 var _wav_chore_tick: AudioStreamWAV
 var _wav_step: AudioStreamWAV
+var _wav_prayer: AudioStreamWAV
+var _wav_sleep: AudioStreamWAV
 var _bgm_player: AudioStreamPlayer
 var _rain_player: AudioStreamPlayer
 var _step_player: AudioStreamPlayer
@@ -264,6 +266,8 @@ func _ready() -> void:
 	_wav_door = AudioSynth.make_door_chime()
 	_wav_chore_tick = AudioSynth.make_chore_tick()
 	_wav_step = AudioSynth.make_footstep_tick()
+	_wav_prayer = AudioSynth.make_prayer_chime()
+	_wav_sleep = AudioSynth.make_sleep_lullaby()
 
 	_bgm_player = AudioStreamPlayer.new()
 	_bgm_player.name = "BgmPlayer"
@@ -440,8 +444,11 @@ func _apply_mobile_safe_area() -> void:
 		_tc_center.offset_right = float(tc_b["offset_right"])
 		_tc_center.offset_top = 10.0 + pad_t
 	if _dialogue_bar != null:
+		var dlg_w := minf(1080.0, maxf(320.0, vp.x - pad_l - pad_r - 24.0))
+		_dialogue_bar.offset_left = -dlg_w * 0.5
+		_dialogue_bar.offset_right = dlg_w * 0.5
+		_dialogue_bar.offset_bottom = -pad_b
 		_dialogue_bar.offset_top = -132.0 - pad_b
-		_dialogue_bar.offset_bottom = 0.0
 	if _title_card != null:
 		_title_card.offset_left = 24.0 + pad_l
 		_title_card.offset_bottom = -20.0 - pad_b
@@ -467,7 +474,7 @@ func _t(id_str: String, en_str: String) -> String:
 	return en_str if _loc() == "en" else id_str
 
 func _play_sfx(wav: AudioStreamWAV) -> void:
-	if _muted or _smoke_mode or wav == null or sfx == null:
+	if _muted or _smoke_mode or not _audio_unlocked or wav == null or sfx == null:
 		return
 	sfx.stream = wav
 	sfx.play()
@@ -670,6 +677,7 @@ func _sync_player_outfit() -> void:
 	var model_path := Progression.resolve_player_model_path(_save)
 	player.load_outfit(oid, model_path, hex, skin_hex)
 	SceneVisuals.apply_unified_material_pass(player, false, false, _ensure_outline(), _actor_mat_cache)
+	player.reapply_tints()
 
 func _clear_npcs() -> void:
 	if _npcs_root == null:
@@ -1090,6 +1098,14 @@ func _try_tap_boost() -> void:
 	_save["shift_boost_count"] = int(_save.get("shift_boost_count", 0)) + 1
 	_save = Retention.record_mission_progress(_save, "boosts", 1, _today_date_str())
 	_play_sfx(_wav_chore_tick)
+	_cam_punch = maxf(_cam_punch, 0.22)
+	if player != null:
+		_spawn_float_popup(player.position + Vector3(0.0, 1.85, 0.0), _t("+Cepat!", "+Boost!"), Color(0.99, 0.86, 0.28))
+		var tool_prop := player.find_child("ChoreToolProp", true, false) as Node3D
+		if tool_prop != null and tool_prop.visible:
+			var tw_tool := create_tween()
+			tool_prop.scale = Vector3(1.24, 1.24, 1.24)
+			tw_tool.tween_property(tool_prop, "scale", Vector3.ONE, 0.14)
 
 func _trigger_world_action() -> void:
 	if _is_sleeping:
@@ -1225,7 +1241,7 @@ func _finish_shift() -> void:
 	if bool(res.get("aborted", false)):
 		SaveStore.save_to_slot(_save, _active_slot)
 		_enter_street_mode("shift")
-		_show_toast(_t("Belum ada tugas selesai — shift dibatalkan (Rp 0).", "No chores completed — shift cancelled (Rp 0)."))
+		_show_toast(_t("Belum ada tugas selesai — shift dibatalkan (tanpa bayaran).", "No chores completed — shift cancelled (no pay)."))
 		return
 	var ev_bonus_rp := 0
 	if not bool(res.get("fired", false)):
@@ -1269,7 +1285,8 @@ func _finish_shift() -> void:
 	else:
 		_open_summary_modal(res)
 	if not bool(tier.get("live_in_room_provided", false)) and int(_save.get("day", 1)) in [5, 6]:
-		_show_toast(_t("Ingat: Sewa kos Rp 120.000 jatuh tempo Hari 7!", "Reminder: Rp 120,000 kos rent due on Day 7!"))
+		var rent_fmt := I18n.format_balance(120000, _loc())
+		_show_toast(_t("Ingat: Sewa kos %s jatuh tempo Hari 7!" % rent_fmt, "Reminder: %s kos rent due on Day 7!" % rent_fmt))
 
 func _process(delta: float) -> void:
 	if _capture_path != "" and not _captured:
@@ -1505,8 +1522,8 @@ func _process(delta: float) -> void:
 	else:
 		_chore_bar_wrap.visible = false
 
-	# Majikan call & distraction loop
-	if bool(_call_state.get("active_call", false)):
+	# Majikan call & distraction loop (active strictly during shifts, never on Title/Home!)
+	if _in_shift and bool(_call_state.get("active_call", false)):
 		var prev_warn := int(_call_state.get("warnings", 0))
 		_call_state = MajikanCall.tick_call(_call_state, delta)
 		if not bool(_call_state.get("active_call", false)) and int(_call_state.get("warnings", 0)) > prev_warn:
@@ -1519,7 +1536,7 @@ func _process(delta: float) -> void:
 			_refresh_hud()
 			return
 		_refresh_call_banner()
-	elif not bool(_call_state.get("fired", false)):
+	elif _in_shift and not ui_cover and not bool(_call_state.get("fired", false)):
 		_call_cooldown -= delta
 		if _call_cooldown <= 0.0:
 			_call_cooldown = 16.0
@@ -1633,6 +1650,7 @@ func _on_distract(activity_id: String) -> void:
 		return
 	_call_state = MajikanCall.apply_distraction(_call_state, activity_id)
 	_shift = ChoreEngine.rest_recover(_shift, 8)
+	_play_sfx(_wav_click)
 	_show_toast(_t("Semangat +Energi naik! Hati-hati panggilan Majikan.", "Mood + Energy up! Watch for employer calls."))
 	_refresh_hud()
 
@@ -1912,9 +1930,17 @@ func _fit_modal_scroll_height() -> void:
 	var canvas_sz := get_viewport().get_visible_rect().size
 	if canvas_sz.x <= 1.0 or canvas_sz.y <= 1.0:
 		canvas_sz = Vector2(1280.0, 720.0)
-	var content_h := _modal_list.get_combined_minimum_size().y + 12.0
-	var max_h := minf(500.0, canvas_sz.y - 165.0)
-	_modal_scroll.custom_minimum_size = Vector2(minf(740.0, canvas_sz.x - 144.0), clampf(content_h, 48.0, max_h))
+	var scroll_w := (canvas_sz.x - 64.0) if canvas_sz.x < 720.0 else minf(740.0, canvas_sz.x - 144.0)
+	_modal_scroll.custom_minimum_size = Vector2(scroll_w, 0.0)
+	_modal_list.custom_minimum_size = Vector2(scroll_w - 8.0, 0.0)
+	var measured_h := _modal_list.size.y if _modal_list.size.x >= scroll_w * 0.85 else _modal_list.get_combined_minimum_size().y
+	var content_h := minf(measured_h, _modal_list.get_combined_minimum_size().y) + 12.0 if _modal_list.size.x >= scroll_w * 0.85 else _modal_list.get_combined_minimum_size().y + 12.0
+	var max_h := minf(700.0, maxf(200.0, canvas_sz.y - 135.0))
+	_modal_scroll.custom_minimum_size = Vector2(scroll_w, clampf(content_h, 48.0, max_h))
+	if _modal_card != null:
+		_modal_card.reset_size()
+	if _modal_list.size.x < scroll_w * 0.85 and _modal_backdrop != null and _modal_backdrop.visible:
+		call_deferred("_fit_modal_scroll_height")
 
 func _show_modal() -> void:
 	if _is_sleeping:
@@ -1923,7 +1949,8 @@ func _show_modal() -> void:
 	if canvas_sz.x <= 1.0 or canvas_sz.y <= 1.0:
 		canvas_sz = Vector2(1280.0, 720.0)
 	if _modal_card != null:
-		_modal_card.custom_minimum_size = Vector2(minf(780.0, canvas_sz.x - 100.0), 0.0)
+		var card_w := (canvas_sz.x - 32.0) if canvas_sz.x < 720.0 else minf(780.0, canvas_sz.x - 100.0)
+		_modal_card.custom_minimum_size = Vector2(card_w, 0.0)
 	if _modal_list != null:
 		_auto_style_modal_buttons(_modal_list)
 	if _modal_scroll != null:
@@ -2149,6 +2176,7 @@ func _perform_sleep_recharge() -> void:
 		cs_p.visible = false
 	player.position = Vector3(-1.62, 0.66, -1.32)
 	player.rotation = Vector3(-PI * 0.50, 0.0, 0.0)
+	_play_sfx(_wav_sleep)
 	_spawn_float_popup(player.position + Vector3(0.0, 0.45, 0.0), "Zzz...", Color(0.68, 0.88, 1.0))
 	await get_tree().create_timer(0.85).timeout
 	player.rotation = prev_rot
@@ -2178,6 +2206,9 @@ func _perform_sleep_recharge() -> void:
 		_show_toast(_t("Sahur & Tidur nyenyak! Bulan Ramadhan Hari %d — Energi 100%%." % int(sl["day"]), "Suhoor & rested! Ramadhan Day %d — Energy 100%%." % int(sl["day"])), "player", "happy")
 	else:
 		_show_toast(_t("Tidur nyenyak! Hari %d dimulai — Energi 100%% & Mood segar." % int(sl["day"]), "Well rested! Day %d begins — Energy 100%% & fresh Mood." % int(sl["day"])), "player", "happy")
+	var sleep_tier := CareerTiers.get_tier(String(_save.get("active_tier_id", "kamar_kos")))
+	if Progression.should_collect_weekly_rent(_save, sleep_tier):
+		_open_rent_modal()
 
 func _trigger_prayer_action() -> void:
 	var cur_day := maxi(1, int(_save.get("day", 1)))
@@ -2202,7 +2233,7 @@ func _trigger_prayer_action() -> void:
 	if _in_shift:
 		_call_state["mood"] = clampi(int(_call_state.get("mood", 60)) + 12, 0, 100)
 	SaveStore.save_to_slot(_save, _active_slot)
-	_play_sfx(_wav_coin)
+	_play_sfx(_wav_prayer)
 	_refresh_hud()
 	if bool(res.get("got_takjil", false)):
 		_show_toast(_t("Alhamdulillah Sholat Maghrib & Buka Puasa! (+20 Energi, +27 Mood)", "Maghrib prayer & Iftar! (+20 Energy, +27 Mood)"), "player", "happy")
@@ -2619,7 +2650,10 @@ func _open_rent_modal(res: Dictionary = {}, leveled_up_to: int = 0) -> void:
 	)
 	_modal_list.add_child(btn_pay)
 	_modal_list.add_child(btn_later)
+	if _btn_modal_close != null:
+		_btn_modal_close.visible = false
 	_show_modal()
+	btn_pay.call_deferred("grab_focus") if not btn_pay.disabled else btn_later.call_deferred("grab_focus")
 
 func _open_map_modal() -> void:
 	if _is_sleeping:
@@ -2818,6 +2852,7 @@ func _open_settings_modal() -> void:
 	btn_lang.expand_icon = true
 	btn_lang.add_theme_constant_override("icon_max_width", 24)
 	btn_lang.pressed.connect(func():
+		_play_sfx(_wav_click)
 		_save["locale"] = "en" if _loc() == "id" else "id"
 		SaveStore.save_to_slot(_save, _active_slot)
 		_refresh_hud()
@@ -2846,6 +2881,7 @@ func _open_settings_modal() -> void:
 	btn_bgm.expand_icon = true
 	btn_bgm.add_theme_constant_override("icon_max_width", 24)
 	btn_bgm.pressed.connect(func():
+		_play_sfx(_wav_click)
 		_save["bgm_enabled"] = not bgm_on
 		SaveStore.save_to_slot(_save, _active_slot)
 		_sync_ambient_audio()
@@ -2857,6 +2893,7 @@ func _open_settings_modal() -> void:
 	var btn_gfx := Button.new()
 	btn_gfx.text = _t("Grafis: Ringan (HP)" if q_cur == "low" else "Grafis: Tinggi (Bayangan)", "Graphics: Low (Mobile)" if q_cur == "low" else "Graphics: High (Shadows)")
 	btn_gfx.pressed.connect(func():
+		_play_sfx(_wav_click)
 		var nxt_q := "low" if q_cur == "high" else "high"
 		_save["gfx_quality"] = nxt_q
 		SaveStore.save_to_slot(_save, _active_slot)
@@ -3371,6 +3408,7 @@ func _build_hud() -> void:
 	_btn_modal_close = Button.new()
 	_style_btn(_btn_modal_close, Color(0.96, 0.78, 0.24), Color(0.99, 0.89, 0.48), dark_ink)
 	_btn_modal_close.pressed.connect(func():
+		_play_sfx(_wav_click)
 		_modal_backdrop.visible = false
 		_refresh_tutorial_banner()
 		if _pending_story_tier != "":
@@ -3634,7 +3672,7 @@ func _build_title_overlay(card_sb: StyleBoxFlat, dark_ink: Color, light_ink: Col
 	ver_pill.size_flags_horizontal = Control.SIZE_SHRINK_END
 	ver_pill.add_theme_stylebox_override("panel", _make_box(Color(0.08, 0.10, 0.14, 0.90), Color(0.95, 0.78, 0.26, 0.75), 8, 12, 5))
 	var ver_lbl := Label.new()
-	ver_lbl.text = "Versi 1.6 (HD)"
+	ver_lbl.text = _t("Versi 1.6 (HD)", "Version 1.6 (HD)")
 	ver_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	ver_lbl.add_theme_font_size_override("font_size", 12)
 	ver_lbl.add_theme_color_override("font_color", Color(0.96, 0.94, 0.88))
@@ -3728,7 +3766,7 @@ func _open_save_slots_modal() -> void:
 
 func _open_whats_new_modal() -> void:
 	_clear_modal()
-	_modal_title.text = _t("INFO TERBARU — VERSI 1.5 HD", "WHAT'S NEW — VERSION 1.5 HD")
+	_modal_title.text = _t("INFO TERBARU — VERSI 1.6 HD", "WHAT'S NEW — VERSION 1.6 HD")
 	for line in [
 		_t("• Potret 3D Cycles & Ikon Bergambar di seluruh menu dan HP Sari.", "• 3D Cycles Portraits & Illustrated Icons across HUD and Smartphone OS."),
 		_t("• Bank Desaku dengan target kiriman kampung & batas waktu Hari ke-10.", "• Bank Desaku with family remittance goal & Day-10 deadline."),
@@ -3745,7 +3783,12 @@ func _open_whats_new_modal() -> void:
 func _build_dialogue_bar() -> void:
 	_dialogue_bar = PanelContainer.new()
 	_dialogue_bar.visible = false
-	_dialogue_bar.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	_dialogue_bar.anchor_left = 0.5
+	_dialogue_bar.anchor_right = 0.5
+	_dialogue_bar.anchor_top = 1.0
+	_dialogue_bar.anchor_bottom = 1.0
+	_dialogue_bar.offset_left = -520
+	_dialogue_bar.offset_right = 520
 	_dialogue_bar.offset_top = -132
 	_dialogue_bar.offset_bottom = 0
 	_dialogue_bar.add_theme_stylebox_override("panel", _make_box(Color(0.06, 0.08, 0.12, 0.94), Color(0.96, 0.78, 0.26, 0.92), 0, 22, 12))
@@ -4212,6 +4255,7 @@ func _build_phone_os_overlay() -> void:
 	hud.add_child(_phone_os_wrap)
 
 func _open_phone_os(app_id: String = "home") -> void:
+	_play_sfx(_wav_click)
 	_phone_os_app = app_id
 	_phone_os_wrap.visible = true
 	_render_phone_app()
@@ -4252,7 +4296,7 @@ func _render_phone_app() -> void:
 			{"id": "shop", "ic": "app_shop", "id_lbl": "Belanja", "en_lbl": "Supply Shop"},
 			{"id": "chat", "ic": "app_chat", "id_lbl": "Pesan & Telp", "en_lbl": "Messages"},
 			{"id": "debt", "ic": "app_debt", "id_lbl": "Buku Kasbon", "en_lbl": "Debt Book"},
-			{"id": "log", "ic": "app_debt", "id_lbl": "Catatan Harian", "en_lbl": "Daily Log"},
+			{"id": "log", "ic": "icon_career", "id_lbl": "Catatan Harian", "en_lbl": "Daily Log"},
 			{"id": "dreams", "ic": "app_dreams", "id_lbl": "Impian ART", "en_lbl": "Dreams"},
 			{"id": "story", "ic": "app_story", "id_lbl": "Buku Cerita", "en_lbl": "Story Book"},
 			{"id": "missions", "ic": "app_missions", "id_lbl": "Misi Harian", "en_lbl": "Missions"},
@@ -4529,6 +4573,7 @@ func _preview_onboarding_character() -> void:
 	var mpath := "res://assets/models/char_art_hijab.glb" if _ob_style == "hijab" else "res://assets/models/char_art.glb"
 	player.load_outfit(String(_save.get("equipped_outfit_id", "starter_kasual")), mpath, _ob_color, _ob_skin)
 	SceneVisuals.apply_unified_material_pass(player, false, false, _ensure_outline(), _actor_mat_cache)
+	player.reapply_tints()
 	_refresh_onboarding_texts()
 
 func _refresh_onboarding_texts() -> void:

@@ -177,6 +177,9 @@ static func create_player_save() -> Dictionary:
 		"remittance_deadline_day": 10,
 		"courier_orders": [],
 		"debt_book": [],
+		"kasbon_xp_day": 0,
+		"cycle_shifts_worked": 0,
+		"rest_only_streak": 0,
 		"guide_seen": false,
 		"daily_log": [],
 	}
@@ -352,6 +355,9 @@ static func settle_shift(save: Dictionary, shift: Dictionary, call_state: Dictio
 	nxt_save["xp"] = int(nxt_save.get("xp", 0)) + xp_gained
 	nxt_save["day"] = cur_day + 1
 	nxt_save["completed_shifts"] = int(nxt_save.get("completed_shifts", 0)) + (0 if is_fired else 1)
+	if not is_fired:
+		nxt_save["cycle_shifts_worked"] = int(nxt_save.get("cycle_shifts_worked", 0)) + 1
+		nxt_save["rest_only_streak"] = 0
 	nxt_save["fired_count"] = int(nxt_save.get("fired_count", 0)) + (1 if is_fired else 0)
 	nxt_save["mood"] = clampi(maxi(45, shift_mood), 25, 100)
 	var max_e := get_max_energy(nxt_save)
@@ -573,8 +579,13 @@ static func pay_kasbon(save: Dictionary, debt_id: String) -> Dictionary:
 	nxt_book[idx]["paid"] = true
 	nxt["debt_book"] = nxt_book
 	nxt["balance_rp"] = bal - amt
-	nxt["xp"] = int(nxt.get("xp", 0)) + 8
-	return {"ok": true, "amount_rp": amt, "save": nxt}
+	var cur_day := maxi(1, int(nxt.get("day", 1)))
+	var xp_gain := 0
+	if int(nxt.get("kasbon_xp_day", 0)) < cur_day:
+		xp_gain = 8
+		nxt["kasbon_xp_day"] = cur_day
+		nxt["xp"] = int(nxt.get("xp", 0)) + xp_gain
+	return {"ok": true, "amount_rp": amt, "xp_gained": xp_gain, "save": nxt}
 
 static func get_spotlight_tutorial_steps(locale: String = "id") -> Array:
 	var en := (locale == "en")

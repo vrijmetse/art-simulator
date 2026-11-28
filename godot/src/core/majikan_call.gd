@@ -92,12 +92,12 @@ static func _apply_miss_penalty(nxt: Dictionary, pers: Dictionary) -> Dictionary
 	var act_cfg: Dictionary = ACTIVITIES.get(String(nxt.get("activity", "working")), ACTIVITIES["working"])
 	var act_label: String = String(act_cfg["label_id"])
 	var act_label_en: String = String(act_cfg.get("label_en", act_label))
-	nxt["trust"] = clampi(int(nxt["trust"]) - int(pers["miss_trust_penalty"]), 0, 100)
-	nxt["warnings"] = int(nxt["warnings"]) + 1
-	nxt["pay_deduction_rp"] = int(nxt["pay_deduction_rp"]) + int(pers["miss_deduction_rp"])
+	nxt["trust"] = clampi(int(nxt.get("trust", 60)) - int(pers["miss_trust_penalty"]), 0, 100)
+	nxt["warnings"] = int(nxt.get("warnings", 0)) + 1
+	nxt["pay_deduction_rp"] = int(nxt.get("pay_deduction_rp", 0)) + int(pers["miss_deduction_rp"])
 	nxt["last_warning_text"] = String(pers["warning_template"]) % act_label
 	nxt["last_warning_text_en"] = String(pers.get("warning_template_en", pers["warning_template"])) % act_label_en
-	if int(nxt["trust"]) <= int(nxt["fire_threshold"]) or int(nxt["warnings"]) >= 3:
+	if int(nxt["trust"]) <= int(nxt.get("fire_threshold", 20)) or int(nxt["warnings"]) >= 3:
 		nxt["fired"] = true
 	nxt["activity"] = "working"
 	return nxt

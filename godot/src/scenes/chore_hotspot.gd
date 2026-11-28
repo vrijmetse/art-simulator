@@ -48,7 +48,18 @@ func set_highlighted(near: bool) -> void:
 
 func mark_completed() -> void:
 	completed = true
-	visible = false
+	if not is_inside_tree() or _ring_mesh == null:
+		visible = false
+		return
+	var tw := create_tween()
+	tw.set_parallel(true)
+	tw.tween_property(_ring_mesh, "scale", Vector3(1.85, 1.0, 1.85), 0.18).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	if _mat != null:
+		tw.tween_property(_mat, "albedo_color:a", 0.0, 0.18)
+	tw.chain().tween_callback(func():
+		if is_instance_valid(self):
+			visible = false
+	)
 
 func _process(delta: float) -> void:
 	if completed or _ring_mesh == null:
