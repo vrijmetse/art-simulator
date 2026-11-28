@@ -425,7 +425,7 @@ func _notification(what: int) -> void:
 		if _phone_os_wrap != null and _phone_os_wrap.visible:
 			_phone_os_wrap.visible = false
 			_refresh_hud()
-		elif _modal_backdrop != null and _modal_backdrop.visible:
+		elif _modal_backdrop != null and _modal_backdrop.visible and (_btn_modal_close == null or _btn_modal_close.visible):
 			_modal_backdrop.visible = false
 			_refresh_tutorial_banner()
 		elif _dialogue_bar != null and _dialogue_bar.visible:
@@ -1113,7 +1113,7 @@ func _collect_shift_clue() -> void:
 	_play_sfx(_wav_coin)
 	_burst_chore_sparkles(player.position)
 	_spawn_float_popup(player.position + Vector3(0.0, 1.9, 0.0), _t("Jejak Cerita! +20 XP", "Story Clue! +20 XP"), Color(0.99, 0.86, 0.34))
-	_show_toast("✨ %s: %s" % [title_c, story_c], String(_save.get("active_profile_id", "player")), "happy")
+	_show_toast("★ %s: %s" % [title_c, story_c], String(_save.get("active_profile_id", "player")), "happy")
 	_refresh_hud()
 
 func _get_chore_positions(work_glb: String) -> Dictionary:
@@ -2075,7 +2075,7 @@ func _refresh_hud() -> void:
 	_lbl_meta.text = LifeRhythm.format_clock(int(_save.get("game_minutes", 360))).replace(":", ".")
 	if _lbl_day_sub != null:
 		var cur_day := maxi(1, int(_save.get("day", 1)))
-		var w_icon := "🌧" if _cur_weather == "hujan" else ("🌙" if _cur_phase == "malam" else "☀")
+		var w_icon := _t("Hujan", "Rain") if _cur_weather == "hujan" else (_t("Malam", "Night") if _cur_phase == "malam" else "☀")
 		_lbl_day_sub.text = "%s %d · %s" % [_t("HARI", "DAY"), cur_day, w_icon]
 
 	var star_score := int(_call_state.get("trust", 60)) if _in_shift else clampi(40 + lv * 8, 40, 100)
@@ -2185,6 +2185,8 @@ func _refresh_hud() -> void:
 
 	if _btn_map != null:
 		_btn_map.text = _t("Peta", "Map")
+	if _btn_photo != null:
+		_btn_photo.text = _t("Foto", "Photo")
 	if _btn_settings != null:
 		var has_rw := Retention.has_unclaimed_daily_reward(_save, _today_date_str())
 		_btn_settings.text = _t("Menu ★" if has_rw else "Menu", "Menu ★" if has_rw else "Menu")
@@ -2214,7 +2216,7 @@ func _refresh_hud() -> void:
 	_set_dock_label("career", _t("Karier", "Career"))
 	_set_dock_label("wardrobe", _t("Seragam", "Outfits"))
 	_set_dock_label("upgrade", _t("Upgrade", "Upgrade"))
-	_btn_modal_close.text = _t("Tutup", "Close")
+	_btn_modal_close.text = "×"
 	_refresh_courier_toast()
 	_refresh_tutorial_banner()
 	_refresh_onboarding_texts()
@@ -2225,6 +2227,107 @@ func _refresh_tutorial_banner() -> void:
 		_tutorial_panel.visible = false
 	_refresh_spotlight()
 
+func _find_first_enabled_button(root: Node) -> Button:
+	for ch in root.get_children():
+		if ch is Button and not (ch as Button).disabled and (ch as Button).visible:
+			return ch as Button
+		var nested := _find_first_enabled_button(ch)
+		if nested != null:
+			return nested
+	return null
+
+func _add_cozy_pill(parent: Control, txt: String, bg: Color, fg: Color) -> PanelContainer:
+	var pill := PanelContainer.new()
+	pill.add_theme_stylebox_override("panel", _make_box(bg, Color(bg.r * 0.9, bg.g * 0.9, bg.b * 0.9, 0.65), 14, 10, 4))
+	var lbl := Label.new()
+	lbl.text = txt
+	lbl.add_theme_font_size_override("font_size", 11)
+	lbl.add_theme_color_override("font_color", fg)
+	pill.add_child(lbl)
+	parent.add_child(pill)
+	return pill
+
+func _add_segmented_tabs(tabs: Array, active_id: String, on_pick: Callable) -> void:
+	var outer := PanelContainer.new()
+	outer.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	outer.add_theme_stylebox_override("panel", _make_box(Color(0.937, 0.890, 0.824), Color(0.86, 0.78, 0.68), 12, 4, 4))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 4)
+	for td in tabs:
+		var tid := String(td["id"])
+		var is_act := tid == active_id
+		var b := Button.new()
+		b.text = String(td["label"])
+		b.custom_minimum_size = Vector2(0, 38)
+		b.set_meta("skip_auto_style", true)
+		b.set_meta("skip_autowrap", true)
+		if is_act:
+			_style_btn(b, Color(0.176, 0.478, 0.325), Color(0.145, 0.396, 0.271), Color(1.0, 0.98, 0.94))
+		else:
+			_style_btn(b, Color(0.937, 0.890, 0.824), Color(0.937, 0.890, 0.824), Color(0.431, 0.337, 0.255))
+		b.pressed.connect(func():
+			_play_sfx(_wav_click)
+			on_pick.call(tid)
+		)
+		row.add_child(b)
+	outer.add_child(row)
+	_modal_list.add_child(outer)
+
+func _build_cozy_grid() -> GridContainer:
+	var vp_sz := get_viewport().get_visible_rect().size
+	if vp_sz.x <= 1.0:
+		vp_sz = Vector2(1280.0, 720.0)
+	var grid := GridContainer.new()
+	grid.columns = 2 if (vp_sz.x >= 900.0 and vp_sz.x > vp_sz.y) else 1
+	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	grid.add_theme_constant_override("h_separation", 10)
+	grid.add_theme_constant_override("v_separation", 10)
+	return grid
+
+func _build_cozy_item_card(icon_tex: Texture2D, title: String, badge_txt: String, badge_bg: Color, badge_fg: Color, right_ctrl: Control = null, bottom_ctrl: Control = null) -> PanelContainer:
+	var card := PanelContainer.new()
+	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	card.add_theme_stylebox_override("panel", _make_box(Color(1.0, 1.0, 1.0), Color(0.898, 0.831, 0.745), 14, 12, 10))
+	var outer_v := VBoxContainer.new()
+	outer_v.add_theme_constant_override("separation", 6)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	if icon_tex != null:
+		var ic_wrap := PanelContainer.new()
+		ic_wrap.custom_minimum_size = Vector2(40, 40)
+		ic_wrap.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		ic_wrap.add_theme_stylebox_override("panel", _make_box(Color(0.965, 0.925, 0.867), Color(0.91, 0.84, 0.74), 10, 5, 5))
+		var ic := TextureRect.new()
+		ic.texture = icon_tex
+		ic.custom_minimum_size = Vector2(28, 28)
+		ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		ic_wrap.add_child(ic)
+		row.add_child(ic_wrap)
+	var body := VBoxContainer.new()
+	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	body.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	body.add_theme_constant_override("separation", 4)
+	var tl := Label.new()
+	tl.text = title
+	tl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	tl.add_theme_font_size_override("font_size", 13)
+	tl.add_theme_color_override("font_color", Color(0.176, 0.129, 0.094))
+	body.add_child(tl)
+	if badge_txt != "":
+		var b_wrap := HBoxContainer.new()
+		_add_cozy_pill(b_wrap, badge_txt, badge_bg, badge_fg)
+		body.add_child(b_wrap)
+	row.add_child(body)
+	if right_ctrl != null:
+		right_ctrl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		row.add_child(right_ctrl)
+	outer_v.add_child(row)
+	if bottom_ctrl != null:
+		outer_v.add_child(bottom_ctrl)
+	card.add_child(outer_v)
+	return card
+
 func _auto_style_modal_buttons(node: Node) -> void:
 	for ch in node.get_children():
 		if ch is Button:
@@ -2233,9 +2336,9 @@ func _auto_style_modal_buttons(node: Node) -> void:
 				b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			b.custom_minimum_size.y = maxf(b.custom_minimum_size.y, 44.0)
 			if not b.has_theme_stylebox_override("normal") and not b.has_meta("skip_auto_style"):
-				var bg_c := Color(0.12, 0.15, 0.22) if b.disabled else Color(0.15, 0.19, 0.27)
-				var bd_c := Color(0.38, 0.42, 0.50, 0.70) if b.disabled else Color(0.95, 0.78, 0.26, 0.85)
-				var fg_c := Color(0.76, 0.78, 0.84) if b.disabled else Color(0.96, 0.95, 0.92)
+				var bg_c := Color(0.925, 0.894, 0.847) if b.disabled else Color(1.0, 1.0, 1.0)
+				var bd_c := Color(0.82, 0.76, 0.68) if b.disabled else Color(0.84, 0.74, 0.62)
+				var fg_c := Color(0.541, 0.475, 0.408) if b.disabled else Color(0.176, 0.129, 0.094)
 				_style_btn(b, bg_c, bd_c, fg_c)
 		elif ch.get_child_count() > 0:
 			_auto_style_modal_buttons(ch)
@@ -2246,12 +2349,12 @@ func _fit_modal_scroll_height() -> void:
 	var canvas_sz := get_viewport().get_visible_rect().size
 	if canvas_sz.x <= 1.0 or canvas_sz.y <= 1.0:
 		canvas_sz = Vector2(1280.0, 720.0)
-	var scroll_w := (canvas_sz.x - 64.0) if canvas_sz.x < 720.0 else minf(740.0, canvas_sz.x - 144.0)
+	var scroll_w := (canvas_sz.x - 64.0) if canvas_sz.x < 720.0 else minf(760.0, canvas_sz.x - 144.0)
 	_modal_scroll.custom_minimum_size = Vector2(scroll_w, 0.0)
 	_modal_list.custom_minimum_size = Vector2(scroll_w - 8.0, 0.0)
 	var measured_h := _modal_list.size.y if _modal_list.size.x >= scroll_w * 0.85 else _modal_list.get_combined_minimum_size().y
 	var content_h := minf(measured_h, _modal_list.get_combined_minimum_size().y) + 12.0 if _modal_list.size.x >= scroll_w * 0.85 else _modal_list.get_combined_minimum_size().y + 12.0
-	var max_h := minf(700.0, maxf(200.0, canvas_sz.y - 135.0))
+	var max_h := minf(490.0, maxf(220.0, canvas_sz.y - 190.0))
 	_modal_scroll.custom_minimum_size = Vector2(scroll_w, clampf(content_h, 48.0, max_h))
 	if _modal_card != null:
 		_modal_card.reset_size()
@@ -2265,7 +2368,7 @@ func _show_modal() -> void:
 	if canvas_sz.x <= 1.0 or canvas_sz.y <= 1.0:
 		canvas_sz = Vector2(1280.0, 720.0)
 	if _modal_card != null:
-		var card_w := (canvas_sz.x - 32.0) if canvas_sz.x < 720.0 else minf(780.0, canvas_sz.x - 100.0)
+		var card_w := (canvas_sz.x - 32.0) if canvas_sz.x < 720.0 else minf(800.0, canvas_sz.x - 96.0)
 		_modal_card.custom_minimum_size = Vector2(card_w, 0.0)
 	if _modal_list != null:
 		_auto_style_modal_buttons(_modal_list)
@@ -2282,11 +2385,10 @@ func _show_modal() -> void:
 	call_deferred("_fit_modal_scroll_height")
 	if _btn_modal_close != null and _btn_modal_close.visible:
 		_btn_modal_close.call_deferred("grab_focus")
-	elif _modal_list != null and _modal_list.get_child_count() > 0:
-		for ch in _modal_list.get_children():
-			if ch is Button and not (ch as Button).disabled:
-				(ch as Button).call_deferred("grab_focus")
-				break
+	elif _modal_list != null:
+		var fb := _find_first_enabled_button(_modal_list)
+		if fb != null:
+			fb.call_deferred("grab_focus")
 	_refresh_tutorial_banner()
 
 func _refresh_call_banner() -> void:
@@ -2318,26 +2420,33 @@ func _clear_modal() -> void:
 
 func _open_career_modal() -> void:
 	_clear_modal()
-	_modal_title.text = _t("Papan Lowongan & Tingkatan Karier", "Career Tiers & Job Board")
+	_modal_title.text = _t("Lowongan & Tingkatan Karier", "Career Tiers & Job Board")
 	var xp := int(_save.get("xp", 0))
 	var xpp := Progression.get_xp_progress(xp)
 	var rank_str := Economy.get_career_rank(xp, _loc())
 	var bonus_pct := int(round(Progression.get_level_tip_bonus(xp) * 100.0))
+	var sum_card := PanelContainer.new()
+	sum_card.add_theme_stylebox_override("panel", _make_box(Color(1.0, 1.0, 1.0), Color(0.898, 0.831, 0.745), 14, 14, 10))
+	var sum_v := VBoxContainer.new()
+	sum_v.add_theme_constant_override("separation", 6)
 	var rank_lbl := Label.new()
-	rank_lbl.text = "%s • Lv.%d (%d/%d XP) • +%d%% %s" % [rank_str, int(xpp["level"]), int(xpp["xp_in_level"]), int(xpp["xp_needed"]), bonus_pct, _t("Kontrak", "Contract")]
-	rank_lbl.add_theme_font_size_override("font_size", 12)
-	rank_lbl.add_theme_color_override("font_color", Color(0.55, 0.96, 0.72))
-	_modal_list.add_child(rank_lbl)
+	rank_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	rank_lbl.text = "%s · Lv.%d (%d/%d XP) · +%d%% %s" % [rank_str, int(xpp["level"]), int(xpp["xp_in_level"]), int(xpp["xp_needed"]), bonus_pct, _t("Kontrak", "Contract")]
+	rank_lbl.add_theme_font_size_override("font_size", 13)
+	rank_lbl.add_theme_color_override("font_color", Color(0.129, 0.431, 0.263))
+	sum_v.add_child(rank_lbl)
 	var xp_bar := ProgressBar.new()
-	xp_bar.custom_minimum_size = Vector2(400, 10)
+	xp_bar.custom_minimum_size = Vector2(0, 10)
+	xp_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	xp_bar.max_value = int(xpp["xp_needed"])
 	xp_bar.value = int(xpp["xp_in_level"])
 	xp_bar.show_percentage = false
-	_style_bar(xp_bar, Color(0.96, 0.78, 0.26), Color(0.16, 0.19, 0.24))
-	_modal_list.add_child(xp_bar)
+	_style_bar(xp_bar, Color(0.176, 0.478, 0.325), Color(0.925, 0.890, 0.835))
+	sum_v.add_child(xp_bar)
 	var sk: Dictionary = _save.get("skill_xp", {})
 	var sk_lbl := Label.new()
-	sk_lbl.text = "%s: %s Lv.%d • %s Lv.%d • %s Lv.%d • %s Lv.%d" % [
+	sk_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	sk_lbl.text = "%s: %s Lv.%d · %s Lv.%d · %s Lv.%d · %s Lv.%d" % [
 		_t("Keahlian", "Skills"),
 		_t("Menyapu", "Sweep"), Progression.skill_level_from_xp(int(sk.get("sweeping", 0))),
 		_t("Rapikan", "Tidy"), Progression.skill_level_from_xp(int(sk.get("tidiness", 0))),
@@ -2345,33 +2454,44 @@ func _open_career_modal() -> void:
 		_t("Setrika", "Iron"), Progression.skill_level_from_xp(int(sk.get("laundry", 0))),
 	]
 	sk_lbl.add_theme_font_size_override("font_size", 12)
-	sk_lbl.add_theme_color_override("font_color", Color(0.98, 0.84, 0.34))
-	_modal_list.add_child(sk_lbl)
+	sk_lbl.add_theme_color_override("font_color", Color(0.541, 0.322, 0.118))
+	sum_v.add_child(sk_lbl)
 	var perk_lbl := Label.new()
 	perk_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	perk_lbl.text = _t(
-		"Perk Lv.3: Sapu (+1 Boost) • Rapikan (0.85s Boost) • Masak (Bekal Gratis) • Setrika (+10% Tip)",
-		"Lv.3 Perks: Sweep (+1 Boost) • Tidy (0.85s Boost) • Cook (Free Meal) • Iron (+10% Tip)"
+		"Perk Lv.3: Sapu (+1 Boost) · Rapikan (0.85s Boost) · Masak (Bekal Gratis) · Setrika (+10% Tip)",
+		"Lv.3 Perks: Sweep (+1 Boost) · Tidy (0.85s Boost) · Cook (Free Meal) · Iron (+10% Tip)"
 	)
 	perk_lbl.add_theme_font_size_override("font_size", 11)
-	perk_lbl.add_theme_color_override("font_color", Color(0.76, 0.88, 0.94))
-	_modal_list.add_child(perk_lbl)
+	perk_lbl.add_theme_color_override("font_color", Color(0.431, 0.337, 0.255))
+	sum_v.add_child(perk_lbl)
+	sum_card.add_child(sum_v)
+	_modal_list.add_child(sum_card)
+
 	var xp_cur_career := int(_save.get("xp", 0))
 	var cur_id := String(_save.get("active_tier_id", "kamar_kos"))
+	var grid := _build_cozy_grid()
 	for t in CareerTiers.get_all_tiers():
 		var tid := String(t["id"])
 		var unlocked := CareerTiers.can_access_tier(tid, xp_cur_career)
-		var btn := Button.new()
-		var badge := "✓ " if tid == cur_id else ("" if unlocked else "🔒 ")
+		var is_act := tid == cur_id
 		var room_tag := _t(" + Kamar ART", " + Live-In Room") if bool(t["live_in_room_provided"]) else ""
 		var h_name := String(t.get("house_type_en", t["house_type"]) if _loc() == "en" else t["house_type"])
-		var act_tag := _t(" [Aktif]", " [Active]") if tid == cur_id else ""
-		btn.text = "%s%s (%d XP • %.1fx%s)%s" % [badge, h_name, int(t["min_xp"]), float(t["pay_multiplier"]), room_tag, act_tag]
+		var badge_txt := "%d XP · %.1fx%s" % [int(t["min_xp"]), float(t["pay_multiplier"]), room_tag]
+		var btn := Button.new()
+		btn.set_meta("skip_auto_style", true)
+		btn.set_meta("skip_autowrap", true)
+		btn.custom_minimum_size = Vector2(88, 36)
 		btn.disabled = not unlocked
-		if tid == cur_id:
-			_style_btn(btn, Color(0.18, 0.44, 0.36), Color(0.98, 0.84, 0.34))
+		if is_act:
+			btn.text = _t("✓ Aktif", "✓ Active")
+			_style_btn(btn, Color(0.910, 0.961, 0.925), Color(0.65, 0.84, 0.72), Color(0.129, 0.431, 0.263))
 		elif unlocked:
-			_style_btn(btn, Color(0.15, 0.20, 0.28), Color(0.95, 0.78, 0.26, 0.85))
+			btn.text = _t("Pilih", "Select")
+			_style_btn(btn, Color(0.176, 0.478, 0.325), Color(0.145, 0.396, 0.271), Color(1.0, 1.0, 1.0))
+		else:
+			btn.text = _t("Terkunci", "Locked")
+			_style_btn(btn, Color(0.925, 0.894, 0.847), Color(0.82, 0.76, 0.68), Color(0.541, 0.475, 0.408))
 		btn.pressed.connect(func():
 			var res := Progression.select_job_tier(_save, tid)
 			if res["ok"]:
@@ -2383,23 +2503,30 @@ func _open_career_modal() -> void:
 				_refresh_hud()
 				_maybe_show_chapter_modal(tid)
 		)
-		_modal_list.add_child(btn)
+		var b_bg := Color(0.910, 0.961, 0.925) if unlocked else Color(0.945, 0.918, 0.878)
+		var b_fg := Color(0.129, 0.431, 0.263) if unlocked else Color(0.49, 0.41, 0.34)
+		grid.add_child(_build_cozy_item_card(Portraits.get_ui_icon("icon_career"), h_name, badge_txt, b_bg, b_fg, btn))
+	_modal_list.add_child(grid)
+
 	var row_extra := HBoxContainer.new()
 	row_extra.add_theme_constant_override("separation", 8)
 	var btn_wish := Button.new()
-	btn_wish.text = _t("★ Impian ART (%d/4)" % (_save.get("unlocked_wishlist", []) as Array).size(), "★ ART Dreams (%d/4)" % (_save.get("unlocked_wishlist", []) as Array).size())
+	btn_wish.set_meta("skip_auto_style", true)
+	btn_wish.text = _t("★ Impian (%d/4)" % (_save.get("unlocked_wishlist", []) as Array).size(), "★ Dreams (%d/4)" % (_save.get("unlocked_wishlist", []) as Array).size())
 	btn_wish.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_style_btn(btn_wish, Color(0.20, 0.44, 0.56), Color(0.96, 0.78, 0.26))
+	_style_btn(btn_wish, Color(0.176, 0.478, 0.325), Color(0.145, 0.396, 0.271), Color(1.0, 1.0, 1.0))
 	btn_wish.pressed.connect(_open_wishlist_modal)
 	var btn_book := Button.new()
+	btn_book.set_meta("skip_auto_style", true)
 	btn_book.text = _t("Buku Cerita", "Story Book")
 	btn_book.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_style_btn(btn_book, Color(0.32, 0.28, 0.48), Color(0.96, 0.78, 0.26))
+	_style_btn(btn_book, Color(0.961, 0.910, 0.827), Color(0.84, 0.72, 0.56), Color(0.361, 0.263, 0.188))
 	btn_book.pressed.connect(_open_storybook_modal)
 	var btn_misi := Button.new()
+	btn_misi.set_meta("skip_auto_style", true)
 	btn_misi.text = _t("Misi & Streak", "Missions & Streak")
 	btn_misi.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_style_btn(btn_misi, Color(0.18, 0.48, 0.34), Color(0.96, 0.78, 0.26))
+	_style_btn(btn_misi, Color(0.902, 0.937, 0.969), Color(0.72, 0.81, 0.90), Color(0.141, 0.329, 0.490))
 	btn_misi.pressed.connect(_open_retention_modal)
 	row_extra.add_child(btn_wish)
 	row_extra.add_child(btn_book)
@@ -2411,23 +2538,24 @@ func _open_retention_modal() -> void:
 	_clear_modal()
 	var today_s := _today_date_str()
 	_save = Retention.sync_daily_login(_save, today_s)["save"]
-	_modal_title.text = _t("MISI HARIAN, STREAK & LENCANA", "DAILY MISSIONS, STREAK & BADGES")
+	_modal_title.text = _t("Misi Harian, Streak & Lencana", "Daily Missions, Streak & Badges")
 
 	var streak_day := clampi(int(_save.get("login_streak", 1)), 1, 7)
 	var rw: Dictionary = Retention.STREAK_REWARDS[streak_day - 1]
 	var can_claim := String(_save.get("streak_claimed_date", "")) != today_s
 	var btn_streak := Button.new()
+	btn_streak.set_meta("skip_auto_style", true)
 	var rw_lbl := String(rw["label_en"] if _loc() == "en" else rw["label_id"])
 	var rw_prefix := "Day %d: " % streak_day if _loc() == "en" else "Hari %d: " % streak_day
 	if rw_lbl.begins_with(rw_prefix):
 		rw_lbl = rw_lbl.substr(rw_prefix.length())
 	if can_claim:
 		btn_streak.text = _t("★ Klaim Streak Hari %d: %s (+%s, +%d XP)" % [streak_day, rw_lbl, I18n.format_balance(int(rw["rp"]), "id"), int(rw["xp"])], "★ Claim Day %d Streak: %s (+%s, +%d XP)" % [streak_day, rw_lbl, I18n.format_balance(int(rw["rp"]), "en"), int(rw["xp"])])
-		_style_btn(btn_streak, Color(0.22, 0.56, 0.38), Color(0.98, 0.84, 0.34))
+		_style_btn(btn_streak, Color(0.176, 0.478, 0.325), Color(0.145, 0.396, 0.271), Color(1.0, 1.0, 1.0))
 	else:
 		btn_streak.text = _t("✓ Streak Hari %d/7 Sudah Diklaim Hari Ini" % streak_day, "✓ Day %d/7 Streak Claimed Today" % streak_day)
 		btn_streak.disabled = true
-		_style_btn(btn_streak, Color(0.14, 0.22, 0.19), Color(0.42, 0.54, 0.48), Color(0.84, 0.92, 0.86))
+		_style_btn(btn_streak, Color(0.910, 0.961, 0.925), Color(0.75, 0.86, 0.78), Color(0.24, 0.46, 0.32))
 	btn_streak.pressed.connect(func():
 		var cl := Retention.claim_streak_reward(_save, _today_date_str())
 		if cl["ok"]:
@@ -2443,15 +2571,18 @@ func _open_retention_modal() -> void:
 	for m in Retention.get_active_missions(_save, today_s, _loc()):
 		var mid := String(m["id"])
 		var btn_m := Button.new()
+		btn_m.set_meta("skip_auto_style", true)
 		if bool(m["claimed"]):
 			btn_m.text = "✓ %s (%s)" % [String(m["label"]), _t("Selesai", "Claimed")]
 			btn_m.disabled = true
+			_style_btn(btn_m, Color(0.910, 0.961, 0.925), Color(0.78, 0.86, 0.80), Color(0.24, 0.46, 0.32))
 		elif bool(m["done"]):
 			btn_m.text = "★ %s (%d/%d) — %s +%s" % [String(m["label"]), int(m["current"]), int(m["target"]), _t("Klaim", "Claim"), I18n.format_balance(int(m["rp"]), _loc())]
-			_style_btn(btn_m, Color(0.20, 0.44, 0.56), Color(0.98, 0.84, 0.34))
+			_style_btn(btn_m, Color(0.176, 0.478, 0.325), Color(0.145, 0.396, 0.271), Color(1.0, 1.0, 1.0))
 		else:
-			btn_m.text = "○ %s (%d/%d) • +%s" % [String(m["label"]), int(m["current"]), int(m["target"]), I18n.format_balance(int(m["rp"]), _loc())]
+			btn_m.text = "○ %s (%d/%d) · +%s" % [String(m["label"]), int(m["current"]), int(m["target"]), I18n.format_balance(int(m["rp"]), _loc())]
 			btn_m.disabled = true
+			_style_btn(btn_m, Color(1.0, 1.0, 1.0), Color(0.898, 0.831, 0.745), Color(0.431, 0.337, 0.255))
 		btn_m.pressed.connect(func():
 			var cm := Retention.claim_mission_reward(_save, mid, _today_date_str())
 			if cm["ok"]:
@@ -2465,9 +2596,9 @@ func _open_retention_modal() -> void:
 
 	var unlocked_bd: Array = _save.get("unlocked_badges", [])
 	var bd_card := PanelContainer.new()
-	bd_card.add_theme_stylebox_override("panel", _make_box(Color(0.12, 0.16, 0.22), Color(0.96, 0.78, 0.26, 0.65), 10, 12, 8))
+	bd_card.add_theme_stylebox_override("panel", _make_box(Color(1.0, 1.0, 1.0), Color(0.898, 0.831, 0.745), 14, 12, 10))
 	var bd_v := VBoxContainer.new()
-	bd_v.add_theme_constant_override("separation", 4)
+	bd_v.add_theme_constant_override("separation", 5)
 	var bd_lbl := Label.new()
 	var bd_names: Array = []
 	for raw_bid in unlocked_bd:
@@ -2475,15 +2606,15 @@ func _open_retention_modal() -> void:
 		if Retention.BADGES.has(bid):
 			bd_names.append(String(Retention.BADGES[bid]["label_en" if _loc() == "en" else "label_id"]))
 	bd_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	bd_lbl.text = "🏅 %s (%d/%d): %s" % [_t("Lencana", "Badges"), unlocked_bd.size(), Retention.BADGES.size(), ", ".join(bd_names) if bd_names.size() > 0 else _t("Belum ada", "None yet")]
+	bd_lbl.text = "★ %s (%d/%d): %s" % [_t("Lencana", "Badges"), unlocked_bd.size(), Retention.BADGES.size(), ", ".join(bd_names) if bd_names.size() > 0 else _t("Belum ada", "None yet")]
 	bd_lbl.add_theme_font_size_override("font_size", 12)
-	bd_lbl.add_theme_color_override("font_color", Color(0.98, 0.84, 0.34))
+	bd_lbl.add_theme_color_override("font_color", Color(0.541, 0.322, 0.118))
 	var bd_bar := ProgressBar.new()
 	bd_bar.custom_minimum_size = Vector2(0, 8)
 	bd_bar.max_value = maxi(1, Retention.BADGES.size())
 	bd_bar.value = unlocked_bd.size()
 	bd_bar.show_percentage = false
-	_style_bar(bd_bar, Color(0.96, 0.78, 0.26), Color(0.08, 0.10, 0.14))
+	_style_bar(bd_bar, Color(0.176, 0.478, 0.325), Color(0.925, 0.890, 0.835))
 	bd_v.add_child(bd_lbl)
 	bd_v.add_child(bd_bar)
 	bd_card.add_child(bd_v)
@@ -2576,14 +2707,17 @@ func _trigger_prayer_action() -> void:
 
 func _open_low_energy_modal(cur_e: int) -> void:
 	_clear_modal()
-	_modal_title.text = _t("ENERGI MENIPIS (%d%%)" % cur_e, "LOW ENERGY (%d%%)" % cur_e)
+	_modal_title.text = _t("Energi Menipis (%d%%)" % cur_e, "Low Energy (%d%%)" % cur_e)
 	var lbl := Label.new()
 	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	lbl.add_theme_font_size_override("font_size", 13)
+	lbl.add_theme_color_override("font_color", Color(0.176, 0.129, 0.094))
 	lbl.text = _t("Energi tinggal %d%%! Sebaiknya pulang ke kamar dan Tidur di Kasur (Gratis, 100%%) sebelum kerja shift baru." % cur_e, "Energy is at %d%%! Head to your room and sleep in bed (Free, 100%%) before starting a shift." % cur_e)
 	_modal_list.add_child(lbl)
 	var b_home := Button.new()
+	b_home.set_meta("skip_auto_style", true)
 	b_home.text = _t("Pulang ke Kamar untuk Tidur", "Go Back to Room to Sleep")
-	_style_btn(b_home, Color(0.20, 0.48, 0.56), Color(0.98, 0.84, 0.34))
+	_style_btn(b_home, Color(0.176, 0.478, 0.325), Color(0.145, 0.396, 0.271), Color(1.0, 1.0, 1.0))
 	b_home.pressed.connect(func():
 		_modal_backdrop.visible = false
 		_enter_home_mode()
@@ -2600,25 +2734,26 @@ func _open_low_energy_modal(cur_e: int) -> void:
 
 func _open_storybook_modal() -> void:
 	_clear_modal()
-	_modal_title.text = _t("BUKU CERITA PERJALANAN ART", "ART JOURNEY STORY BOOK")
+	_modal_title.text = _t("Buku Cerita Perjalanan ART", "ART Journey Story Book")
 	var sub := Label.new()
 	sub.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	sub.text = _t("Setiap langkah kariermu dari kamar kos hingga Cluster Elite tercatat di sini.", "Every milestone from your simple kos room to Cluster Elite is recorded here.")
 	sub.add_theme_font_size_override("font_size", 12)
-	sub.add_theme_color_override("font_color", Color(0.84, 0.88, 0.94))
+	sub.add_theme_color_override("font_color", Color(0.431, 0.337, 0.255))
 	_modal_list.add_child(sub)
 	for entry in WishlistStory.get_storybook_entries(_save, _loc()):
 		var btn := Button.new()
+		btn.set_meta("skip_auto_style", true)
 		var ok_u := bool(entry["unlocked"])
 		if ok_u:
-			btn.text = "📖 %s — %s" % [String(entry["title"]), _t("Baca", "Read")]
-			_style_btn(btn, Color(0.16, 0.38, 0.32), Color(0.96, 0.78, 0.26))
+			btn.text = "★ %s — %s" % [String(entry["title"]), _t("Baca", "Read")]
+			_style_btn(btn, Color(1.0, 1.0, 1.0), Color(0.84, 0.74, 0.62), Color(0.176, 0.129, 0.094))
 			var ch_dict: Dictionary = entry["chapter"]
 			btn.pressed.connect(func(): _open_chapter_modal(ch_dict))
 		else:
-			btn.text = "🔒 %s (%s %d XP)" % [String(entry["title"]), _t("Buka di", "Unlocks at"), int(entry["min_xp"])]
+			btn.text = "%s %s (%s %d XP)" % [_t("[Terkunci]", "[Locked]"), String(entry["title"]), _t("Buka di", "Unlocks at"), int(entry["min_xp"])]
 			btn.disabled = true
-			_style_btn(btn, Color(0.14, 0.16, 0.20), Color(0.45, 0.45, 0.48))
+			_style_btn(btn, Color(0.925, 0.894, 0.847), Color(0.82, 0.76, 0.68), Color(0.541, 0.475, 0.408))
 		_modal_list.add_child(btn)
 	var unlocked_cl: Array = _save.get("unlocked_clues", [])
 	_add_modal_section(_t("JEJAK RUMAH & CERITA WARGA (%d/%d)" % [unlocked_cl.size(), HouseholdClues.CLUES.size()], "HOUSEHOLD CLUES & STORIES (%d/%d)" % [unlocked_cl.size(), HouseholdClues.CLUES.size()]))
@@ -2626,7 +2761,8 @@ func _open_storybook_modal() -> void:
 		var empty_cl := Label.new()
 		empty_cl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		empty_cl.text = _t("Cari kilauan emas saat shift untuk menemukan cerita hangat di balik rumah majikan.", "Inspect golden sparkles during shifts to uncover hidden stories inside each household.")
-		empty_cl.add_theme_color_override("font_color", Color(0.84, 0.88, 0.94))
+		empty_cl.add_theme_font_size_override("font_size", 12)
+		empty_cl.add_theme_color_override("font_color", Color(0.431, 0.337, 0.255))
 		_modal_list.add_child(empty_cl)
 	else:
 		for raw_cid in unlocked_cl:
@@ -2635,24 +2771,26 @@ func _open_storybook_modal() -> void:
 				continue
 			var cl_d: Dictionary = HouseholdClues.CLUES[scid]
 			var cl_card := PanelContainer.new()
-			cl_card.add_theme_stylebox_override("panel", _make_box(Color(0.11, 0.16, 0.24), Color(0.96, 0.78, 0.26, 0.65), 10, 10, 8))
+			cl_card.add_theme_stylebox_override("panel", _make_box(Color(1.0, 1.0, 1.0), Color(0.898, 0.831, 0.745), 14, 12, 10))
 			var cl_v := VBoxContainer.new()
 			cl_v.add_theme_constant_override("separation", 3)
 			var cl_t := Label.new()
-			cl_t.text = "✨ %s" % String(cl_d["title_en" if _loc() == "en" else "title_id"])
-			cl_t.add_theme_color_override("font_color", Color(0.98, 0.84, 0.34))
+			cl_t.text = "★ %s" % String(cl_d["title_en" if _loc() == "en" else "title_id"])
+			cl_t.add_theme_font_size_override("font_size", 13)
+			cl_t.add_theme_color_override("font_color", Color(0.541, 0.322, 0.118))
 			var cl_b := Label.new()
 			cl_b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			cl_b.text = String(cl_d["story_en" if _loc() == "en" else "story_id"])
 			cl_b.add_theme_font_size_override("font_size", 11)
-			cl_b.add_theme_color_override("font_color", Color(0.92, 0.92, 0.90))
+			cl_b.add_theme_color_override("font_color", Color(0.176, 0.129, 0.094))
 			cl_v.add_child(cl_t)
 			cl_v.add_child(cl_b)
 			cl_card.add_child(cl_v)
 			_modal_list.add_child(cl_card)
 	var cult_btn := Button.new()
-	cult_btn.text = _t("🌏 Kamus Budaya Indonesia (Global Notes)", "🌏 Indonesian Cultural Notes (Glossary)")
-	_style_btn(cult_btn, Color(0.14, 0.24, 0.42), Color(0.96, 0.78, 0.26))
+	cult_btn.set_meta("skip_auto_style", true)
+	cult_btn.text = _t("Kamus Budaya Indonesia (Cultural Notes)", "Indonesian Cultural Notes (Glossary)")
+	_style_btn(cult_btn, Color(0.902, 0.937, 0.969), Color(0.72, 0.81, 0.90), Color(0.141, 0.329, 0.490))
 	cult_btn.pressed.connect(func(): call_deferred("_open_cultural_notes_modal"))
 	_modal_list.add_child(cult_btn)
 	_show_modal()
@@ -2666,13 +2804,13 @@ func _open_dilemma_modal(dilemma: Dictionary) -> void:
 	var did := String(dilemma.get("id", ""))
 	_modal_title.text = String(dilemma["title_en" if _loc() == "en" else "title_id"])
 	var card := PanelContainer.new()
-	card.add_theme_stylebox_override("panel", _make_box(Color(0.12, 0.16, 0.24), Color(0.96, 0.78, 0.26, 0.85), 12, 12, 10))
+	card.add_theme_stylebox_override("panel", _make_box(Color(1.0, 1.0, 1.0), Color(0.898, 0.831, 0.745), 14, 14, 12))
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 12)
 	var p_frame := PanelContainer.new()
 	p_frame.custom_minimum_size = Vector2(68, 68)
 	p_frame.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	p_frame.add_theme_stylebox_override("panel", _make_box(Color(0.08, 0.12, 0.18), Color(0.96, 0.78, 0.26), 10, 2, 2))
+	p_frame.add_theme_stylebox_override("panel", _make_box(Color(0.965, 0.925, 0.867), Color(0.776, 0.612, 0.427), 12, 3, 3))
 	var p_rect := TextureRect.new()
 	p_rect.texture = Portraits.get_portrait(String(dilemma.get("speaker_id", "player")), "neutral")
 	p_rect.custom_minimum_size = Vector2(62, 62)
@@ -2685,7 +2823,7 @@ func _open_dilemma_modal(dilemma: Dictionary) -> void:
 	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	body.text = String(dilemma["prompt_en" if _loc() == "en" else "prompt_id"])
 	body.add_theme_font_size_override("font_size", 13)
-	body.add_theme_color_override("font_color", Color(0.96, 0.95, 0.92))
+	body.add_theme_color_override("font_color", Color(0.176, 0.129, 0.094))
 	row.add_child(body)
 	card.add_child(row)
 	_modal_list.add_child(card)
@@ -2693,8 +2831,12 @@ func _open_dilemma_modal(dilemma: Dictionary) -> void:
 	for ci in range(choices.size()):
 		var ch: Dictionary = choices[ci]
 		var cbtn := Button.new()
+		cbtn.set_meta("skip_auto_style", true)
 		cbtn.text = String(ch["label_en" if _loc() == "en" else "label_id"])
-		_style_btn(cbtn, Color(0.18, 0.36, 0.32) if ci == 0 else Color(0.18, 0.22, 0.30), Color(0.96, 0.78, 0.26))
+		if ci == 0:
+			_style_btn(cbtn, Color(0.176, 0.478, 0.325), Color(0.145, 0.396, 0.271), Color(1.0, 1.0, 1.0))
+		else:
+			_style_btn(cbtn, Color(1.0, 1.0, 1.0), Color(0.84, 0.74, 0.62), Color(0.176, 0.129, 0.094))
 		cbtn.pressed.connect(func():
 			var res := HouseholdDilemmas.resolve_choice(_save, _call_state, _shift, did, ci)
 			if bool(res["ok"]):
@@ -2720,26 +2862,27 @@ func _open_dilemma_modal(dilemma: Dictionary) -> void:
 
 func _open_cultural_notes_modal() -> void:
 	_clear_modal()
-	_modal_title.text = _t("CATATAN BUDAYA INDONESIA", "INDONESIAN CULTURAL NOTES")
+	_modal_title.text = _t("Catatan Budaya Indonesia", "Indonesian Cultural Notes")
 	var sub := Label.new()
 	sub.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	sub.text = _t("Mengenal istilah khas kehidupan perantau & rumah tangga Indonesia.", "A warm guide to authentic Indonesian daily life & household traditions in Cozy Homekeeper.")
 	sub.add_theme_font_size_override("font_size", 12)
-	sub.add_theme_color_override("font_color", Color(0.84, 0.88, 0.94))
+	sub.add_theme_color_override("font_color", Color(0.431, 0.337, 0.255))
 	_modal_list.add_child(sub)
 	for note in CulturalNotes.get_notes(_loc()):
 		var nc := PanelContainer.new()
-		nc.add_theme_stylebox_override("panel", _make_box(Color(0.11, 0.16, 0.24), Color(0.96, 0.78, 0.26, 0.65), 10, 10, 8))
+		nc.add_theme_stylebox_override("panel", _make_box(Color(1.0, 1.0, 1.0), Color(0.898, 0.831, 0.745), 14, 12, 10))
 		var nv := VBoxContainer.new()
 		nv.add_theme_constant_override("separation", 3)
 		var nt := Label.new()
-		nt.text = "🌏 %s" % String(note["title"])
-		nt.add_theme_color_override("font_color", Color(0.98, 0.84, 0.34))
+		nt.text = "★ %s" % String(note["title"])
+		nt.add_theme_font_size_override("font_size", 13)
+		nt.add_theme_color_override("font_color", Color(0.541, 0.322, 0.118))
 		var nb := Label.new()
 		nb.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		nb.text = String(note["body"])
 		nb.add_theme_font_size_override("font_size", 11)
-		nb.add_theme_color_override("font_color", Color(0.93, 0.93, 0.90))
+		nb.add_theme_color_override("font_color", Color(0.176, 0.129, 0.094))
 		nv.add_child(nt)
 		nv.add_child(nb)
 		nc.add_child(nv)
@@ -2760,13 +2903,13 @@ func _open_chapter_modal(ch: Dictionary) -> void:
 	SaveStore.save_to_slot(_save, _active_slot)
 	_modal_title.text = String(ch["title_en"] if _loc() == "en" else ch["title_id"])
 	var story_card := PanelContainer.new()
-	story_card.add_theme_stylebox_override("panel", _make_box(Color(0.12, 0.16, 0.24), Color(0.96, 0.78, 0.26, 0.80), 12, 12, 10))
+	story_card.add_theme_stylebox_override("panel", _make_box(Color(1.0, 1.0, 1.0), Color(0.898, 0.831, 0.745), 14, 14, 12))
 	var hdr_row := HBoxContainer.new()
 	hdr_row.add_theme_constant_override("separation", 12)
 	var p_frame := PanelContainer.new()
 	p_frame.custom_minimum_size = Vector2(72, 72)
 	p_frame.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	p_frame.add_theme_stylebox_override("panel", _make_box(Color(0.08, 0.12, 0.18), Color(0.96, 0.78, 0.26), 10, 2, 2))
+	p_frame.add_theme_stylebox_override("panel", _make_box(Color(0.965, 0.925, 0.867), Color(0.776, 0.612, 0.427), 12, 3, 3))
 	var p_rect := TextureRect.new()
 	p_rect.texture = _get_player_portrait_tex("happy")
 	p_rect.custom_minimum_size = Vector2(66, 66)
@@ -2779,7 +2922,7 @@ func _open_chapter_modal(ch: Dictionary) -> void:
 	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	body.text = String(ch["body_en"] if _loc() == "en" else ch["body_id"])
 	body.add_theme_font_size_override("font_size", 13)
-	body.add_theme_color_override("font_color", Color(0.96, 0.95, 0.92))
+	body.add_theme_color_override("font_color", Color(0.176, 0.129, 0.094))
 	hdr_row.add_child(body)
 	story_card.add_child(hdr_row)
 	_modal_list.add_child(story_card)
@@ -2787,80 +2930,104 @@ func _open_chapter_modal(ch: Dictionary) -> void:
 	var q_txt := WishlistStory.get_tier_milestone_quote(ch_tier, _loc())
 	if q_txt != "":
 		var q_card := PanelContainer.new()
-		q_card.add_theme_stylebox_override("panel", _make_box(Color(0.18, 0.14, 0.08), Color(0.96, 0.80, 0.34, 0.75), 10, 12, 8))
+		q_card.add_theme_stylebox_override("panel", _make_box(Color(0.961, 0.910, 0.827), Color(0.84, 0.72, 0.56), 12, 12, 8))
 		var qlbl := Label.new()
 		qlbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		qlbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		qlbl.text = q_txt
 		qlbl.add_theme_font_size_override("font_size", 13)
-		qlbl.add_theme_color_override("font_color", Color(0.98, 0.86, 0.42))
+		qlbl.add_theme_color_override("font_color", Color(0.541, 0.322, 0.118))
 		q_card.add_child(qlbl)
 		_modal_list.add_child(q_card)
 	_show_modal()
 
-func _open_wishlist_modal() -> void:
+func _open_wishlist_modal(tab: String = "dreams") -> void:
 	_clear_modal()
-	_modal_title.text = _t("IMPIAN ART & TARGET TABUNGAN", "ART DREAMS & MILESTONE GOALS")
-	var w_bal := Label.new()
-	w_bal.text = "%s: %s" % [_t("Saldo Dompet", "Wallet Balance"), I18n.format_balance(int(_save.get("balance_rp", 0)), _loc())]
-	w_bal.add_theme_font_size_override("font_size", 12)
-	w_bal.add_theme_color_override("font_color", Color(0.45, 0.94, 0.44))
-	_modal_list.add_child(w_bal)
-	var unlocked: Array = _save.get("unlocked_wishlist", [])
+	_modal_title.text = _t("Impian ART & Target Tabungan", "ART Dreams & Milestone Goals")
 	var bal_now_w := int(_save.get("balance_rp", 0))
-	for raw_wid in WishlistStory.WISHLIST_ITEMS.keys():
-		var wid := String(raw_wid)
-		var item: Dictionary = WishlistStory.WISHLIST_ITEMS[wid]
-		var is_done := wid in unlocked
-		var cost_w := int(item["cost_rp"])
-		var can_buy_w := (not is_done) and bal_now_w >= cost_w
-		var title := String(item["label_en"] if _loc() == "en" else item["label_id"])
-		var desc := String(item["desc_en"] if _loc() == "en" else item["desc_id"])
-		var w_card := PanelContainer.new()
-		w_card.add_theme_stylebox_override("panel", _make_box(Color(0.14, 0.28, 0.22) if is_done else Color(0.12, 0.16, 0.22), Color(0.96, 0.78, 0.26) if can_buy_w else Color(0.36, 0.40, 0.48), 10, 10, 6))
-		var wv := VBoxContainer.new()
-		wv.add_theme_constant_override("separation", 4)
-		var btn := Button.new()
-		var status := _t("✓ Tercapai", "✓ Achieved") if is_done else (_t("★ Wujudkan · %s (+%d XP)" % [I18n.format_balance(cost_w, _loc()), int(item["xp_bonus"])], "★ Fulfill · %s (+%d XP)" % [I18n.format_balance(cost_w, _loc()), int(item["xp_bonus"])]) if can_buy_w else ("%s (+%d XP, +%d%% %s)" % [I18n.format_balance(cost_w, _loc()), int(item["xp_bonus"]), int(item["mood_bonus"]), _t("Semangat", "Mood")]))
-		btn.text = "%s — %s\n%s" % [title, status, desc]
-		btn.disabled = is_done or not can_buy_w
-		if can_buy_w:
-			_style_btn(btn, Color(0.20, 0.50, 0.34), Color(0.98, 0.84, 0.34))
-		btn.pressed.connect(func():
-			var res := WishlistStory.buy_wishlist_item(_save, wid)
-			if res["ok"]:
-				_save = res["save"]
-				_save = Settings.append_daily_log(_save, {
-					"day": int(_save.get("day", 1)),
-					"kind": "wishlist",
-					"title_id": "Impian: %s" % String(item["label_id"]),
-					"title_en": "Dream: %s" % String(item["label_en"]),
-					"delta_rp": -cost_w,
-				})
-				SaveStore.save_to_slot(_save, _active_slot)
-				_play_sfx(_wav_fanfare)
-				_show_toast(_t("Impian tercapai: %s! (+%d XP)" % [title, int(item["xp_bonus"])], "Dream achieved: %s! (+%d XP)" % [title, int(item["xp_bonus"])]), "player", "happy")
-				var ep := WishlistStory.get_unseen_epilogue(_save)
-				if not ep.is_empty():
-					call_deferred("_open_chapter_modal", ep)
-				else:
-					call_deferred("_open_wishlist_modal")
-				_refresh_hud()
-		)
-		wv.add_child(btn)
-		if not is_done:
-			var wp := ProgressBar.new()
-			wp.custom_minimum_size = Vector2(0, 6)
-			wp.max_value = maxi(1, cost_w)
-			wp.value = mini(bal_now_w, cost_w)
-			wp.show_percentage = false
-			_style_bar(wp, Color(0.36, 0.88, 0.48) if can_buy_w else Color(0.96, 0.78, 0.26), Color(0.08, 0.10, 0.14))
-			wv.add_child(wp)
-		w_card.add_child(wv)
-		_modal_list.add_child(w_card)
-	if WishlistStory.is_epilogue_unlocked(_save):
-		_add_modal_section(_t("PROYEK MASA DEPAN (JURAGAN MANDIRI)", "FUTURE INVESTMENTS (PASSIVE INCOME)"))
+	var top_pills := HBoxContainer.new()
+	top_pills.add_theme_constant_override("separation", 8)
+	_add_cozy_pill(top_pills, "%s: %s" % [_t("Dompet", "Wallet"), I18n.format_balance(bal_now_w, _loc())], Color(0.894, 0.957, 0.906), Color(0.118, 0.420, 0.231))
+	_add_cozy_pill(top_pills, _t("%d/4 Impian" % (_save.get("unlocked_wishlist", []) as Array).size(), "%d/4 Dreams" % (_save.get("unlocked_wishlist", []) as Array).size()), Color(0.961, 0.910, 0.827), Color(0.541, 0.322, 0.118))
+	_modal_list.add_child(top_pills)
+
+	var ep_ready := WishlistStory.is_epilogue_unlocked(_save)
+	var active_tab := tab if (ep_ready and tab == "agency") else "dreams"
+	if ep_ready:
+		_add_segmented_tabs([
+			{"id": "dreams", "label": _t("Impian ART (4)", "ART Dreams (4)")},
+			{"id": "agency", "label": _t("Usaha & Agensi", "Business & Agency")},
+		], active_tab, func(new_tab: String): _open_wishlist_modal(new_tab))
+
+	if active_tab == "dreams":
+		var unlocked: Array = _save.get("unlocked_wishlist", [])
+		var grid := _build_cozy_grid()
+		for raw_wid in WishlistStory.WISHLIST_ITEMS.keys():
+			var wid := String(raw_wid)
+			var item: Dictionary = WishlistStory.WISHLIST_ITEMS[wid]
+			var is_done := wid in unlocked
+			var cost_w := int(item["cost_rp"])
+			var can_buy_w := (not is_done) and bal_now_w >= cost_w
+			var title := String(item["label_en"] if _loc() == "en" else item["label_id"])
+			var desc := String(item["desc_en"] if _loc() == "en" else item["desc_id"])
+			var badge_txt := _t("✓ Tercapai", "✓ Achieved") if is_done else "+%d XP · +%d%% %s" % [int(item["xp_bonus"]), int(item["mood_bonus"]), _t("Mood", "Mood")]
+			var cta := Button.new()
+			cta.set_meta("skip_auto_style", true)
+			cta.set_meta("skip_autowrap", true)
+			cta.custom_minimum_size = Vector2(96, 36)
+			cta.disabled = is_done or not can_buy_w
+			if is_done:
+				cta.text = _t("✓ Selesai", "✓ Done")
+				_style_btn(cta, Color(0.910, 0.961, 0.925), Color(0.65, 0.84, 0.72), Color(0.129, 0.431, 0.263))
+			elif can_buy_w:
+				cta.text = _t("Wujudkan", "Fulfill")
+				_style_btn(cta, Color(0.176, 0.478, 0.325), Color(0.145, 0.396, 0.271), Color(1.0, 1.0, 1.0))
+			else:
+				cta.text = I18n.format_price(cost_w, _loc())
+				_style_btn(cta, Color(0.925, 0.894, 0.847), Color(0.82, 0.76, 0.68), Color(0.541, 0.475, 0.408))
+			cta.pressed.connect(func():
+				var res := WishlistStory.buy_wishlist_item(_save, wid)
+				if res["ok"]:
+					_save = res["save"]
+					_save = Settings.append_daily_log(_save, {
+						"day": int(_save.get("day", 1)),
+						"kind": "wishlist",
+						"title_id": "Impian: %s" % String(item["label_id"]),
+						"title_en": "Dream: %s" % String(item["label_en"]),
+						"delta_rp": -cost_w,
+					})
+					SaveStore.save_to_slot(_save, _active_slot)
+					_play_sfx(_wav_fanfare)
+					_show_toast(_t("Impian tercapai: %s! (+%d XP)" % [title, int(item["xp_bonus"])], "Dream achieved: %s! (+%d XP)" % [title, int(item["xp_bonus"])]), "player", "happy")
+					var ep := WishlistStory.get_unseen_epilogue(_save)
+					if not ep.is_empty():
+						call_deferred("_open_chapter_modal", ep)
+					else:
+						call_deferred("_open_wishlist_modal", "dreams")
+					_refresh_hud()
+			)
+			var bot := VBoxContainer.new()
+			bot.add_theme_constant_override("separation", 4)
+			var dl := Label.new()
+			dl.text = desc
+			dl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			dl.add_theme_font_size_override("font_size", 11)
+			dl.add_theme_color_override("font_color", Color(0.431, 0.337, 0.255))
+			bot.add_child(dl)
+			if not is_done:
+				var wp := ProgressBar.new()
+				wp.custom_minimum_size = Vector2(0, 6)
+				wp.max_value = maxi(1, cost_w)
+				wp.value = mini(bal_now_w, cost_w)
+				wp.show_percentage = false
+				_style_bar(wp, Color(0.176, 0.478, 0.325) if can_buy_w else Color(0.776, 0.565, 0.247), Color(0.925, 0.890, 0.835))
+				bot.add_child(wp)
+			grid.add_child(_build_cozy_item_card(Portraits.get_ui_icon("app_dreams"), title, badge_txt, Color(0.910, 0.961, 0.925), Color(0.129, 0.431, 0.263), cta, bot))
+		_modal_list.add_child(grid)
+	else:
+		_add_modal_section(_t("PROYEK USAHA MANDIRI", "PASSIVE INCOME BUSINESSES"))
 		var inv_owned: Array = _save.get("unlocked_investments", [])
+		var inv_grid := _build_cozy_grid()
 		for raw_iid in WishlistStory.FUTURE_INVESTMENTS.keys():
 			var iid := String(raw_iid)
 			var inv_item: Dictionary = WishlistStory.FUTURE_INVESTMENTS[iid]
@@ -2869,12 +3036,21 @@ func _open_wishlist_modal() -> void:
 			var can_inv := (not owned_flag) and bal_now_w >= icost
 			var ititle := String(inv_item["label_en"] if _loc() == "en" else inv_item["label_id"])
 			var idesc := String(inv_item["desc_en"] if _loc() == "en" else inv_item["desc_id"])
+			var badge_i := _t("+%s/hari" % I18n.format_price(int(inv_item["daily_income_rp"]), "id"), "+%s/day" % I18n.format_price(int(inv_item["daily_income_rp"]), "en"))
 			var ibtn := Button.new()
-			var istatus := _t("✓ Aktif (+%s/hari)" % I18n.format_balance(int(inv_item["daily_income_rp"]), "id"), "✓ Active (+%s/day)" % I18n.format_balance(int(inv_item["daily_income_rp"]), "en")) if owned_flag else I18n.format_balance(icost, _loc())
-			ibtn.text = "%s — %s\n%s" % [ititle, istatus, idesc]
+			ibtn.set_meta("skip_auto_style", true)
+			ibtn.set_meta("skip_autowrap", true)
+			ibtn.custom_minimum_size = Vector2(96, 36)
 			ibtn.disabled = owned_flag or not can_inv
-			if can_inv:
-				_style_btn(ibtn, Color(0.20, 0.50, 0.34), Color(0.98, 0.84, 0.34))
+			if owned_flag:
+				ibtn.text = _t("✓ Aktif", "✓ Active")
+				_style_btn(ibtn, Color(0.910, 0.961, 0.925), Color(0.65, 0.84, 0.72), Color(0.129, 0.431, 0.263))
+			elif can_inv:
+				ibtn.text = I18n.format_price(icost, _loc())
+				_style_btn(ibtn, Color(0.176, 0.478, 0.325), Color(0.145, 0.396, 0.271), Color(1.0, 1.0, 1.0))
+			else:
+				ibtn.text = I18n.format_price(icost, _loc())
+				_style_btn(ibtn, Color(0.925, 0.894, 0.847), Color(0.82, 0.76, 0.68), Color(0.541, 0.475, 0.408))
 			ibtn.pressed.connect(func():
 				var ires := WishlistStory.buy_investment(_save, iid)
 				if bool(ires["ok"]):
@@ -2882,12 +3058,20 @@ func _open_wishlist_modal() -> void:
 					SaveStore.save_to_slot(_save, _active_slot)
 					_play_sfx(_wav_fanfare)
 					_show_toast(_t("Usaha dibuka: %s!" % ititle, "Business opened: %s!" % ititle), "player", "happy")
-					call_deferred("_open_wishlist_modal")
+					call_deferred("_open_wishlist_modal", "agency")
 					_refresh_hud()
 			)
-			_modal_list.add_child(ibtn)
+			var il := Label.new()
+			il.text = idesc
+			il.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			il.add_theme_font_size_override("font_size", 11)
+			il.add_theme_color_override("font_color", Color(0.431, 0.337, 0.255))
+			inv_grid.add_child(_build_cozy_item_card(Portraits.get_ui_icon("icon_upgrade"), ititle, badge_i, Color(0.961, 0.910, 0.827), Color(0.541, 0.322, 0.118), ibtn, il))
+		_modal_list.add_child(inv_grid)
+
 		_add_modal_section(_t("AGENSI ART MANDIRI (KELOLA TIM)", "ART AGENCY ENDGAME (HIRE STAFF)"))
 		var hired_ag: Array = _save.get("hired_agency_arts", [])
+		var ag_grid := _build_cozy_grid()
 		for raw_rid in AgencyOps.ROOKIE_POOL.keys():
 			var rid := String(raw_rid)
 			var rk: Dictionary = AgencyOps.ROOKIE_POOL[rid]
@@ -2896,12 +3080,21 @@ func _open_wishlist_modal() -> void:
 			var can_hire := (not rk_hired) and bal_now_w >= rcost
 			var rtitle := String(rk["label_en"] if _loc() == "en" else rk["label_id"])
 			var rdesc := String(rk["desc_en"] if _loc() == "en" else rk["desc_id"])
+			var badge_r := _t("+%s/hari" % I18n.format_price(int(rk["daily_income_rp"]), "id"), "+%s/day" % I18n.format_price(int(rk["daily_income_rp"]), "en"))
 			var rbtn := Button.new()
-			var rstatus := _t("✓ Aktif (+%s/hari)" % I18n.format_balance(int(rk["daily_income_rp"]), "id"), "✓ Hired (+%s/day)" % I18n.format_balance(int(rk["daily_income_rp"]), "en")) if rk_hired else I18n.format_balance(rcost, _loc())
-			rbtn.text = "%s — %s\n%s" % [rtitle, rstatus, rdesc]
+			rbtn.set_meta("skip_auto_style", true)
+			rbtn.set_meta("skip_autowrap", true)
+			rbtn.custom_minimum_size = Vector2(96, 36)
 			rbtn.disabled = rk_hired or not can_hire
-			if can_hire:
-				_style_btn(rbtn, Color(0.16, 0.38, 0.52), Color(0.98, 0.84, 0.34))
+			if rk_hired:
+				rbtn.text = _t("✓ Aktif", "✓ Hired")
+				_style_btn(rbtn, Color(0.910, 0.961, 0.925), Color(0.65, 0.84, 0.72), Color(0.129, 0.431, 0.263))
+			elif can_hire:
+				rbtn.text = I18n.format_price(rcost, _loc())
+				_style_btn(rbtn, Color(0.176, 0.478, 0.325), Color(0.145, 0.396, 0.271), Color(1.0, 1.0, 1.0))
+			else:
+				rbtn.text = I18n.format_price(rcost, _loc())
+				_style_btn(rbtn, Color(0.925, 0.894, 0.847), Color(0.82, 0.76, 0.68), Color(0.541, 0.475, 0.408))
 			rbtn.pressed.connect(func():
 				var hres := AgencyOps.hire_rookie(_save, rid)
 				if bool(hres["ok"]):
@@ -2916,10 +3109,16 @@ func _open_wishlist_modal() -> void:
 					SaveStore.save_to_slot(_save, _active_slot)
 					_play_sfx(_wav_fanfare)
 					_show_toast(_t("Rekrut baru bergabung: %s!" % rtitle, "New agency staff hired: %s!" % rtitle), "player", "happy")
-					call_deferred("_open_wishlist_modal")
+					call_deferred("_open_wishlist_modal", "agency")
 					_refresh_hud()
 			)
-			_modal_list.add_child(rbtn)
+			var rl := Label.new()
+			rl.text = rdesc
+			rl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			rl.add_theme_font_size_override("font_size", 11)
+			rl.add_theme_color_override("font_color", Color(0.431, 0.337, 0.255))
+			ag_grid.add_child(_build_cozy_item_card(Portraits.get_ui_icon("icon_career"), rtitle, badge_r, Color(0.902, 0.937, 0.969), Color(0.141, 0.329, 0.490), rbtn, rl))
+		_modal_list.add_child(ag_grid)
 	_show_modal()
 
 func _open_wardrobe_modal() -> void:
@@ -2928,11 +3127,13 @@ func _open_wardrobe_modal() -> void:
 	var xp := int(_save.get("xp", 0))
 	var cur_oid := String(_save.get("equipped_outfit_id", "starter_kasual"))
 	var cur_col := String(_save.get("outfit_color_hex", "#4E7D63"))
+	var pv_card := PanelContainer.new()
+	pv_card.add_theme_stylebox_override("panel", _make_box(Color(1.0, 1.0, 1.0), Color(0.898, 0.831, 0.745), 14, 12, 10))
 	var pv_row := HBoxContainer.new()
-	pv_row.add_theme_constant_override("separation", 10)
+	pv_row.add_theme_constant_override("separation", 12)
 	var pv_frame := PanelContainer.new()
 	pv_frame.custom_minimum_size = Vector2(56, 56)
-	pv_frame.add_theme_stylebox_override("panel", _make_box(Color(0.08, 0.12, 0.18), Color(0.96, 0.78, 0.26), 10, 2, 2))
+	pv_frame.add_theme_stylebox_override("panel", _make_box(Color(0.965, 0.925, 0.867), Color(0.776, 0.612, 0.427), 12, 3, 3))
 	var pv_tex := TextureRect.new()
 	pv_tex.texture = _get_player_portrait_tex("happy")
 	pv_tex.custom_minimum_size = Vector2(50, 50)
@@ -2947,21 +3148,27 @@ func _open_wardrobe_modal() -> void:
 		if String(ot.get("id", "")) == cur_oid:
 			cur_o_lbl = String(ot.get("label_en" if _loc() == "en" else "label_id", cur_oid))
 			break
-	pv_lbl.text = _t("Seragam Aktif: %s • Warna: %s" % [cur_o_lbl, Progression.get_color_label(cur_col, "id")], "Active Uniform: %s • Color: %s" % [cur_o_lbl, Progression.get_color_label(cur_col, "en")])
-	pv_lbl.add_theme_font_size_override("font_size", 12)
-	pv_lbl.add_theme_color_override("font_color", Color(0.95, 0.94, 0.90))
+	pv_lbl.text = _t("Seragam Aktif: %s · Warna: %s" % [cur_o_lbl, Progression.get_color_label(cur_col, "id")], "Active Uniform: %s · Color: %s" % [cur_o_lbl, Progression.get_color_label(cur_col, "en")])
+	pv_lbl.add_theme_font_size_override("font_size", 13)
+	pv_lbl.add_theme_color_override("font_color", Color(0.176, 0.129, 0.094))
 	pv_row.add_child(pv_frame)
 	pv_row.add_child(pv_lbl)
-	_modal_list.add_child(pv_row)
+	pv_card.add_child(pv_row)
+	_modal_list.add_child(pv_card)
 	for o in CareerTiers.OUTFIT_TIERS:
 		var oid := String(o["id"])
 		var unlocked := CareerTiers.can_equip_outfit(oid, xp)
+		var o_card := PanelContainer.new()
+		o_card.add_theme_stylebox_override("panel", _make_box(Color(1.0, 1.0, 1.0), Color(0.898, 0.831, 0.745), 14, 12, 10))
+		var o_v := VBoxContainer.new()
+		o_v.add_theme_constant_override("separation", 6)
 		var lbl := Label.new()
 		var name_txt := String(o["label_en"] if _loc() == "en" else o["label_id"])
 		lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		lbl.text = "%s%s (%d XP)%s" % ["" if unlocked else "🔒 ", name_txt, int(o["min_xp"]), " ✓" if oid == cur_oid else ""]
-		lbl.add_theme_color_override("font_color", Color(0.98, 0.86, 0.38) if unlocked else Color(0.76, 0.78, 0.84))
-		_modal_list.add_child(lbl)
+		lbl.text = "%s%s (%d XP)%s" % ["" if unlocked else _t("[Terkunci] ", "[Locked] "), name_txt, int(o["min_xp"]), " ✓" if oid == cur_oid else ""]
+		lbl.add_theme_font_size_override("font_size", 13)
+		lbl.add_theme_color_override("font_color", Color(0.129, 0.431, 0.263) if oid == cur_oid else (Color(0.176, 0.129, 0.094) if unlocked else Color(0.541, 0.475, 0.408)))
+		o_v.add_child(lbl)
 		var hbox := HBoxContainer.new()
 		hbox.add_theme_constant_override("separation", 6)
 		for hex in o["customizable_colors"]:
@@ -2969,11 +3176,12 @@ func _open_wardrobe_modal() -> void:
 			var col_val := Color.html(ch)
 			var is_light := col_val.get_luminance() > 0.32
 			var b := Button.new()
+			b.set_meta("skip_auto_style", true)
 			b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			var is_cur_swatch := (oid == cur_oid and ch.to_upper() == cur_col.to_upper())
 			b.text = ("✓ " if is_cur_swatch else "") + Progression.get_color_label(ch, _loc())
 			b.disabled = not unlocked
-			_style_btn(b, col_val, Color(0.96, 0.78, 0.26) if unlocked else Color(0.45, 0.45, 0.48), Color(0.10, 0.08, 0.06) if is_light else Color(0.98, 0.97, 0.94))
+			_style_btn(b, col_val, Color(0.176, 0.478, 0.325) if is_cur_swatch else Color(0.776, 0.612, 0.427), Color(0.10, 0.08, 0.06) if is_light else Color(0.98, 0.97, 0.94))
 			b.pressed.connect(func():
 				var res := Progression.equip_outfit(_save, oid, ch)
 				if res["ok"]:
@@ -2984,225 +3192,285 @@ func _open_wardrobe_modal() -> void:
 					_refresh_hud()
 			)
 			hbox.add_child(b)
-		_modal_list.add_child(hbox)
+		o_v.add_child(hbox)
+		o_card.add_child(o_v)
+		_modal_list.add_child(o_card)
 	_show_modal()
 
-func _open_kos_modal() -> void:
+func _open_kos_modal(tab: String = "facilities") -> void:
 	_clear_modal()
 	var tier := CareerTiers.get_tier(String(_save.get("active_tier_id", "kamar_kos")))
 	_modal_title.text = Progression.get_room_upgrade_title(tier, _loc())
-	var k_bal := Label.new()
-	k_bal.text = "%s: %s  •  %s: %d" % [_t("Saldo Dompet", "Wallet"), I18n.format_balance(int(_save.get("balance_rp", 0)), _loc()), _t("Maks Energi", "Max Energy"), int(Progression.get_max_energy(_save))]
-	k_bal.add_theme_font_size_override("font_size", 12)
-	k_bal.add_theme_color_override("font_color", Color(0.45, 0.94, 0.44))
-	_modal_list.add_child(k_bal)
-	var owned: Array = _save.get("unlocked_kos_upgrades", [])
-	for raw_uid in Progression.KOS_UPGRADES.keys():
-		var uid := String(raw_uid)
-		var u: Dictionary = Progression.KOS_UPGRADES[uid]
-		var is_owned: bool = uid in owned
-		var cost_u := int(u["cost_rp"])
-		var can_buy_u := (not is_owned) and int(_save.get("balance_rp", 0)) >= cost_u
-		var btn := Button.new()
-		var lbl := String(u["label_en"] if _loc() == "en" else u["label_id"])
-		var price_txt := _t("✓ Terpasang", "✓ Installed") if is_owned else (_t("Beli · %s" % I18n.format_price(cost_u, "id"), "Buy · %s" % I18n.format_price(cost_u, "en")) if can_buy_u else I18n.format_price(cost_u, _loc()))
-		btn.text = "%s — %s" % [lbl, price_txt]
-		btn.disabled = is_owned or not can_buy_u
-		if is_owned:
-			_style_btn(btn, Color(0.14, 0.28, 0.22), Color(0.42, 0.72, 0.54), Color(0.75, 0.96, 0.82))
-		elif can_buy_u:
-			_style_btn(btn, Color(0.18, 0.42, 0.34), Color(0.98, 0.84, 0.34))
-		btn.pressed.connect(func():
-			_open_confirm_purchase_modal(
-				lbl,
-				int(u["cost_rp"]),
-				func():
-					var res := Progression.buy_kos_upgrade(_save, uid)
-					if res["ok"]:
-						_save = res["save"]
+	var bal_now_k := int(_save.get("balance_rp", 0))
+	var top_pills := HBoxContainer.new()
+	top_pills.add_theme_constant_override("separation", 8)
+	_add_cozy_pill(top_pills, I18n.format_balance(bal_now_k, _loc()), Color(0.894, 0.957, 0.906), Color(0.118, 0.420, 0.231))
+	_add_cozy_pill(top_pills, _t("Maks %d Energi" % int(Progression.get_max_energy(_save)), "Max %d Energy" % int(Progression.get_max_energy(_save))), Color(0.961, 0.910, 0.827), Color(0.541, 0.322, 0.118))
+	_modal_list.add_child(top_pills)
+
+	var active_tab := "decor" if tab == "decor" else "facilities"
+	_add_segmented_tabs([
+		{"id": "facilities", "label": _t("Fasilitas Kamar (%d)" % Progression.KOS_UPGRADES.size(), "Room Facilities (%d)" % Progression.KOS_UPGRADES.size())},
+		{"id": "decor", "label": _t("Dekorasi & Peliharaan (%d)" % KosDecor.DECOR_ITEMS.size(), "Decor & Pets (%d)" % KosDecor.DECOR_ITEMS.size())},
+	], active_tab, func(new_tab: String): _open_kos_modal(new_tab))
+
+	var grid := _build_cozy_grid()
+	if active_tab == "facilities":
+		var owned: Array = _save.get("unlocked_kos_upgrades", [])
+		var up_icons := ["icon_upgrade", "icon_door", "icon_broom", "icon_phone", "icon_upgrade"]
+		var u_idx := 0
+		for raw_uid in Progression.KOS_UPGRADES.keys():
+			var uid := String(raw_uid)
+			var u: Dictionary = Progression.KOS_UPGRADES[uid]
+			var is_owned: bool = uid in owned
+			var cost_u := int(u["cost_rp"])
+			var can_buy_u := (not is_owned) and bal_now_k >= cost_u
+			var lbl := String(u["label_en"] if _loc() == "en" else u["label_id"])
+			var badge_u := ""
+			var parts := lbl.split("(", false, 1)
+			var clean_title := parts[0].strip_edges()
+			if parts.size() > 1:
+				badge_u = parts[1].trim_suffix(")").strip_edges()
+			if badge_u == "":
+				badge_u = _t("Fasilitas Kos", "Room Perk")
+			var cta := Button.new()
+			cta.set_meta("skip_auto_style", true)
+			cta.set_meta("skip_autowrap", true)
+			cta.custom_minimum_size = Vector2(96, 36)
+			cta.disabled = is_owned or not can_buy_u
+			if is_owned:
+				cta.text = _t("✓ Terpasang", "✓ Installed")
+				_style_btn(cta, Color(0.910, 0.961, 0.925), Color(0.65, 0.84, 0.72), Color(0.129, 0.431, 0.263))
+			elif can_buy_u:
+				cta.text = I18n.format_price(cost_u, _loc())
+				_style_btn(cta, Color(0.176, 0.478, 0.325), Color(0.145, 0.396, 0.271), Color(1.0, 1.0, 1.0))
+			else:
+				cta.text = I18n.format_price(cost_u, _loc())
+				_style_btn(cta, Color(0.925, 0.894, 0.847), Color(0.82, 0.76, 0.68), Color(0.541, 0.475, 0.408))
+			cta.pressed.connect(func():
+				_open_confirm_purchase_modal(
+					clean_title,
+					cost_u,
+					func():
+						var res := Progression.buy_kos_upgrade(_save, uid)
+						if res["ok"]:
+							_save = res["save"]
+							_save = Settings.append_daily_log(_save, {
+								"day": int(_save.get("day", 1)),
+								"kind": "upgrade",
+								"title_id": "Beli %s" % String(u["label_id"]),
+								"title_en": "Bought %s" % String(u["label_en"]),
+								"delta_rp": -cost_u,
+							})
+							SaveStore.save_to_slot(_save, _active_slot)
+							if _world_mode == "home" and stage_root.get_child_count() > 0:
+								Atmosphere.apply_kos_upgrades_visual(stage_root.get_child(0), _save.get("unlocked_kos_upgrades", []))
+							_play_sfx(_wav_coin)
+							call_deferred("_open_kos_modal", "facilities")
+							_refresh_hud()
+				)
+			)
+			var ic_name: String = up_icons[u_idx % up_icons.size()]
+			u_idx += 1
+			grid.add_child(_build_cozy_item_card(Portraits.get_ui_icon(ic_name), clean_title, badge_u, Color(0.910, 0.961, 0.925), Color(0.129, 0.431, 0.263), cta))
+	else:
+		var dec_owned: Array = _save.get("unlocked_decor", [])
+		var dec_layout: Dictionary = _save.get("kos_decor_layout", {})
+		for raw_did in KosDecor.DECOR_ITEMS.keys():
+			var did := String(raw_did)
+			var di: Dictionary = KosDecor.DECOR_ITEMS[did]
+			var dlbl := String(di["label_en"] if _loc() == "en" else di["label_id"])
+			var dcost := int(di["cost_rp"])
+			var d_is_owned := did in dec_owned
+			if d_is_owned:
+				var d_entry: Dictionary = dec_layout.get(did, {"slot": int(di["default_slot"]), "rot_deg": 0})
+				var badge_d := _t("Spot %d · %d°" % [int(d_entry.get("slot", 0)) + 1, int(d_entry.get("rot_deg", 0))], "Spot %d · %d°" % [int(d_entry.get("slot", 0)) + 1, int(d_entry.get("rot_deg", 0))])
+				var d_row := HBoxContainer.new()
+				d_row.add_theme_constant_override("separation", 6)
+				var b_mv := Button.new()
+				b_mv.set_meta("skip_auto_style", true)
+				b_mv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+				b_mv.custom_minimum_size = Vector2(90, 38)
+				b_mv.text = _t("Geser Posisi", "Move Spot")
+				_style_btn(b_mv, Color(0.902, 0.937, 0.969), Color(0.72, 0.81, 0.90), Color(0.141, 0.329, 0.490))
+				b_mv.pressed.connect(func():
+					var mr := KosDecor.move_decor_next_slot(_save, did)
+					if bool(mr["ok"]):
+						_save = mr["save"]
+						SaveStore.save_to_slot(_save, _active_slot)
+						if _world_mode == "home" and stage_root.get_child_count() > 0:
+							KosDecor.spawn_decor_nodes(stage_root, _save)
+						_play_sfx(_wav_click)
+						call_deferred("_open_kos_modal", "decor")
+				)
+				var b_rt := Button.new()
+				b_rt.set_meta("skip_auto_style", true)
+				b_rt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+				b_rt.custom_minimum_size = Vector2(90, 38)
+				b_rt.text = _t("Putar 45°", "Rotate 45°")
+				_style_btn(b_rt, Color(0.961, 0.910, 0.827), Color(0.84, 0.72, 0.56), Color(0.486, 0.310, 0.125))
+				b_rt.pressed.connect(func():
+					var rr := KosDecor.rotate_decor(_save, did)
+					if bool(rr["ok"]):
+						_save = rr["save"]
+						SaveStore.save_to_slot(_save, _active_slot)
+						if _world_mode == "home" and stage_root.get_child_count() > 0:
+							KosDecor.spawn_decor_nodes(stage_root, _save)
+						_play_sfx(_wav_click)
+						call_deferred("_open_kos_modal", "decor")
+				)
+				d_row.add_child(b_mv)
+				d_row.add_child(b_rt)
+				grid.add_child(_build_cozy_item_card(Portraits.get_ui_icon("icon_upgrade"), dlbl, badge_d, Color(0.910, 0.961, 0.925), Color(0.129, 0.431, 0.263), null, d_row))
+			else:
+				var can_buy_d := bal_now_k >= dcost
+				var dbtn := Button.new()
+				dbtn.set_meta("skip_auto_style", true)
+				dbtn.set_meta("skip_autowrap", true)
+				dbtn.custom_minimum_size = Vector2(96, 36)
+				dbtn.text = I18n.format_price(dcost, _loc())
+				dbtn.disabled = not can_buy_d
+				if can_buy_d:
+					_style_btn(dbtn, Color(0.176, 0.478, 0.325), Color(0.145, 0.396, 0.271), Color(1.0, 1.0, 1.0))
+				else:
+					_style_btn(dbtn, Color(0.925, 0.894, 0.847), Color(0.82, 0.76, 0.68), Color(0.541, 0.475, 0.408))
+				dbtn.pressed.connect(func():
+					var bres := KosDecor.buy_decor(_save, did)
+					if bool(bres["ok"]):
+						_save = bres["save"]
 						_save = Settings.append_daily_log(_save, {
 							"day": int(_save.get("day", 1)),
-							"kind": "upgrade",
-							"title_id": "Beli %s" % String(u["label_id"]),
-							"title_en": "Bought %s" % String(u["label_en"]),
-							"delta_rp": -int(u["cost_rp"]),
+							"kind": "decor",
+							"title_id": "Dekorasi %s" % String(di["label_id"]),
+							"title_en": "Decor %s" % String(di["label_en"]),
+							"delta_rp": -dcost,
 						})
 						SaveStore.save_to_slot(_save, _active_slot)
 						if _world_mode == "home" and stage_root.get_child_count() > 0:
-							Atmosphere.apply_kos_upgrades_visual(stage_root.get_child(0), _save.get("unlocked_kos_upgrades", []))
+							KosDecor.spawn_decor_nodes(stage_root, _save)
 						_play_sfx(_wav_coin)
-						call_deferred("_open_kos_modal")
+						call_deferred("_open_kos_modal", "decor")
 						_refresh_hud()
-			)
-		)
-		_modal_list.add_child(btn)
-	_add_modal_section(_t("DEKORASI KAMAR KOS (SANDBOX)", "KOS DECORATING SANDBOX"))
-	var dec_owned: Array = _save.get("unlocked_decor", [])
-	var dec_layout: Dictionary = _save.get("kos_decor_layout", {})
-	for raw_did in KosDecor.DECOR_ITEMS.keys():
-		var did := String(raw_did)
-		var di: Dictionary = KosDecor.DECOR_ITEMS[did]
-		var dlbl := String(di["label_en"] if _loc() == "en" else di["label_id"])
-		var dcost := int(di["cost_rp"])
-		var d_is_owned := did in dec_owned
-		if d_is_owned:
-			var d_entry: Dictionary = dec_layout.get(did, {"slot": int(di["default_slot"]), "rot_deg": 0})
-			var d_card := PanelContainer.new()
-			d_card.add_theme_stylebox_override("panel", _make_box(Color(0.11, 0.16, 0.24), Color(0.96, 0.78, 0.26, 0.65), 10, 10, 8))
-			var d_v := VBoxContainer.new()
-			d_v.add_theme_constant_override("separation", 6)
-			var d_info := Label.new()
-			d_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			d_info.text = "✓ %s (%s %d · %d°)" % [dlbl, _t("Spot", "Spot"), int(d_entry.get("slot", 0)) + 1, int(d_entry.get("rot_deg", 0))]
-			d_info.add_theme_color_override("font_color", Color(0.84, 0.96, 0.88))
-			var d_row := HBoxContainer.new()
-			d_row.add_theme_constant_override("separation", 8)
-			var b_mv := Button.new()
-			b_mv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			b_mv.custom_minimum_size = Vector2(110, 44)
-			b_mv.text = _t("Geser Posisi", "Move Spot")
-			_style_btn(b_mv, Color(0.18, 0.34, 0.48), Color(0.96, 0.78, 0.26))
-			b_mv.pressed.connect(func():
-				var mr := KosDecor.move_decor_next_slot(_save, did)
-				if bool(mr["ok"]):
-					_save = mr["save"]
-					SaveStore.save_to_slot(_save, _active_slot)
-					if _world_mode == "home" and stage_root.get_child_count() > 0:
-						KosDecor.spawn_decor_nodes(stage_root, _save)
-					_play_sfx(_wav_click)
-					call_deferred("_open_kos_modal")
-			)
-			var b_rt := Button.new()
-			b_rt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			b_rt.custom_minimum_size = Vector2(110, 44)
-			b_rt.text = _t("Putar 45°", "Rotate 45°")
-			_style_btn(b_rt, Color(0.24, 0.30, 0.44), Color(0.96, 0.78, 0.26))
-			b_rt.pressed.connect(func():
-				var rr := KosDecor.rotate_decor(_save, did)
-				if bool(rr["ok"]):
-					_save = rr["save"]
-					SaveStore.save_to_slot(_save, _active_slot)
-					if _world_mode == "home" and stage_root.get_child_count() > 0:
-						KosDecor.spawn_decor_nodes(stage_root, _save)
-					_play_sfx(_wav_click)
-					call_deferred("_open_kos_modal")
-			)
-			d_row.add_child(b_mv)
-			d_row.add_child(b_rt)
-			d_v.add_child(d_info)
-			d_v.add_child(d_row)
-			d_card.add_child(d_v)
-			_modal_list.add_child(d_card)
-		else:
-			var can_buy_d := int(_save.get("balance_rp", 0)) >= dcost
-			var dbtn := Button.new()
-			dbtn.text = "%s — %s" % [dlbl, I18n.format_price(dcost, _loc())]
-			dbtn.disabled = not can_buy_d
-			if can_buy_d:
-				_style_btn(dbtn, Color(0.20, 0.44, 0.34), Color(0.98, 0.84, 0.34))
-			dbtn.pressed.connect(func():
-				var bres := KosDecor.buy_decor(_save, did)
-				if bool(bres["ok"]):
-					_save = bres["save"]
-					_save = Settings.append_daily_log(_save, {
-						"day": int(_save.get("day", 1)),
-						"kind": "decor",
-						"title_id": "Dekorasi %s" % String(di["label_id"]),
-						"title_en": "Decor %s" % String(di["label_en"]),
-						"delta_rp": -dcost,
-					})
-					SaveStore.save_to_slot(_save, _active_slot)
-					if _world_mode == "home" and stage_root.get_child_count() > 0:
-						KosDecor.spawn_decor_nodes(stage_root, _save)
-					_play_sfx(_wav_coin)
-					call_deferred("_open_kos_modal")
-					_refresh_hud()
-			)
-			_modal_list.add_child(dbtn)
+				)
+				grid.add_child(_build_cozy_item_card(Portraits.get_ui_icon("icon_upgrade"), dlbl, _t("Dekorasi Kos", "Kos Decor"), Color(0.961, 0.910, 0.827), Color(0.541, 0.322, 0.118), dbtn))
+	_modal_list.add_child(grid)
 	_show_modal()
 
 func _open_summary_modal(res: Dictionary) -> void:
 	_clear_modal()
-	_modal_title.text = _t("RINGKASAN SHIFT SELESAI", "SHIFT SUMMARY")
+	_modal_title.text = _t("Ringkasan Shift Selesai", "Shift Summary")
+	var sum_card := PanelContainer.new()
+	sum_card.add_theme_stylebox_override("panel", _make_box(Color(1.0, 1.0, 1.0), Color(0.898, 0.831, 0.745), 14, 14, 12))
+	var sv := VBoxContainer.new()
+	sv.add_theme_constant_override("separation", 6)
 	var l1 := Label.new()
 	l1.text = "%s: %s" % [_t("Total Pendapatan", "Total Earned"), I18n.format_balance(int(res["payout_rp"]), _loc())]
-	l1.add_theme_color_override("font_color", Color(0.45, 0.94, 0.44))
+	l1.add_theme_font_size_override("font_size", 16)
+	l1.add_theme_color_override("font_color", Color(0.129, 0.431, 0.263))
 	var l2 := Label.new()
 	l2.text = "+%d XP (Lv.%d)" % [int(res["xp_gained"]), Progression.level_from_xp(int(_save.get("xp", 0)))]
-	l2.add_theme_color_override("font_color", Color(0.96, 0.84, 0.36))
+	l2.add_theme_font_size_override("font_size", 13)
+	l2.add_theme_color_override("font_color", Color(0.541, 0.322, 0.118))
 	var l3 := Label.new()
 	l3.text = _t("Status: Dipecat (gaji kontrak hangus)" if bool(res["fired"]) else "Status: Shift Bagus!", "Status: Fired (contract forfeited)" if bool(res["fired"]) else "Status: Great Shift!")
-	l3.add_theme_color_override("font_color", Color(0.96, 0.95, 0.92))
-	_modal_list.add_child(l1)
-	_modal_list.add_child(l2)
-	_modal_list.add_child(l3)
+	l3.add_theme_font_size_override("font_size", 13)
+	l3.add_theme_color_override("font_color", Color(0.690, 0.243, 0.165) if bool(res["fired"]) else Color(0.176, 0.129, 0.094))
+	sv.add_child(l1)
+	sv.add_child(l2)
+	sv.add_child(l3)
 	var clean_sum := int(res.get("clean_pct", 100))
 	var l_clean := Label.new()
-	l_clean.text = _t("✨ Kebersihan Rumah: 0%% → %d%% %s" % [clean_sum, "BERKILAU!" if clean_sum >= 100 else ""], "✨ Room Cleanliness: 0%% → %d%% %s" % [clean_sum, "SPARKLING!" if clean_sum >= 100 else ""])
-	l_clean.add_theme_color_override("font_color", Color(0.45, 0.96, 0.90))
-	_modal_list.add_child(l_clean)
+	l_clean.text = _t("★ Kebersihan Rumah: 0%% → %d%% %s" % [clean_sum, "BERKILAU!" if clean_sum >= 100 else ""], "★ Room Cleanliness: 0%% → %d%% %s" % [clean_sum, "SPARKLING!" if clean_sum >= 100 else ""])
+	l_clean.add_theme_font_size_override("font_size", 13)
+	l_clean.add_theme_color_override("font_color", Color(0.141, 0.329, 0.490))
+	sv.add_child(l_clean)
 	var meal_rp := int(res.get("meal_cost_rp", 0))
 	if meal_rp > 0:
 		var l_meal := Label.new()
 		l_meal.text = _t("Uang Makan & Transport: -%s" % I18n.format_balance(meal_rp, "id"), "Daily Meal & Commute: -%s" % I18n.format_balance(meal_rp, "en"))
-		l_meal.add_theme_color_override("font_color", Color(0.96, 0.62, 0.42))
-		_modal_list.add_child(l_meal)
+		l_meal.add_theme_font_size_override("font_size", 12)
+		l_meal.add_theme_color_override("font_color", Color(0.690, 0.243, 0.165))
+		sv.add_child(l_meal)
+	sum_card.add_child(sv)
+	_modal_list.add_child(sum_card)
 	_show_modal()
 
 func _open_levelup_modal(new_lv: int, res: Dictionary) -> void:
 	_clear_modal()
-	_modal_title.text = _t("SELAMAT! NAIK KE LEVEL %d" % new_lv, "LEVEL UP! NOW LEVEL %d" % new_lv)
+	_modal_title.text = _t("Selamat! Naik ke Level %d" % new_lv, "Level Up! Now Level %d" % new_lv)
+	var lv_card := PanelContainer.new()
+	lv_card.add_theme_stylebox_override("panel", _make_box(Color(1.0, 1.0, 1.0), Color(0.898, 0.831, 0.745), 14, 14, 12))
+	var lv_v := VBoxContainer.new()
+	lv_v.add_theme_constant_override("separation", 6)
 	var sub := Label.new()
+	sub.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	sub.text = _t("Majikan makin menghargai kerja keras %s." % String(_save.get("player_name", "Mbak Sari")), "Employers appreciate %s's hard work!" % String(_save.get("player_name", "Mbak Sari")))
-	sub.add_theme_color_override("font_color", Color(0.95, 0.94, 0.90))
+	sub.add_theme_font_size_override("font_size", 13)
+	sub.add_theme_color_override("font_color", Color(0.176, 0.129, 0.094))
 	var pay_lbl := Label.new()
 	var st_txt := _t("Dipecat" if bool(res.get("fired", false)) else "Shift Bagus!", "Fired" if bool(res.get("fired", false)) else "Great Shift!")
-	pay_lbl.text = "%s: %s  •  +%d XP (%s)" % [_t("Pendapatan Shift", "Shift Earnings"), I18n.format_balance(int(res.get("payout_rp", 0)), _loc()), int(res.get("xp_gained", 0)), st_txt]
-	pay_lbl.add_theme_color_override("font_color", Color(0.45, 0.94, 0.44))
-	_modal_list.add_child(sub)
-	_modal_list.add_child(pay_lbl)
+	pay_lbl.text = "%s: %s · +%d XP (%s)" % [_t("Pendapatan Shift", "Shift Earnings"), I18n.format_balance(int(res.get("payout_rp", 0)), _loc()), int(res.get("xp_gained", 0)), st_txt]
+	pay_lbl.add_theme_font_size_override("font_size", 13)
+	pay_lbl.add_theme_color_override("font_color", Color(0.129, 0.431, 0.263))
+	lv_v.add_child(sub)
+	lv_v.add_child(pay_lbl)
 	for ul in _pending_level_unlocks:
 		var ul_lbl := Label.new()
+		ul_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		ul_lbl.text = "★ %s" % String(ul)
-		ul_lbl.add_theme_color_override("font_color", Color(0.98, 0.84, 0.34))
-		_modal_list.add_child(ul_lbl)
+		ul_lbl.add_theme_font_size_override("font_size", 13)
+		ul_lbl.add_theme_color_override("font_color", Color(0.541, 0.322, 0.118))
+		lv_v.add_child(ul_lbl)
+	lv_card.add_child(lv_v)
+	_modal_list.add_child(lv_card)
 	_pending_level_unlocks = []
 	_show_modal()
 
 func _open_rent_modal(res: Dictionary = {}, leveled_up_to: int = 0) -> void:
 	_clear_modal()
-	_modal_title.text = _t("IBU MELATI MENAGIH SEWA KOS", "IBU MELATI: WEEKLY KOS RENT")
+	_modal_title.text = _t("Ibu Melati Menagih Sewa Kos", "Ibu Melati: Weekly Kos Rent")
+	var hdr_card := PanelContainer.new()
+	hdr_card.add_theme_stylebox_override("panel", _make_box(Color(1.0, 1.0, 1.0), Color(0.898, 0.831, 0.745), 14, 12, 10))
 	var hdr_row := HBoxContainer.new()
-	hdr_row.add_theme_constant_override("separation", 10)
+	hdr_row.add_theme_constant_override("separation", 12)
+	var p_frame := PanelContainer.new()
+	p_frame.custom_minimum_size = Vector2(68, 68)
+	p_frame.add_theme_stylebox_override("panel", _make_box(Color(0.965, 0.925, 0.867), Color(0.776, 0.612, 0.427), 12, 3, 3))
 	var p_rect := TextureRect.new()
 	p_rect.texture = Portraits.get_portrait("ibu_melati", "strict")
-	p_rect.custom_minimum_size = Vector2(64, 64)
+	p_rect.custom_minimum_size = Vector2(62, 62)
 	p_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	p_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	hdr_row.add_child(p_rect)
+	p_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	p_frame.add_child(p_rect)
+	hdr_row.add_child(p_frame)
 	var quote_lbl := Label.new()
 	quote_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	quote_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	quote_lbl.text = _t("\"Waktunya bayar sewa kamar mingguan ya, Neng.\"", "\"Time for your weekly kos room rent.\"")
-	quote_lbl.add_theme_color_override("font_color", Color(0.98, 0.88, 0.65))
+	quote_lbl.add_theme_font_size_override("font_size", 13)
+	quote_lbl.add_theme_color_override("font_color", Color(0.176, 0.129, 0.094))
 	hdr_row.add_child(quote_lbl)
-	_modal_list.add_child(hdr_row)
+	hdr_card.add_child(hdr_row)
+	_modal_list.add_child(hdr_card)
 	if leveled_up_to > 0:
 		var lv_lbl := Label.new()
-		lv_lbl.text = _t("★ NAIK KE LEVEL %d!" % leveled_up_to, "★ LEVEL UP TO %d!" % leveled_up_to)
-		lv_lbl.add_theme_color_override("font_color", Color(0.98, 0.84, 0.34))
+		lv_lbl.text = _t("★ Naik ke Level %d!" % leveled_up_to, "★ Level Up to %d!" % leveled_up_to)
+		lv_lbl.add_theme_font_size_override("font_size", 13)
+		lv_lbl.add_theme_color_override("font_color", Color(0.541, 0.322, 0.118))
 		_modal_list.add_child(lv_lbl)
 		for ul in _pending_level_unlocks:
 			var ul_lbl := Label.new()
 			ul_lbl.text = "• %s" % String(ul)
-			ul_lbl.add_theme_color_override("font_color", Color(0.55, 0.96, 0.72))
+			ul_lbl.add_theme_font_size_override("font_size", 12)
+			ul_lbl.add_theme_color_override("font_color", Color(0.129, 0.431, 0.263))
 			_modal_list.add_child(ul_lbl)
 		_pending_level_unlocks = []
 	if not res.is_empty():
 		var sum_lbl := Label.new()
 		var st_txt := _t("Dipecat" if bool(res.get("fired", false)) else "Shift Bagus", "Fired" if bool(res.get("fired", false)) else "Great Shift")
-		sum_lbl.text = "%s: +%s  •  +%d XP (%s)" % [_t("Hasil Shift", "Shift Result"), I18n.format_balance(int(res.get("payout_rp", 0)), _loc()), int(res.get("xp_gained", 0)), st_txt]
-		sum_lbl.add_theme_color_override("font_color", Color(0.45, 0.94, 0.44))
+		sum_lbl.text = "%s: +%s · +%d XP (%s)" % [_t("Hasil Shift", "Shift Result"), I18n.format_balance(int(res.get("payout_rp", 0)), _loc()), int(res.get("xp_gained", 0)), st_txt]
+		sum_lbl.add_theme_font_size_override("font_size", 12)
+		sum_lbl.add_theme_color_override("font_color", Color(0.129, 0.431, 0.263))
 		_modal_list.add_child(sum_lbl)
 	var pending := int(_save.get("pending_rent_rp", 0))
 	var rent_rp := pending if pending > 0 else 120000
@@ -3211,16 +3479,18 @@ func _open_rent_modal(res: Dictionary = {}, leveled_up_to: int = 0) -> void:
 	info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	info.text = _t(
-		"Tagihan sewa kamar kos: %s.\nSaldo dompetmu: %s." % [I18n.format_balance(rent_rp, "id"), I18n.format_balance(bal, "id")],
-		"Kos room rent due: %s.\nYour wallet: %s." % [I18n.format_balance(rent_rp, "en"), I18n.format_balance(bal, "en")]
+		"Tagihan sewa kamar kos: %s\nSaldo dompetmu: %s" % [I18n.format_balance(rent_rp, "id"), I18n.format_balance(bal, "id")],
+		"Kos room rent due: %s\nYour wallet: %s" % [I18n.format_balance(rent_rp, "en"), I18n.format_balance(bal, "en")]
 	)
-	info.add_theme_color_override("font_color", Color(0.95, 0.94, 0.90))
+	info.add_theme_font_size_override("font_size", 13)
+	info.add_theme_color_override("font_color", Color(0.176, 0.129, 0.094))
 	_modal_list.add_child(info)
 
 	var btn_pay := Button.new()
+	btn_pay.set_meta("skip_auto_style", true)
 	btn_pay.text = _t("Bayar Sekarang (%s)" % I18n.format_balance(rent_rp, "id"), "Pay Now (%s)" % I18n.format_balance(rent_rp, "en"))
 	btn_pay.disabled = bal < rent_rp
-	_style_btn(btn_pay, Color(0.96, 0.78, 0.24), Color(0.99, 0.88, 0.42), Color(0.11, 0.09, 0.06))
+	_style_btn(btn_pay, Color(0.176, 0.478, 0.325), Color(0.145, 0.396, 0.271), Color(1.0, 1.0, 1.0))
 	btn_pay.pressed.connect(func():
 		var pr := Progression.pay_weekly_rent(_save, true, 120000)
 		if pr["ok"]:
@@ -3238,8 +3508,9 @@ func _open_rent_modal(res: Dictionary = {}, leveled_up_to: int = 0) -> void:
 			_refresh_hud()
 	)
 	var btn_later := Button.new()
+	btn_later.set_meta("skip_auto_style", true)
 	btn_later.text = _t("Bayar Nanti (+Denda %s)" % I18n.format_balance(15000, "id"), "Pay Later (+%s Fee)" % I18n.format_balance(15000, "en"))
-	_style_btn(btn_later, Color(0.18, 0.20, 0.24), Color(0.55, 0.56, 0.60))
+	_style_btn(btn_later, Color(1.0, 1.0, 1.0), Color(0.84, 0.74, 0.62), Color(0.431, 0.337, 0.255))
 	btn_later.pressed.connect(func():
 		var pr := Progression.pay_weekly_rent(_save, false, 120000)
 		_save = pr["save"]
@@ -3265,13 +3536,9 @@ func _open_map_modal() -> void:
 	if _is_sleeping:
 		return
 	_clear_modal()
-	_modal_title.text = _t("PETA LINGKUNGAN & WILAYAH KERJA", "NEIGHBORHOOD & DISTRICT MAP")
+	_modal_title.text = _t("Peta Lingkungan & Wilayah Kerja", "Neighborhood & District Map")
 	var nodes := Portraits.get_map_destinations(_save, _world_mode)
-	var place_lbl := Label.new()
-	place_lbl.text = _t("Lokasi Saat Ini (Ketuk untuk pindah):", "Nearby Places (Tap to travel):")
-	place_lbl.add_theme_font_size_override("font_size", 12)
-	place_lbl.add_theme_color_override("font_color", Color(0.98, 0.84, 0.34))
-	_modal_list.add_child(place_lbl)
+	_add_modal_section(_t("LOKASI SAAT INI (KETUK UNTUK PINDAH)", "NEARBY PLACES (TAP TO TRAVEL)"))
 	var place_row := HBoxContainer.new()
 	place_row.add_theme_constant_override("separation", 8)
 	for node in nodes:
@@ -3280,10 +3547,14 @@ func _open_map_modal() -> void:
 		var act := String(node.get("action", "kos"))
 		var is_act := bool(node.get("active", false))
 		var b := Button.new()
+		b.set_meta("skip_auto_style", true)
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		var lbl := String(node["label_en"] if _loc() == "en" else node["label_id"])
 		b.text = ("%s ✓" if is_act else "%s") % lbl
-		_style_btn(b, Color(0.22, 0.58, 0.42) if is_act else Color(0.16, 0.18, 0.22), Color(0.96, 0.78, 0.26))
+		if is_act:
+			_style_btn(b, Color(0.176, 0.478, 0.325), Color(0.145, 0.396, 0.271), Color(1.0, 1.0, 1.0))
+		else:
+			_style_btn(b, Color(1.0, 1.0, 1.0), Color(0.84, 0.74, 0.62), Color(0.176, 0.129, 0.094))
 		b.disabled = _in_shift and act != "shift"
 		b.pressed.connect(func():
 			_modal_backdrop.visible = false
@@ -3297,11 +3568,7 @@ func _open_map_modal() -> void:
 		place_row.add_child(b)
 	_modal_list.add_child(place_row)
 
-	var dist_lbl := Label.new()
-	dist_lbl.text = _t("Peta Distrik Karier:", "Career District Map:")
-	dist_lbl.add_theme_font_size_override("font_size", 12)
-	dist_lbl.add_theme_color_override("font_color", Color(0.68, 0.88, 0.98))
-	_modal_list.add_child(dist_lbl)
+	_add_modal_section(_t("PETA DISTRIK KARIER", "CAREER DISTRICT MAP"))
 	for node in nodes:
 		if String(node.get("kind", "")) != "district":
 			continue
@@ -3310,12 +3577,15 @@ func _open_map_modal() -> void:
 		var is_act := bool(node.get("active", false))
 		var lbl := String(node["label_en"] if _loc() == "en" else node["label_id"])
 		var b := Button.new()
-		b.text = "%s%s (%d XP)%s" % ["📍 " if is_act else ("• " if unl else "🔒 "), lbl, int(node["min_xp"]), _t(" [Lokasi Aktif]", " [Active]") if is_act else ""]
+		b.set_meta("skip_auto_style", true)
+		b.text = "%s%s (%d XP)%s" % ["● " if is_act else ("• " if unl else _t("[Terkunci] ", "[Locked] ")), lbl, int(node["min_xp"]), _t(" [Lokasi Aktif]", " [Active]") if is_act else ""]
 		b.disabled = (not unl) or _in_shift
 		if is_act:
-			_style_btn(b, Color(0.18, 0.46, 0.36), Color(0.98, 0.86, 0.36))
+			_style_btn(b, Color(0.910, 0.961, 0.925), Color(0.65, 0.84, 0.72), Color(0.129, 0.431, 0.263))
 		elif unl:
-			_style_btn(b, Color(0.15, 0.20, 0.28), Color(0.45, 0.72, 0.88))
+			_style_btn(b, Color(1.0, 1.0, 1.0), Color(0.84, 0.74, 0.62), Color(0.176, 0.129, 0.094))
+		else:
+			_style_btn(b, Color(0.925, 0.894, 0.847), Color(0.82, 0.76, 0.68), Color(0.541, 0.475, 0.408))
 		b.pressed.connect(func():
 			var res := Progression.select_job_tier(_save, tid)
 			if res["ok"]:
@@ -3334,17 +3604,24 @@ func _open_map_modal() -> void:
 
 func _open_log_modal() -> void:
 	_clear_modal()
-	_modal_title.text = _t("CATATAN HARIAN ART", "DAILY ART ACTIVITY LOG")
+	_modal_title.text = _t("Catatan Harian ART", "Daily ART Activity Log")
 	var entries := Settings.get_daily_log(_save)
 	if entries.is_empty():
 		var empty_lbl := Label.new()
+		empty_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		empty_lbl.text = _t("Belum ada catatan hari ini. Sapa tetangga atau mulai shift!", "No activity logged yet. Chat with neighbors or start a shift!")
-		empty_lbl.add_theme_color_override("font_color", Color(0.88, 0.87, 0.83))
+		empty_lbl.add_theme_font_size_override("font_size", 12)
+		empty_lbl.add_theme_color_override("font_color", Color(0.431, 0.337, 0.255))
 		_modal_list.add_child(empty_lbl)
 	else:
+		var log_card := PanelContainer.new()
+		log_card.add_theme_stylebox_override("panel", _make_box(Color(1.0, 1.0, 1.0), Color(0.898, 0.831, 0.745), 14, 12, 10))
+		var lv_log := VBoxContainer.new()
+		lv_log.add_theme_constant_override("separation", 5)
 		for idx in range(entries.size() - 1, -1, -1):
 			var e: Dictionary = entries[idx]
 			var row := Label.new()
+			row.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			var title := String(e["title_en"] if _loc() == "en" else e["title_id"])
 			var drp := int(e.get("delta_rp", 0))
 			var rp_txt := ""
@@ -3352,13 +3629,16 @@ func _open_log_modal() -> void:
 				rp_txt = "  +%s" % I18n.format_balance(drp, _loc())
 			elif drp < 0:
 				rp_txt = "  -%s" % I18n.format_balance(absi(drp), _loc())
-			row.text = "%s %d • %s%s" % [_t("Hari", "Day"), int(e["day"]), title, rp_txt]
+			row.text = "%s %d · %s%s" % [_t("Hari", "Day"), int(e["day"]), title, rp_txt]
 			row.add_theme_font_size_override("font_size", 12)
-			row.add_theme_color_override("font_color", Color(0.45, 0.94, 0.44) if drp > 0 else (Color(0.96, 0.62, 0.42) if drp < 0 else Color(0.95, 0.94, 0.90)))
-			_modal_list.add_child(row)
+			row.add_theme_color_override("font_color", Color(0.129, 0.431, 0.263) if drp > 0 else (Color(0.690, 0.243, 0.165) if drp < 0 else Color(0.176, 0.129, 0.094)))
+			lv_log.add_child(row)
+		log_card.add_child(lv_log)
+		_modal_list.add_child(log_card)
 	var btn_back := Button.new()
+	btn_back.set_meta("skip_auto_style", true)
 	btn_back.text = _t("Kembali ke Menu", "Back to Menu")
-	_style_btn(btn_back, Color(0.16, 0.18, 0.22), Color(0.96, 0.78, 0.26))
+	_style_btn(btn_back, Color(0.961, 0.910, 0.827), Color(0.84, 0.72, 0.56), Color(0.361, 0.263, 0.188))
 	btn_back.pressed.connect(_open_settings_modal)
 	_modal_list.add_child(btn_back)
 	_show_modal()
@@ -3367,7 +3647,7 @@ func _add_modal_section(title_txt: String) -> void:
 	var sec := Label.new()
 	sec.text = title_txt
 	sec.add_theme_font_size_override("font_size", 11)
-	sec.add_theme_color_override("font_color", Color(0.98, 0.84, 0.34))
+	sec.add_theme_color_override("font_color", Color(0.541, 0.322, 0.118))
 	_modal_list.add_child(sec)
 
 func _open_settings_modal() -> void:
@@ -3375,7 +3655,7 @@ func _open_settings_modal() -> void:
 		return
 	_clear_modal()
 	_reset_confirm = false
-	_modal_title.text = _t("MENU, PENGATURAN & CATATAN", "MENU, SETTINGS & LOG")
+	_modal_title.text = _t("Menu, Pengaturan & Catatan", "Menu, Settings & Log")
 	_add_modal_section(_t("AKUN & PROGRES", "ACCOUNT & PROGRESS"))
 
 	var btn_prof := Button.new()
@@ -3521,9 +3801,10 @@ func _open_settings_modal() -> void:
 	_modal_list.add_child(btn_wfx)
 
 	var btn_rst := Button.new()
+	btn_rst.set_meta("skip_auto_style", true)
 	btn_rst.text = _t("Mulai Ulang Karier (Reset Save)", "Reset Career Save")
 	btn_rst.disabled = _in_shift
-	_style_btn(btn_rst, Color(0.55, 0.16, 0.16), Color(0.95, 0.65, 0.45))
+	_style_btn(btn_rst, Color(0.76, 0.24, 0.20), Color(0.64, 0.18, 0.15), Color(1.0, 1.0, 1.0))
 	btn_rst.pressed.connect(func():
 		if _in_shift:
 			return
@@ -3547,6 +3828,12 @@ func _open_settings_modal() -> void:
 		_refresh_hud()
 	)
 	_modal_list.add_child(btn_rst)
+	for ch in _modal_list.get_children():
+		if ch is Button:
+			var sb := ch as Button
+			if sb.icon != null:
+				sb.alignment = HORIZONTAL_ALIGNMENT_LEFT
+				sb.add_theme_constant_override("h_separation", 12)
 	_show_modal()
 
 func _make_box(bg: Color, border: Color, radius: int = 12, pad_h: int = 12, pad_v: int = 8) -> StyleBoxFlat:
@@ -3563,16 +3850,20 @@ func _make_box(bg: Color, border: Color, radius: int = 12, pad_h: int = 12, pad_
 
 func _style_btn(btn: Button, bg: Color, border: Color, txt: Color = Color(0.98, 0.97, 0.94)) -> void:
 	btn.custom_minimum_size.y = maxf(btn.custom_minimum_size.y, 44.0)
-	btn.add_theme_stylebox_override("normal", _make_box(bg, border, 10, 12, 7))
-	btn.add_theme_stylebox_override("hover", _make_box(bg.lightened(0.10), border, 10, 12, 7))
-	btn.add_theme_stylebox_override("focus", _make_box(bg.lightened(0.08), border.lightened(0.12), 10, 12, 7))
-	btn.add_theme_stylebox_override("pressed", _make_box(bg.darkened(0.12), border, 10, 12, 7))
-	btn.add_theme_stylebox_override("disabled", _make_box(Color(0.11, 0.14, 0.20, 0.94), Color(0.36, 0.40, 0.48, 0.80), 10, 12, 7))
+	btn.add_theme_stylebox_override("normal", _make_box(bg, border, 11, 12, 7))
+	btn.add_theme_stylebox_override("hover", _make_box(bg.lightened(0.08), border, 11, 12, 7))
+	btn.add_theme_stylebox_override("focus", _make_box(bg.lightened(0.06), border.lightened(0.12), 11, 12, 7))
+	btn.add_theme_stylebox_override("pressed", _make_box(bg.darkened(0.10), border, 11, 12, 7))
+	var light_surface := bg.get_luminance() > 0.45 or txt.get_luminance() < 0.35
+	var dis_bg := Color(0.925, 0.894, 0.847, 0.98) if light_surface else Color(0.14, 0.12, 0.11, 0.92)
+	var dis_bdr := Color(0.82, 0.76, 0.68, 0.92) if light_surface else Color(0.42, 0.36, 0.30, 0.80)
+	var dis_txt := Color(0.541, 0.475, 0.408) if light_surface else Color(0.84, 0.82, 0.78)
+	btn.add_theme_stylebox_override("disabled", _make_box(dis_bg, dis_bdr, 11, 12, 7))
 	btn.add_theme_color_override("font_color", txt)
 	btn.add_theme_color_override("font_hover_color", txt)
 	btn.add_theme_color_override("font_focus_color", txt)
 	btn.add_theme_color_override("font_pressed_color", txt)
-	btn.add_theme_color_override("font_disabled_color", Color(0.84, 0.86, 0.90))
+	btn.add_theme_color_override("font_disabled_color", dis_txt)
 
 func _style_bar(bar: ProgressBar, fill_col: Color, bg_col: Color = Color(0.08, 0.08, 0.08, 0.65)) -> void:
 	var bg := StyleBoxFlat.new()
@@ -3655,7 +3946,7 @@ func _build_hud() -> void:
 	var tl_panel := PanelContainer.new()
 	tl_panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	tl_panel.position = Vector2(14, 10)
-	tl_panel.add_theme_stylebox_override("panel", _make_box(Color(0.06, 0.08, 0.12, 0.74), Color(0.95, 0.78, 0.26, 0.42), 12, 10, 6))
+	tl_panel.add_theme_stylebox_override("panel", _make_box(Color(0.14, 0.10, 0.08, 0.80), Color(0.84, 0.66, 0.44, 0.62), 14, 11, 7))
 	_tl_card = tl_panel
 	var tl_v := VBoxContainer.new()
 	tl_v.add_theme_constant_override("separation", 4)
@@ -3738,7 +4029,7 @@ func _build_hud() -> void:
 	lv_pill.add_child(_lbl_level_badge)
 
 	var bal_pill := PanelContainer.new()
-	bal_pill.add_theme_stylebox_override("panel", _make_box(Color(0.06, 0.08, 0.12, 0.74), Color(0.95, 0.78, 0.26, 0.42), 10, 10, 4))
+	bal_pill.add_theme_stylebox_override("panel", _make_box(Color(0.14, 0.10, 0.08, 0.80), Color(0.84, 0.66, 0.44, 0.62), 12, 10, 4))
 	_lbl_balance = Label.new()
 	_shadow_label(_lbl_balance, 21, Color(0.44, 0.96, 0.44), 5)
 	bal_pill.add_child(_lbl_balance)
@@ -3747,8 +4038,8 @@ func _build_hud() -> void:
 	_btn_settings = Button.new()
 	_btn_map.custom_minimum_size = Vector2(64, 44)
 	_btn_settings.custom_minimum_size = Vector2(76, 44)
-	_style_btn(_btn_map, Color(0.10, 0.13, 0.18, 0.82), Color(0.95, 0.78, 0.26, 0.75))
-	_style_btn(_btn_settings, Color(0.10, 0.13, 0.18, 0.82), Color(0.95, 0.78, 0.26, 0.75))
+	_style_btn(_btn_map, Color(0.14, 0.10, 0.08, 0.84), Color(0.84, 0.66, 0.44, 0.75))
+	_style_btn(_btn_settings, Color(0.14, 0.10, 0.08, 0.84), Color(0.84, 0.66, 0.44, 0.75))
 	_btn_map.pressed.connect(_open_map_modal)
 	_btn_settings.pressed.connect(_open_settings_modal)
 	top_r_row.add_child(lv_pill)
@@ -3760,9 +4051,9 @@ func _build_hud() -> void:
 	var photo_row := HBoxContainer.new()
 	photo_row.alignment = BoxContainer.ALIGNMENT_END
 	_btn_photo = Button.new()
-	_btn_photo.custom_minimum_size = Vector2(48, 44)
-	_btn_photo.text = "📷"
-	_style_btn(_btn_photo, Color(0.10, 0.13, 0.18, 0.82), Color(0.95, 0.78, 0.26, 0.75))
+	_btn_photo.custom_minimum_size = Vector2(68, 44)
+	_btn_photo.text = _t("Foto", "Photo")
+	_style_btn(_btn_photo, Color(0.14, 0.10, 0.08, 0.86), Color(0.84, 0.66, 0.44, 0.78))
 	_btn_photo.pressed.connect(func(): _set_photo_mode(true))
 	photo_row.add_child(_btn_photo)
 	_tr_vbox.add_child(photo_row)
@@ -3940,7 +4231,7 @@ func _build_hud() -> void:
 		_open_phone_os("home")
 	)
 	var hp_panel := PanelContainer.new()
-	hp_panel.add_theme_stylebox_override("panel", _make_box(Color(0.06, 0.08, 0.12, 0.74), Color(0.95, 0.78, 0.26, 0.42), 12, 6, 4))
+	hp_panel.add_theme_stylebox_override("panel", _make_box(Color(0.14, 0.10, 0.08, 0.80), Color(0.84, 0.66, 0.44, 0.62), 14, 6, 4))
 	hp_panel.add_child(d_ph["wrap"])
 	_hp_bottom_left = hp_panel
 	_hp_bottom_left.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
@@ -3998,43 +4289,42 @@ func _build_hud() -> void:
 	for dw in [d_act["wrap"], d_shift["wrap"], d_car["wrap"], d_ward["wrap"], d_up["wrap"]]:
 		dock.add_child(dw)
 	var dock_scrim := PanelContainer.new()
-	dock_scrim.add_theme_stylebox_override("panel", _make_box(Color(0.06, 0.08, 0.12, 0.76), Color(0.95, 0.78, 0.26, 0.42), 14, 8, 4))
+	dock_scrim.add_theme_stylebox_override("panel", _make_box(Color(0.14, 0.10, 0.08, 0.82), Color(0.84, 0.66, 0.44, 0.65), 16, 8, 4))
 	dock_scrim.add_child(dock)
 	_br_vbox.add_child(dock_scrim)
 	hud.add_child(_br_vbox)
 
 	_build_courier_toast()
 
-	# Modal Backdrop (Dark Obsidian + 2px Gold Border + ScrollContainer for Mobile Landscape)
+	# Modal Backdrop (Warm Cream & Teak Cozy Sheet + Top-Right Circular Close)
 	_modal_backdrop = ColorRect.new()
-	_modal_backdrop.color = Color(0.03, 0.04, 0.06, 0.74)
+	_modal_backdrop.color = Color(0.09, 0.07, 0.05, 0.56)
 	_modal_backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_modal_backdrop.visible = false
 	var center := CenterContainer.new()
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_modal_card = PanelContainer.new()
 	_modal_card.custom_minimum_size = Vector2(490, 260)
-	_modal_card.add_theme_stylebox_override("panel", _make_box(Color(0.08, 0.09, 0.12, 0.96), Color(0.96, 0.78, 0.26), 16, 18, 14))
+	_modal_card.add_theme_stylebox_override("panel", _make_box(Color(1.0, 0.973, 0.933, 0.99), Color(0.776, 0.612, 0.427, 0.98), 18, 20, 14))
 	var vb := VBoxContainer.new()
 	vb.add_theme_constant_override("separation", 10)
-	var hdr_pill := PanelContainer.new()
-	hdr_pill.add_theme_stylebox_override("panel", gold_pill)
+	var hdr_row := HBoxContainer.new()
+	hdr_row.add_theme_constant_override("separation", 10)
 	_modal_title = Label.new()
-	_modal_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_modal_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_modal_title.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_modal_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	_modal_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_modal_title.add_theme_font_size_override("font_size", 15)
-	_modal_title.add_theme_color_override("font_color", dark_ink)
-	hdr_pill.add_child(_modal_title)
-	_modal_scroll = ScrollContainer.new()
-	_modal_scroll.custom_minimum_size = Vector2(454, 240)
-	_modal_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_modal_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_modal_list = VBoxContainer.new()
-	_modal_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_modal_list.add_theme_constant_override("separation", 8)
-	_modal_scroll.add_child(_modal_list)
+	_modal_title.add_theme_font_size_override("font_size", 17)
+	_modal_title.add_theme_color_override("font_color", Color(0.176, 0.129, 0.094))
 	_btn_modal_close = Button.new()
-	_style_btn(_btn_modal_close, Color(0.96, 0.78, 0.24), Color(0.99, 0.89, 0.48), dark_ink)
+	_btn_modal_close.text = "×"
+	_btn_modal_close.custom_minimum_size = Vector2(44, 44)
+	_btn_modal_close.add_theme_font_size_override("font_size", 20)
+	_style_btn(_btn_modal_close, Color(0.937, 0.886, 0.820), Color(0.84, 0.74, 0.62), Color(0.361, 0.263, 0.188))
+	_btn_modal_close.add_theme_stylebox_override("normal", _make_box(Color(0.937, 0.886, 0.820), Color(0.84, 0.74, 0.62), 22, 0, 0))
+	_btn_modal_close.add_theme_stylebox_override("hover", _make_box(Color(0.89, 0.82, 0.74), Color(0.776, 0.612, 0.427), 22, 0, 0))
+	_btn_modal_close.add_theme_stylebox_override("pressed", _make_box(Color(0.84, 0.75, 0.65), Color(0.70, 0.52, 0.36), 22, 0, 0))
 	_btn_modal_close.pressed.connect(func():
 		_play_sfx(_wav_click)
 		_modal_backdrop.visible = false
@@ -4048,9 +4338,22 @@ func _build_hud() -> void:
 			if not ep.is_empty():
 				_open_chapter_modal(ep)
 	)
-	vb.add_child(hdr_pill)
+	hdr_row.add_child(_modal_title)
+	hdr_row.add_child(_btn_modal_close)
+	var hdr_div := ColorRect.new()
+	hdr_div.custom_minimum_size = Vector2(0, 1)
+	hdr_div.color = Color(0.898, 0.831, 0.745, 0.90)
+	_modal_scroll = ScrollContainer.new()
+	_modal_scroll.custom_minimum_size = Vector2(454, 240)
+	_modal_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_modal_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_modal_list = VBoxContainer.new()
+	_modal_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_modal_list.add_theme_constant_override("separation", 9)
+	_modal_scroll.add_child(_modal_list)
+	vb.add_child(hdr_row)
+	vb.add_child(hdr_div)
 	vb.add_child(_modal_scroll)
-	vb.add_child(_btn_modal_close)
 	_modal_card.add_child(vb)
 	center.add_child(_modal_card)
 	_modal_backdrop.add_child(center)
@@ -4339,22 +4642,23 @@ func _open_title_screen() -> void:
 
 func _open_save_slots_modal() -> void:
 	_clear_modal()
-	_modal_title.text = _t("PILIH SLOT SIMPANAN (3 SLOT)", "CHOOSE SAVE SLOT (3 SLOTS)")
+	_modal_title.text = _t("Pilih Slot Simpanan (3 Slot)", "Choose Save Slot (3 Slots)")
 	for entry in SaveStore.list_save_slots(_loc()):
 		var slot_idx := int(entry.get("slot", 1))
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 8)
 		var btn := Button.new()
+		btn.set_meta("skip_auto_style", true)
 		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		if bool(entry.get("exists", false)) and bool(entry.get("onboarding_done", false)):
 			btn.text = "Slot %d · %s · %s %d · Lv.%d · %s" % [
 				slot_idx, String(entry["player_name"]), _t("Hari", "Day"), int(entry["day"]),
 				int(entry["level"]), I18n.format_balance(int(entry["balance_rp"]), _loc())
 			]
-			_style_btn(btn, Color(0.18, 0.44, 0.36), Color(0.95, 0.78, 0.26))
+			_style_btn(btn, Color(0.176, 0.478, 0.325), Color(0.145, 0.396, 0.271), Color(1.0, 1.0, 1.0))
 		else:
 			btn.text = _t("Slot %d · Kosong (Buat Baru)" % slot_idx, "Slot %d · Empty (Start New)" % slot_idx)
-			_style_btn(btn, Color(0.14, 0.16, 0.22), Color(0.65, 0.68, 0.75))
+			_style_btn(btn, Color(1.0, 1.0, 1.0), Color(0.84, 0.74, 0.62), Color(0.176, 0.129, 0.094))
 		btn.pressed.connect(func():
 			_active_slot = slot_idx
 			_save = SaveStore.load_from_slot(_active_slot)
@@ -4372,11 +4676,12 @@ func _open_save_slots_modal() -> void:
 		row.add_child(btn)
 		if SaveStore.should_show_slot_delete(entry):
 			var del_b := Button.new()
+			del_b.set_meta("skip_auto_style", true)
 			var is_arm := _confirm_delete_slot == slot_idx
 			del_b.custom_minimum_size = Vector2(96, 44)
 			del_b.set_meta("skip_autowrap", true)
 			del_b.text = _t("Yakin Hapus?" if is_arm else "Hapus", "Confirm Del?" if is_arm else "Delete")
-			_style_btn(del_b, Color(0.76, 0.16, 0.16) if is_arm else Color(0.58, 0.18, 0.18), Color(0.98, 0.80, 0.45) if is_arm else Color(0.95, 0.65, 0.55))
+			_style_btn(del_b, Color(0.76, 0.16, 0.16) if is_arm else Color(0.690, 0.243, 0.165), Color(0.58, 0.12, 0.12), Color(1.0, 1.0, 1.0))
 			del_b.pressed.connect(func():
 				if _confirm_delete_slot != slot_idx:
 					_confirm_delete_slot = slot_idx
@@ -4394,7 +4699,11 @@ func _open_save_slots_modal() -> void:
 
 func _open_whats_new_modal() -> void:
 	_clear_modal()
-	_modal_title.text = _t("INFO TERBARU — VERSI 1.6 HD", "WHAT'S NEW — VERSION 1.6 HD")
+	_modal_title.text = _t("Info Terbaru — Versi 1.6 HD", "What's New — Version 1.6 HD")
+	var wn_card := PanelContainer.new()
+	wn_card.add_theme_stylebox_override("panel", _make_box(Color(1.0, 1.0, 1.0), Color(0.898, 0.831, 0.745), 14, 14, 12))
+	var wn_v := VBoxContainer.new()
+	wn_v.add_theme_constant_override("separation", 6)
 	for line in [
 		_t("• Potret 3D Cycles & Ikon Bergambar di seluruh menu dan HP Sari.", "• 3D Cycles Portraits & Illustrated Icons across HUD and Smartphone OS."),
 		_t("• Bank Desaku dengan target kiriman kampung & batas waktu Hari ke-10.", "• Bank Desaku with family remittance goal & Day-10 deadline."),
@@ -4404,8 +4713,11 @@ func _open_whats_new_modal() -> void:
 		var lbl := Label.new()
 		lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		lbl.text = line
-		lbl.add_theme_color_override("font_color", Color(0.95, 0.94, 0.90))
-		_modal_list.add_child(lbl)
+		lbl.add_theme_font_size_override("font_size", 12)
+		lbl.add_theme_color_override("font_color", Color(0.176, 0.129, 0.094))
+		wn_v.add_child(lbl)
+	wn_card.add_child(wn_v)
+	_modal_list.add_child(wn_card)
 	_show_modal()
 
 func _build_dialogue_bar() -> void:
@@ -4444,7 +4756,7 @@ func _build_dialogue_bar() -> void:
 	_dlg_speaker.add_theme_font_size_override("font_size", 15)
 	_dlg_speaker.add_theme_color_override("font_color", Color(0.36, 0.88, 0.98))
 	_dlg_phone_badge = Label.new()
-	_dlg_phone_badge.text = _t("📞 TELP", "📞 CALL")
+	_dlg_phone_badge.text = _t("TELP", "CALL")
 	_dlg_phone_badge.add_theme_stylebox_override("normal", _make_box(Color(0.10, 0.54, 0.32, 0.94), Color(0.96, 0.84, 0.34), 6, 6, 2))
 	_dlg_phone_badge.add_theme_font_size_override("font_size", 11)
 	_dlg_phone_badge.add_theme_color_override("font_color", Color(1, 1, 1))
@@ -4546,17 +4858,20 @@ func _open_guide_modal(guide_idx: int = 0) -> void:
 	var body := Label.new()
 	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	body.text = String(g["body"])
-	body.add_theme_color_override("font_color", Color(0.95, 0.94, 0.90))
+	body.add_theme_font_size_override("font_size", 13)
+	body.add_theme_color_override("font_color", Color(0.176, 0.129, 0.094))
 	_modal_list.add_child(body)
 
 	var next_b := Button.new()
+	next_b.set_meta("skip_auto_style", true)
 	next_b.text = _t("Lanjut (2/2)" if guide_idx == 0 else "Mengerti, Mulai!", "Next (2/2)" if guide_idx == 0 else "Got it, Let's Go!")
-	_style_btn(next_b, Color(0.22, 0.64, 0.38), Color(0.96, 0.78, 0.26))
+	_style_btn(next_b, Color(0.176, 0.478, 0.325), Color(0.145, 0.396, 0.271), Color(1.0, 1.0, 1.0))
 	next_b.pressed.connect(func(): _open_guide_modal(guide_idx + 1))
 	_modal_list.add_child(next_b)
 	var cult_g_b := Button.new()
-	cult_g_b.text = _t("🌏 Catatan Budaya Indonesia", "🌏 Indonesian Cultural Notes")
-	_style_btn(cult_g_b, Color(0.14, 0.24, 0.42), Color(0.96, 0.78, 0.26))
+	cult_g_b.set_meta("skip_auto_style", true)
+	cult_g_b.text = _t("Catatan Budaya Indonesia", "Indonesian Cultural Notes")
+	_style_btn(cult_g_b, Color(0.902, 0.937, 0.969), Color(0.72, 0.81, 0.90), Color(0.141, 0.329, 0.490))
 	cult_g_b.pressed.connect(func(): call_deferred("_open_cultural_notes_modal"))
 	_modal_list.add_child(cult_g_b)
 	_show_modal()
@@ -4754,21 +5069,21 @@ func _set_photo_mode(enabled: bool) -> void:
 	_photo_mode = enabled
 	_refresh_hud()
 	if not enabled:
-		_show_toast(_t("📸 Mode Foto ditutup — siap lanjut!", "📸 Photo Mode closed!"))
+		_show_toast(_t("Mode Foto ditutup — siap lanjut!", "Photo Mode closed!"))
 
 func _open_confirm_purchase_modal(item_label: String, cost_rp: int, on_confirm: Callable) -> void:
 	var pv := Progression.preview_balance_after(_save, cost_rp)
 	_clear_modal()
-	_modal_title.text = _t("KONFIRMASI PEMBELIAN", "CONFIRM PURCHASE")
+	_modal_title.text = _t("Konfirmasi Pembelian", "Confirm Purchase")
 	var info_card := PanelContainer.new()
-	info_card.add_theme_stylebox_override("panel", _make_box(Color(0.11, 0.15, 0.22), Color(0.96, 0.78, 0.26, 0.70), 12, 14, 10))
+	info_card.add_theme_stylebox_override("panel", _make_box(Color(1.0, 1.0, 1.0), Color(0.898, 0.831, 0.745), 14, 14, 12))
 	var iv := VBoxContainer.new()
 	iv.add_theme_constant_override("separation", 6)
 	var item_l := Label.new()
 	item_l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	item_l.text = item_label
 	item_l.add_theme_font_size_override("font_size", 15)
-	item_l.add_theme_color_override("font_color", Color(0.98, 0.86, 0.36))
+	item_l.add_theme_color_override("font_color", Color(0.541, 0.322, 0.118))
 	var info := Label.new()
 	info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	info.text = "%s: %s\n%s: %s" % [
@@ -4776,7 +5091,7 @@ func _open_confirm_purchase_modal(item_label: String, cost_rp: int, on_confirm: 
 		_t("Sisa uang setelah beli", "Money left after buying"), I18n.format_balance(int(pv["balance_after"]), _loc()),
 	]
 	info.add_theme_font_size_override("font_size", 13)
-	info.add_theme_color_override("font_color", Color(0.95, 0.94, 0.90))
+	info.add_theme_color_override("font_color", Color(0.176, 0.129, 0.094))
 	iv.add_child(item_l)
 	iv.add_child(info)
 	info_card.add_child(iv)
@@ -4784,18 +5099,20 @@ func _open_confirm_purchase_modal(item_label: String, cost_rp: int, on_confirm: 
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
 	var b_no := Button.new()
+	b_no.set_meta("skip_auto_style", true)
 	b_no.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	b_no.text = _t("Batal", "Cancel")
-	_style_btn(b_no, Color(0.18, 0.20, 0.24), Color(0.60, 0.62, 0.68))
+	_style_btn(b_no, Color(0.937, 0.890, 0.824), Color(0.84, 0.74, 0.62), Color(0.361, 0.263, 0.188))
 	b_no.pressed.connect(func():
 		_modal_backdrop.visible = false
 		_refresh_hud()
 	)
 	var b_yes := Button.new()
+	b_yes.set_meta("skip_auto_style", true)
 	b_yes.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	b_yes.text = _t("Ya, Beli", "Yes, Buy")
 	b_yes.disabled = not bool(pv["can_afford"])
-	_style_btn(b_yes, Color(0.96, 0.78, 0.24), Color(0.99, 0.89, 0.48), Color(0.11, 0.09, 0.06))
+	_style_btn(b_yes, Color(0.176, 0.478, 0.325), Color(0.145, 0.396, 0.271), Color(1.0, 1.0, 1.0))
 	b_yes.pressed.connect(func():
 		_modal_backdrop.visible = false
 		if on_confirm.is_valid():

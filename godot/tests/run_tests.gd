@@ -1461,7 +1461,7 @@ func _initialize() -> void:
 	_assert_true(not ("->" in String(r4_guides[0]["body"])), "Guide 1 avoids raw ASCII -> arrow")
 	var r4_guides_en := ArtWishlistStory.get_onboarding_guides(r4_save, "en")
 	_assert_true(not ("->" in String(r4_guides_en[0]["body"])), "Guide 1 EN avoids raw ASCII -> arrow")
-	_assert_true("_btn_modal_close.text = _t(\"Tutup\", \"Close\")" in mg_src, "main_game uses Tutup/Close instead of Mantap! on modal close button")
+	_assert_true("_btn_modal_close.text = \"×\"" in mg_src and not ("Mantap!" in mg_src), "main_game uses compact header × close button instead of Mantap! footer")
 	_assert_true("skip_autowrap" in mg_src and "Vector2(96, 44)" in mg_src, "save_slots delete button reserves >=96px width and skips autowrap")
 	_assert_true("canvas_sz := get_viewport().get_visible_rect().size" in mg_src, "main_game sizes modals & Phone OS in canvas_items coordinate space")
 	_assert_true(not ("Rp25.000" in mg_src), "phone_debt uses formatted currency spacing instead of hardcoded Rp25.000")
@@ -1924,6 +1924,15 @@ func _initialize() -> void:
 		_assert_true("art_nia" in ag_rt.get("hired_agency_arts", []), "SaveStore preserves hired_agency_arts")
 
 	_assert_true("func _set_photo_mode(" in mg_src, "main_game exposes _set_photo_mode")
+
+	# 49. Round 9 Warm Cream & Teak Cozy UI/UX + Zero-Tofu Glyph Overhaul
+	for bad_emoji in ["📷", "📸", "🌏", "📖", "🔒", "✨", "🏅", "📍", "📞", "🌧", "🌙"]:
+		_assert_true(not (bad_emoji in mg_src), "Zero DejaVuSans-unsupported tofu glyph in main_game.gd: " + bad_emoji)
+	_assert_true("Color(1.0, 0.973, 0.933" in mg_src or "#FFF8EE" in mg_src, "_modal_card uses Warm Cream (#FFF8EE) palette")
+	_assert_true("func _open_kos_modal(tab: String" in mg_src, "_open_kos_modal supports segmented tab switching")
+	_assert_true("func _open_wishlist_modal(tab: String" in mg_src, "_open_wishlist_modal supports segmented tab switching")
+	_assert_true("and (_btn_modal_close == null or _btn_modal_close.visible)" in mg_src, "NOTIFICATION_WM_GO_BACK_REQUEST guards non-dismissible modals")
+	_assert_true("func _find_first_enabled_button(" in mg_src, "_show_modal uses recursive focus fallback for nested modal buttons")
 
 	print("GODOT TDD RESULT: %d passed, %d failed" % [_passed, _failed])
 	quit(0 if _failed == 0 else 1)
