@@ -212,23 +212,34 @@ static func sync_stage_lights(stage_root: Node, world_mode: String, phase: Strin
 		holder = Node3D.new()
 		holder.name = "_WarmStageLights"
 		stage_root.add_child(holder)
-	for c in holder.get_children():
-		c.queue_free()
 	var cfgs: Array = []
 	if world_mode == "home" or world_mode == "shift":
 		cfgs = get_room_lights_config(phase)
 	elif world_mode == "street":
 		cfgs = get_street_lights_config(phase)
+	var active_names := {}
 	for cfg in cfgs:
-		var omni := OmniLight3D.new()
-		omni.name = String(cfg["name"])
+		var cname := String(cfg["name"])
+		active_names[cname] = true
+		var omni := holder.get_node_or_null(cname) as OmniLight3D
+		if omni == null:
+			omni = OmniLight3D.new()
+			omni.name = cname
+			holder.add_child(omni)
+		omni.visible = true
 		omni.position = cfg["pos"]
 		omni.light_color = cfg["color"]
 		omni.light_energy = float(cfg["energy"])
 		omni.omni_range = float(cfg["range"])
 		omni.omni_attenuation = 1.35
-		omni.shadow_enabled = false
-		holder.add_child(omni)
+		var want_shadow := (cname == "WarmBedsideOmni" and (world_mode == "home" or world_mode == "shift")) or (cname == "StreetLampC" and world_mode == "street" and phase == "malam")
+		omni.shadow_enabled = want_shadow
+		if want_shadow:
+			omni.shadow_bias = 0.04
+			omni.shadow_normal_bias = 1.25
+	for c in holder.get_children():
+		if not active_names.has(c.name) and c is Node3D:
+			(c as Node3D).visible = false
 
 static func _set_nodes_visible(stage_root: Node, names: Array, is_visible: bool) -> void:
 	for n_name in names:

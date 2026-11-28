@@ -18,7 +18,10 @@ void fragment() {
 
 	float lc = luma(c);
 	float lblur = (lc + luma(n) + luma(s) + luma(e) + luma(w)) * 0.2;
-	float ldiff = clamp(lc - lblur, -0.14, 0.14) * sharpen_amount;
+	float edge_mag = abs(lc - lblur);
+	// Attenuate sharpening on steep aliased silhouettes (fan spokes, foliage) to prevent ringing
+	float edge_guard = 1.0 - smoothstep(0.10, 0.28, edge_mag) * 0.65;
+	float ldiff = clamp(lc - lblur, -0.14, 0.14) * sharpen_amount * edge_guard;
 	vec3 sharpened = clamp(c + vec3(ldiff), vec3(0.0), vec3(1.0));
 
 	vec2 uv_centered = SCREEN_UV - vec2(0.5);

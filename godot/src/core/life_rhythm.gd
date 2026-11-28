@@ -2,6 +2,7 @@ class_name ArtLifeRhythm
 extends RefCounted
 
 const CareerTiers := preload("res://src/core/career_tiers.gd")
+const WishlistStory := preload("res://src/core/wishlist_story.gd")
 
 const PRAYER_SCHEDULE := [
 	{"id": "subuh", "minute": 285, "label_id": "Subuh", "label_en": "Fajr"},
@@ -172,10 +173,15 @@ static func sleep_in_bed(save: Dictionary, owned_upgrades: Array) -> Dictionary:
 		nxt = thr_res["save"]
 		if bool(thr_res.get("ok", false)):
 			nxt["cycle_shifts_worked"] = 0
+	var passive_rp := WishlistStory.get_passive_daily_income(nxt)
+	if passive_rp > 0:
+		nxt["balance_rp"] = int(nxt.get("balance_rp", 0)) + passive_rp
+		nxt["total_earnings_rp"] = int(nxt.get("total_earnings_rp", 0)) + passive_rp
 	return {
 		"ok": true,
 		"day": cur_day,
 		"energy": max_e,
+		"passive_income_rp": passive_rp,
 		"thr_bonus_rp": int(thr_res.get("bonus_rp", 0)),
 		"season": get_season(cur_day),
 		"save": nxt,

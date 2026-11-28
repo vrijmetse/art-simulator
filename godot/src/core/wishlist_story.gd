@@ -99,15 +99,66 @@ const STORY_EPILOGUE := {
 	"body_en": "You mastered the Elite Cluster and achieved every ART Dream—supporting family back home, a new phone, rental savings, and your own scooter! Your journey from a humble kos room now inspires the entire neighborhood.",
 }
 
+const CORE_WISHLIST_IDS := ["kirim_kampung", "hp_baru", "tabung_kontrakan", "motor_matic"]
+
+const FUTURE_INVESTMENTS := {
+	"invest_warung": {
+		"id": "invest_warung",
+		"cost_rp": 2500000,
+		"daily_income_rp": 25000,
+		"label_id": "Modal Warung Kelontong",
+		"label_en": "Own Neighborhood Warung",
+		"desc_id": "Buka warung sembako kampung — hasil pasif +Rp 25.000/hari saat tidur.",
+		"desc_en": "Open a neighborhood shop — earns +Rp 25.000/day passive income on rest.",
+	},
+	"invest_kos_juragan": {
+		"id": "invest_kos_juragan",
+		"cost_rp": 5000000,
+		"daily_income_rp": 50000,
+		"label_id": "Renovasi Rumah Kos Juragan",
+		"label_en": "Own Boarding House (Juragan)",
+		"desc_id": "Miliki kamar kos sendiri — hasil pasif +Rp 50.000/hari saat tidur!",
+		"desc_en": "Own rental kos rooms — earns +Rp 50.000/day passive income on rest!",
+	},
+}
+
 static func is_epilogue_unlocked(save: Dictionary) -> bool:
 	var xp := int(save.get("xp", 0))
 	if not CareerTiers.can_access_tier("cluster_elite", xp):
 		return false
 	var unlocked: Array = save.get("unlocked_wishlist", [])
-	for raw_id in WISHLIST_ITEMS.keys():
+	for raw_id in CORE_WISHLIST_IDS:
 		if not (String(raw_id) in unlocked):
 			return false
 	return true
+
+static func get_passive_daily_income(save: Dictionary) -> int:
+	var tot := 0
+	for iid in save.get("unlocked_investments", []):
+		var sid := String(iid)
+		if FUTURE_INVESTMENTS.has(sid):
+			tot += int(FUTURE_INVESTMENTS[sid]["daily_income_rp"])
+	return tot
+
+static func buy_investment(save: Dictionary, inv_id: String) -> Dictionary:
+	if not FUTURE_INVESTMENTS.has(inv_id):
+		return {"ok": false, "reason": "unknown_investment", "save": save}
+	if not is_epilogue_unlocked(save):
+		return {"ok": false, "reason": "epilogue_locked", "save": save}
+	var owned: Array = save.get("unlocked_investments", []).duplicate()
+	if inv_id in owned:
+		return {"ok": false, "reason": "already_owned", "save": save}
+	var item: Dictionary = FUTURE_INVESTMENTS[inv_id]
+	var cost := int(item["cost_rp"])
+	var bal := int(save.get("balance_rp", 0))
+	if bal < cost:
+		return {"ok": false, "reason": "insufficient_funds", "save": save}
+	var nxt := save.duplicate(true)
+	nxt["balance_rp"] = bal - cost
+	owned.append(inv_id)
+	nxt["unlocked_investments"] = owned
+	nxt["mood"] = clampi(int(nxt.get("mood", 65)) + 15, 0, 100)
+	return {"ok": true, "cost_rp": cost, "daily_income_rp": int(item["daily_income_rp"]), "save": nxt}
 
 static func get_unseen_epilogue(save: Dictionary) -> Dictionary:
 	if not is_epilogue_unlocked(save):

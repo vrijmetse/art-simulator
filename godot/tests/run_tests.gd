@@ -286,8 +286,8 @@ func _initialize() -> void:
 	var cs_fired: Dictionary = MajikanCall.create_state(MajikanProfiles.get_profile("ibu_kos_melati"))
 	cs_fired["fired"] = true
 	var st_fired: Dictionary = Progression.settle_shift(sv, sh_fired, cs_fired)
-	_assert_eq(st_fired["payout_rp"], int(sh_fired["earned_rp"]), "fired shift forfeits base contract pay")
-	_assert_eq(st_fired["xp_gained"], int(floor(float(sh_fired["xp_earned"]) * 0.5)), "fired shift halves XP")
+	_assert_eq(st_fired["payout_rp"], 0, "fired shift forfeits all pay including chore wages")
+	_assert_eq(st_fired["xp_gained"], 0, "fired shift forfeits XP")
 
 	# 11. SaveStore JSON validation & round-trip persistence
 	var json_str: String = SaveStore.serialize(sv)
@@ -489,7 +489,10 @@ func _initialize() -> void:
 	_assert_eq(int(paid_rent["save"]["last_rent_day"]), 7, "last_rent_day updated")
 	var later_rent := Progression.pay_weekly_rent(rent_sv, false, 120000)
 	_assert_eq(int(later_rent["save"]["pending_rent_rp"]), 135000, "pay later accrues rent + 15000 late fee")
-	_assert_eq(Progression.should_collect_weekly_rent(later_rent["save"], CareerTiers.get_tier("kamar_kos")), true, "pending rent keeps rent collection active")
+	_assert_eq(Progression.should_collect_weekly_rent(later_rent["save"], CareerTiers.get_tier("kamar_kos")), false, "pay later grants 3-day grace before re-prompting")
+	var later_due: Dictionary = later_rent["save"].duplicate(true)
+	later_due["day"] = int(later_due["day"]) + 3
+	_assert_eq(Progression.should_collect_weekly_rent(later_due, CareerTiers.get_tier("kamar_kos")), true, "pending rent resumes collection after 3-day grace")
 	var settled_later := Progression.pay_weekly_rent(later_rent["save"], true, 120000)
 	_assert_eq(bool(settled_later["ok"]), true, "paying accumulated pending rent succeeds")
 	_assert_eq(int(settled_later["save"]["balance_rp"]), 65000, "balance deducted by 135000 pending rent")
@@ -1687,6 +1690,73 @@ func _initialize() -> void:
 		call_tick_empty = MajikanCall.tick_call(call_tick_empty, 2.0)
 	_assert_true(call_tick_empty.has("trust") and int(call_tick_empty["warnings"]) == 1, "MajikanCall.tick_call never crashes on empty/default state")
 	_assert_true("if _in_shift and bool(_call_state.get(\"active_call\", false)):" in mg_src, "main_game guards MajikanCall loop with _in_shift so calls never fire on Title/Home")
+
+	# 45. Round 8 Phone Log, Adik Bima Clearance, Rent Cap, Fired Forfeit, Skill Perks, Sweet-Spot, Post-Epilogue Investments & Articulated Vehicles
+	_assert_true("elif _phone_os_app == \"log\":" in mg_src, "Phone OS renders Catatan Harian (log) entries cleanly instead of blank screen")
+	_assert_true("_toast_timer = 0.0" in mg_src.split("func _enter_home_mode")[1].split("\nfunc ")[0], "_enter_home_mode clears leftover shift toast")
+	_assert_true("_title_wrap.visible = false" in mg_src.split("func _open_onboarding")[1].split("\nfunc ")[0], "_open_onboarding hides _title_wrap")
+
+	var r8_bima_pos := Vector3.ZERO
+	for sn in NpcRoster.get_shift_npcs("kampung"):
+		if String(sn.get("id", "")) == "adik_bima":
+			r8_bima_pos = sn["pos"]
+	_assert_true(Vector2(r8_bima_pos.x, r8_bima_pos.z).distance_to(Vector2(-1.15, -0.18)) >= 1.20, "Adik Bima stands well clear (>=1.2m) of Kampung DiningTable")
+
+	var r8_rent_cap := rent_sv.duplicate(true)
+	for _rc in range(5):
+		r8_rent_cap = Progression.pay_weekly_rent(r8_rent_cap, false, 120000)["save"]
+	_assert_true(int(r8_rent_cap["pending_rent_rp"]) <= 150000, "weekly rent late surcharge is capped at Rp 150.000 (no infinite debt trap)")
+
+	var r8_perk_sv := Progression.create_player_save()
+	r8_perk_sv["day"] = 5
+	r8_perk_sv["balance_rp"] = 50000
+	r8_perk_sv["skill_xp"] = {"sweeping": 80, "tidiness": 80, "cooking": 80, "laundry": 80}
+	_assert_eq(Progression.get_max_boosts_for_save(r8_perk_sv), 4, "sweeping Lv 3 perk grants 4 tap boosts per chore")
+	_assert_true(Progression.get_boost_seconds_for_save(r8_perk_sv) >= 0.85, "tidiness Lv 3 perk increases tap boost to >=0.85s")
+	_assert_true(Progression.get_tip_bonus_multiplier(r8_perk_sv) >= 1.10, "laundry Lv 3 perk grants >= +10% tip bonus")
+	var r8_sh_cook := ChoreEngine.create_shift("kamar_kos", MajikanProfiles.get_profile("ibu_kos_melati"), 100)
+	r8_sh_cook = ChoreEngine.complete_chore(r8_sh_cook, "make_bed", 1.0, 1)["shift"]
+	var r8_cook_res := Progression.settle_shift(r8_perk_sv, r8_sh_cook, MajikanCall.create_state(MajikanProfiles.get_profile("ibu_kos_melati")))
+	_assert_eq(int(r8_cook_res["meal_cost_rp"]), 0, "cooking Lv 3 perk waives Rp 8.000 daily meal deduction")
+
+	var r8_sweet := ChoreEngine.evaluate_tap_boost("cook_rice", 0.58)
+	_assert_true(bool(r8_sweet.get("perfect", false)) and int(r8_sweet.get("bonus_rp", 0)) >= 2500 and float(r8_sweet.get("mult", 1.0)) >= 1.75, "cook_rice tap inside 45-75% sweet-spot grants 1.8x boost + Rp 2.500 bonus")
+
+	var r8_ep_sv := Progression.create_player_save()
+	r8_ep_sv["xp"] = 1600
+	r8_ep_sv["balance_rp"] = 8000000
+	r8_ep_sv["unlocked_wishlist"] = ["kirim_kampung", "hp_baru", "tabung_kontrakan", "motor_matic"]
+	_assert_true(ArtWishlistStory.is_epilogue_unlocked(r8_ep_sv), "4 core wishlist items unlock epilogue cleanly")
+	var r8_inv := ArtWishlistStory.buy_investment(r8_ep_sv, "invest_warung")
+	_assert_true(bool(r8_inv["ok"]) and ArtWishlistStory.get_passive_daily_income(r8_inv["save"]) >= 25000, "post-epilogue invest_warung grants >= Rp 25.000 passive daily income")
+	var r8_inv_sl := ArtLifeRhythm.sleep_in_bed(r8_inv["save"], [])
+	_assert_true(int(r8_inv_sl.get("passive_income_rp", 0)) >= 25000, "sleep_in_bed pays post-epilogue passive investment income")
+	var r8_inv_rt := SaveStore.deserialize(SaveStore.serialize(r8_inv["save"]))
+	_assert_true("invest_warung" in r8_inv_rt.get("unlocked_investments", []), "SaveStore preserves unlocked_investments")
+
+	var r8_ang := (load("res://assets/models/veh_angkot.glb") as PackedScene).instantiate()
+	var r8_wheels := 0
+	var r8_q: Array = [r8_ang]
+	while not r8_q.is_empty():
+		var wn: Node = r8_q.pop_front()
+		if "Wheel_" in wn.name:
+			r8_wheels += 1
+		for wc in wn.get_children():
+			r8_q.append(wc)
+	r8_ang.free()
+	_assert_true(r8_wheels >= 4, "veh_angkot.glb exposes 4 articulated Wheel_* child nodes for wheel spin")
+
+	var r8_veh_arr := [{"x": 0.0, "z": 4.75, "dir": 1, "speed": 3.0, "kind": "angkot", "wheel_angle": 0.0}]
+	ArtStreetTraffic.step_vehicles(r8_veh_arr, 0.5, Vector3(1.5, 0.0, 4.2))
+	_assert_true(float(r8_veh_arr[0].get("wheel_angle", 0.0)) > 0.0, "step_vehicles updates wheel_angle and yields cleanly when player nears road")
+
+	var r8_st_node := Node3D.new()
+	ArtAtmosphere.sync_stage_lights(r8_st_node, "street", "malam")
+	var r8_lamp1 := r8_st_node.find_child("StreetLampC", true, false) as OmniLight3D
+	ArtAtmosphere.sync_stage_lights(r8_st_node, "street", "pagi")
+	var r8_lamp2 := r8_st_node.find_child("StreetLampC", true, false) as OmniLight3D
+	_assert_true(r8_lamp1 != null and r8_lamp1 == r8_lamp2, "sync_stage_lights reuses OmniLight3D nodes instead of freeing/recreating")
+	r8_st_node.free()
 
 	print("GODOT TDD RESULT: %d passed, %d failed" % [_passed, _failed])
 	quit(0 if _failed == 0 else 1)

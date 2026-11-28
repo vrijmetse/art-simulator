@@ -103,13 +103,17 @@ static func apply_unified_material_pass(
 						sm.rim_enabled = true
 						sm.rim = 0.05
 						sm.rim_tint = 0.35
-						sm.metallic = 0.0
-						if "skin" in m_low:
-							sm.roughness = maxf(sm.roughness, 0.76)
-							sm.metallic_specular = 0.18
-						elif not ("eye" in m_low or "iris" in m_low or "glass" in m_low or "buckle" in m_low):
-							sm.roughness = maxf(sm.roughness, 0.78)
-							sm.metallic_specular = minf(sm.metallic_specular, 0.16)
+						var is_vehicle := ("sedan" in n_low or "van" in n_low or "angkot" in n_low or "motor" in n_low or "wheel" in n_low or "tire" in m_low or "headlight" in m_low or "taillight" in m_low or "carpaint" in m_low or "carglass" in m_low)
+						if is_vehicle or sm.metallic >= 0.25 or is_emissive:
+							pass
+						else:
+							sm.metallic = 0.0
+							if "skin" in m_low:
+								sm.roughness = maxf(sm.roughness, 0.76)
+								sm.metallic_specular = 0.18
+							elif not ("eye" in m_low or "iris" in m_low or "glass" in m_low or "buckle" in m_low):
+								sm.roughness = maxf(sm.roughness, 0.78)
+								sm.metallic_specular = minf(sm.metallic_specular, 0.16)
 					if sm.normal_enabled:
 						sm.normal_scale = 1.35
 					if wants_outline and outline_mat != null and sm.transparency == BaseMaterial3D.TRANSPARENCY_DISABLED:

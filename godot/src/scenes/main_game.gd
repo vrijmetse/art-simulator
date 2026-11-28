@@ -387,6 +387,7 @@ func _ready() -> void:
 		_sync_player_outfit()
 	else:
 		_open_title_screen()
+	_on_viewport_size_changed()
 	_refresh_hud()
 
 func _loc() -> String:
@@ -452,6 +453,23 @@ func _apply_mobile_safe_area() -> void:
 	if _title_card != null:
 		_title_card.offset_left = 24.0 + pad_l
 		_title_card.offset_bottom = -20.0 - pad_b
+	if _ob_card != null:
+		if vp.x < vp.y:
+			_ob_card.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+			_ob_card.grow_horizontal = Control.GROW_DIRECTION_BOTH
+			_ob_card.grow_vertical = Control.GROW_DIRECTION_BEGIN
+			_ob_card.offset_left = 14.0 + pad_l
+			_ob_card.offset_right = -14.0 - pad_r
+			_ob_card.offset_bottom = -14.0 - pad_b
+			_ob_card.offset_top = -minf(490.0, vp.y * 0.50) - pad_b
+		else:
+			_ob_card.set_anchors_preset(Control.PRESET_CENTER_RIGHT)
+			_ob_card.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+			_ob_card.grow_vertical = Control.GROW_DIRECTION_BOTH
+			_ob_card.offset_right = -24.0 - pad_r
+			_ob_card.offset_left = -520.0 - pad_r
+			_ob_card.offset_top = -310.0
+			_ob_card.offset_bottom = 310.0
 
 func _set_control_focus_recursive(node: Node, enabled: bool) -> void:
 	if node is Control:
@@ -809,6 +827,9 @@ func _enter_home_mode() -> void:
 	StreetPatrols.sync_chore_tool(player, "")
 	if _chore_bar_wrap != null:
 		_chore_bar_wrap.visible = false
+	_toast_timer = 0.0
+	if _toast_panel != null:
+		_toast_panel.visible = false
 	_clear_hotspots()
 	_portal_nodes.clear()
 	var tier_id := String(_save.get("active_tier_id", "kamar_kos"))
@@ -845,6 +866,9 @@ func _enter_street_mode(from_mode: String = "home") -> void:
 	StreetPatrols.sync_chore_tool(player, "")
 	if _chore_bar_wrap != null:
 		_chore_bar_wrap.visible = false
+	_toast_timer = 0.0
+	if _toast_panel != null:
+		_toast_panel.visible = false
 	_clear_hotspots()
 	_portal_nodes.clear()
 
@@ -1090,21 +1114,30 @@ func _on_player_arrived() -> void:
 func _try_tap_boost() -> void:
 	if _active_chore_id == "" or _chore_boost_cd > 0.0:
 		return
-	if _chore_boosts_used >= ChoreEngine.MAX_TAP_BOOSTS_PER_CHORE:
+	var max_b := Progression.get_max_boosts_for_save(_save)
+	if _chore_boosts_used >= max_b:
 		return
 	_chore_boosts_used += 1
 	_chore_boost_cd = 0.35
-	_chore_progress += ChoreEngine.TAP_BOOST_SECONDS
+	var ratio := _chore_progress / maxf(0.1, _chore_duration)
+	var ev := ChoreEngine.evaluate_tap_boost(_active_chore_id, ratio)
+	var boost_s := Progression.get_boost_seconds_for_save(_save) * float(ev.get("mult", 1.0))
+	_chore_progress += boost_s
+	var sweet_bonus := int(ev.get("bonus_rp", 0))
+	if sweet_bonus > 0 and not _shift.is_empty():
+		_shift["earned_rp"] = int(_shift.get("earned_rp", 0)) + sweet_bonus
 	_save["shift_boost_count"] = int(_save.get("shift_boost_count", 0)) + 1
 	_save = Retention.record_mission_progress(_save, "boosts", 1, _today_date_str())
-	_play_sfx(_wav_chore_tick)
-	_cam_punch = maxf(_cam_punch, 0.22)
+	_play_sfx(_wav_coin if bool(ev.get("perfect", false)) else _wav_chore_tick)
+	_cam_punch = maxf(_cam_punch, 0.28 if bool(ev.get("perfect", false)) else 0.22)
 	if player != null:
-		_spawn_float_popup(player.position + Vector3(0.0, 1.85, 0.0), _t("+Cepat!", "+Boost!"), Color(0.99, 0.86, 0.28))
+		var pop_txt := _t("Pas Banget! +%s" % I18n.format_balance(sweet_bonus, "id"), "Perfect! +%s" % I18n.format_balance(sweet_bonus, "en")) if bool(ev.get("perfect", false)) else _t("+Cepat!", "+Boost!")
+		var pop_col := Color(0.45, 0.98, 0.56) if bool(ev.get("perfect", false)) else Color(0.99, 0.86, 0.28)
+		_spawn_float_popup(player.position + Vector3(0.0, 1.85, 0.0), pop_txt, pop_col)
 		var tool_prop := player.find_child("ChoreToolProp", true, false) as Node3D
 		if tool_prop != null and tool_prop.visible:
 			var tw_tool := create_tween()
-			tool_prop.scale = Vector3(1.24, 1.24, 1.24)
+			tool_prop.scale = Vector3(1.28, 1.28, 1.28)
 			tw_tool.tween_property(tool_prop, "scale", Vector3.ONE, 0.14)
 
 func _trigger_world_action() -> void:
@@ -1361,9 +1394,12 @@ func _process(delta: float) -> void:
 
 	# Smooth camera follow (or close-up turntable framing during Onboarding!)
 	if _onboarding_wrap != null and _onboarding_wrap.visible:
-		var ob_cam_target := player.position + Vector3(0.65, 1.36, 2.78)
+		var ob_vp := get_viewport().get_visible_rect().size
+		var ob_is_port := ob_vp.x < ob_vp.y
+		var ob_cam_target := player.position + (Vector3(0.0, 1.38, 2.75) if ob_is_port else Vector3(0.65, 1.36, 2.78))
+		var ob_look_target := player.position + (Vector3(0.0, 0.56, 0.0) if ob_is_port else Vector3(0.62, 0.84, 0.0))
 		cam.position = cam.position.lerp(ob_cam_target, minf(1.0, delta * 6.0))
-		cam.look_at(player.position + Vector3(0.62, 0.84, 0.0), Vector3.UP)
+		cam.look_at(ob_look_target, Vector3.UP)
 		return
 
 	if _cam_punch > 0.0:
@@ -1381,11 +1417,11 @@ func _process(delta: float) -> void:
 				(fb as Node3D).rotate_z(delta * 5.5)
 
 	if _world_mode == "street" and _traffic_items.size() > 0:
-		StreetTraffic.step_vehicles(_traffic_items, delta)
+		StreetTraffic.step_vehicles(_traffic_items, delta, player.position)
 		for ti in range(mini(_traffic_items.size(), _traffic_nodes.size())):
 			var tn: Node3D = _traffic_nodes[ti]
 			if is_instance_valid(tn):
-				tn.position.x = float(_traffic_items[ti]["x"])
+				StreetTraffic.sync_vehicle_node(tn, _traffic_items[ti], _cur_phase == "malam")
 
 	if _world_mode == "street" and _street_npcs_data.size() > 0:
 		StreetPatrols.step_patrols(_street_npcs_data, _street_cfg, player.position, delta, _cur_weather == "hujan")
@@ -1502,7 +1538,8 @@ func _process(delta: float) -> void:
 					_set_dock_label("action", ch_idle)
 		else:
 			_world_prompt.visible = false
-			var fast_lbl := _t("Cepat! %d/%d" % [_chore_boosts_used, ChoreEngine.MAX_TAP_BOOSTS_PER_CHORE], "Fast! %d/%d" % [_chore_boosts_used, ChoreEngine.MAX_TAP_BOOSTS_PER_CHORE])
+			var max_b_dock := Progression.get_max_boosts_for_save(_save)
+			var fast_lbl := _t("Cepat! %d/%d" % [_chore_boosts_used, max_b_dock], "Fast! %d/%d" % [_chore_boosts_used, max_b_dock])
 			if _last_dock_action_key != fast_lbl:
 				_last_dock_action_key = fast_lbl
 				_set_dock_label("action", fast_lbl)
@@ -1514,7 +1551,17 @@ func _process(delta: float) -> void:
 		_bar_chore.max_value = _chore_duration
 		_bar_chore.value = _chore_progress
 		var cfg: Dictionary = ChoreEngine.CHORES[_active_chore_id]
-		var tap_hint := (_t("  [Tekan E = Cepat!]", "  [Press E = Boost!]") if show_key else _t("  [Ketuk \"Cepat!\" = Boost!]", "  [Tap \"Fast!\" = Boost!]")) if _chore_boosts_used < ChoreEngine.MAX_TAP_BOOSTS_PER_CHORE else "  ⚡"
+		var ratio_bar := _chore_progress / maxf(0.1, _chore_duration)
+		var is_sweet_now := bool(ChoreEngine.evaluate_tap_boost(_active_chore_id, ratio_bar).get("perfect", false))
+		var max_b_hint := Progression.get_max_boosts_for_save(_save)
+		var tap_hint := ""
+		if _chore_boosts_used < max_b_hint:
+			if is_sweet_now:
+				tap_hint = _t("  ★ PAS! Ketuk!", "  ★ SWEET SPOT!")
+			else:
+				tap_hint = _t("  [Tekan E = Cepat!]", "  [Press E = Boost!]") if show_key else _t("  [Ketuk \"Cepat!\" = Boost!]", "  [Tap \"Fast!\" = Boost!]")
+		else:
+			tap_hint = "  ⚡"
 		_lbl_chore_prog.text = "%s%s" % [String(cfg["label_en"] if _loc() == "en" else cfg["label_id"]), tap_hint]
 		if _chore_progress >= _chore_duration:
 			_chore_bar_wrap.visible = false
@@ -1655,6 +1702,13 @@ func _on_distract(activity_id: String) -> void:
 	_refresh_hud()
 
 func _on_viewport_size_changed() -> void:
+	var win_node := get_window()
+	if win_node != null and DisplayServer.get_name() != "headless":
+		var w_sz := Vector2(DisplayServer.window_get_size())
+		if w_sz.x > 0.0 and w_sz.y > 0.0:
+			var target_scale := Vector2i(720, clampi(int(round(720.0 * w_sz.y / w_sz.x)), 960, 1800)) if w_sz.x < w_sz.y else Vector2i(1280, 720)
+			if win_node.content_scale_size != target_scale:
+				win_node.content_scale_size = target_scale
 	_apply_mobile_safe_area()
 	if _phone_os_wrap != null and _phone_os_wrap.visible:
 		_render_phone_app()
@@ -2027,6 +2081,15 @@ func _open_career_modal() -> void:
 	sk_lbl.add_theme_font_size_override("font_size", 12)
 	sk_lbl.add_theme_color_override("font_color", Color(0.98, 0.84, 0.34))
 	_modal_list.add_child(sk_lbl)
+	var perk_lbl := Label.new()
+	perk_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	perk_lbl.text = _t(
+		"Perk Lv.3: Sapu (+1 Boost) • Rapikan (0.85s Boost) • Masak (Bekal Gratis) • Setrika (+10% Tip)",
+		"Lv.3 Perks: Sweep (+1 Boost) • Tidy (0.85s Boost) • Cook (Free Meal) • Iron (+10% Tip)"
+	)
+	perk_lbl.add_theme_font_size_override("font_size", 11)
+	perk_lbl.add_theme_color_override("font_color", Color(0.76, 0.88, 0.94))
+	_modal_list.add_child(perk_lbl)
 	var xp_cur_career := int(_save.get("xp", 0))
 	var cur_id := String(_save.get("active_tier_id", "kamar_kos"))
 	for t in CareerTiers.get_all_tiers():
@@ -2199,9 +2262,12 @@ func _perform_sleep_recharge() -> void:
 	if bool(rem_chk.get("penalty_applied", false)):
 		_show_toast(_t("Batas kiriman kampung Hari 10 terlewat — semangat berkurang!", "Day-10 village remittance deadline missed — mood dropped!"), "ibu_kampung", "worried")
 	var thr := int(sl.get("thr_bonus_rp", 0))
+	var passive_inc := int(sl.get("passive_income_rp", 0))
 	var season := String(sl.get("season", "biasa"))
 	if thr > 0:
 		_show_toast(_t("Selamat Lebaran! Dapat THR Majikan +%s & Energi 100%%!" % I18n.format_balance(thr, "id"), "Happy Eid! Employer THR +%s & Energy 100%%!" % I18n.format_balance(thr, "en")), "player", "happy")
+	elif passive_inc > 0:
+		_show_toast(_t("Selamat pagi Hari %d! Usaha milikmu menghasilkan +%s pasif!" % [int(sl["day"]), I18n.format_balance(passive_inc, "id")], "Morning Day %d! Your businesses earned +%s passive income!" % [int(sl["day"]), I18n.format_balance(passive_inc, "en")]), "player", "happy")
 	elif season == "ramadhan":
 		_show_toast(_t("Sahur & Tidur nyenyak! Bulan Ramadhan Hari %d — Energi 100%%." % int(sl["day"]), "Suhoor & rested! Ramadhan Day %d — Energy 100%%." % int(sl["day"])), "player", "happy")
 	else:
@@ -2402,6 +2468,34 @@ func _open_wishlist_modal() -> void:
 			wv.add_child(wp)
 		w_card.add_child(wv)
 		_modal_list.add_child(w_card)
+	if WishlistStory.is_epilogue_unlocked(_save):
+		_add_modal_section(_t("PROYEK MASA DEPAN (JURAGAN MANDIRI)", "FUTURE INVESTMENTS (PASSIVE INCOME)"))
+		var inv_owned: Array = _save.get("unlocked_investments", [])
+		for raw_iid in WishlistStory.FUTURE_INVESTMENTS.keys():
+			var iid := String(raw_iid)
+			var inv_item: Dictionary = WishlistStory.FUTURE_INVESTMENTS[iid]
+			var owned_flag := iid in inv_owned
+			var icost := int(inv_item["cost_rp"])
+			var can_inv := (not owned_flag) and bal_now_w >= icost
+			var ititle := String(inv_item["label_en"] if _loc() == "en" else inv_item["label_id"])
+			var idesc := String(inv_item["desc_en"] if _loc() == "en" else inv_item["desc_id"])
+			var ibtn := Button.new()
+			var istatus := _t("✓ Aktif (+%s/hari)" % I18n.format_balance(int(inv_item["daily_income_rp"]), "id"), "✓ Active (+%s/day)" % I18n.format_balance(int(inv_item["daily_income_rp"]), "en")) if owned_flag else I18n.format_balance(icost, _loc())
+			ibtn.text = "%s — %s\n%s" % [ititle, istatus, idesc]
+			ibtn.disabled = owned_flag or not can_inv
+			if can_inv:
+				_style_btn(ibtn, Color(0.20, 0.50, 0.34), Color(0.98, 0.84, 0.34))
+			ibtn.pressed.connect(func():
+				var ires := WishlistStory.buy_investment(_save, iid)
+				if bool(ires["ok"]):
+					_save = ires["save"]
+					SaveStore.save_to_slot(_save, _active_slot)
+					_play_sfx(_wav_fanfare)
+					_show_toast(_t("Usaha dibuka: %s!" % ititle, "Business opened: %s!" % ititle), "player", "happy")
+					call_deferred("_open_wishlist_modal")
+					_refresh_hud()
+			)
+			_modal_list.add_child(ibtn)
 	_show_modal()
 
 func _open_wardrobe_modal() -> void:
@@ -4553,8 +4647,53 @@ func _render_phone_app() -> void:
 				_refresh_hud()
 		)
 		_phone_os_body.add_child(borrow_b)
+	elif _phone_os_app == "log":
+		var hdr := Label.new()
+		hdr.text = _t("CATATAN HARIAN & KEUANGAN", "DAILY ACTIVITY & FINANCE LOG")
+		hdr.add_theme_color_override("font_color", Color(0.98, 0.84, 0.34))
+		_phone_os_body.add_child(hdr)
+		var logs: Array = Settings.get_daily_log(_save)
+		if logs.is_empty():
+			var em_log := Label.new()
+			em_log.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			em_log.text = _t("Belum ada catatan transaksi hari ini. Selesaikan shift, bayar sewa, atau belanja untuk melihat riwayat.", "No log entries yet. Complete a shift, pay rent, or shop to record activity.")
+			em_log.add_theme_color_override("font_color", Color(0.86, 0.86, 0.84))
+			_phone_os_body.add_child(em_log)
+		else:
+			for idx_l in range(logs.size() - 1, -1, -1):
+				var entry = logs[idx_l]
+				if typeof(entry) != TYPE_DICTIONARY:
+					continue
+				var eday := int(entry.get("day", 1))
+				var etitle := String(entry.get("title_en" if _loc() == "en" else "title_id", ""))
+				var edelta := int(entry.get("delta_rp", 0))
+				var card_l := PanelContainer.new()
+				card_l.add_theme_stylebox_override("panel", _make_box(Color(0.11, 0.16, 0.24), Color(0.95, 0.78, 0.26, 0.55), 10, 10, 8))
+				var row_l := HBoxContainer.new()
+				row_l.add_theme_constant_override("separation", 8)
+				var lbl_l := Label.new()
+				lbl_l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+				lbl_l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+				lbl_l.text = "%s %d · %s" % [_t("Hari", "Day"), eday, etitle]
+				lbl_l.add_theme_color_override("font_color", Color(0.94, 0.94, 0.90))
+				var amt_l := Label.new()
+				if edelta > 0:
+					amt_l.text = "+%s" % I18n.format_balance(edelta, _loc())
+					amt_l.add_theme_color_override("font_color", Color(0.45, 0.96, 0.54))
+				elif edelta < 0:
+					amt_l.text = "-%s" % I18n.format_balance(absi(edelta), _loc())
+					amt_l.add_theme_color_override("font_color", Color(0.98, 0.54, 0.52))
+				else:
+					amt_l.text = "•"
+					amt_l.add_theme_color_override("font_color", Color(0.76, 0.78, 0.84))
+				row_l.add_child(lbl_l)
+				row_l.add_child(amt_l)
+				card_l.add_child(row_l)
+				_phone_os_body.add_child(card_l)
 
 func _open_onboarding() -> void:
+	if _title_wrap != null:
+		_title_wrap.visible = false
 	_ob_style = String(_save.get("starter_style", "cepol"))
 	_ob_skin = String(_save.get("skin_hex", "#B87A4B"))
 	_ob_color = String(_save.get("outfit_color_hex", "#4E7D63"))
@@ -4562,8 +4701,11 @@ func _open_onboarding() -> void:
 		_ob_name_edit.text = String(_save.get("player_name", "Mbak Sari"))
 	if _onboarding_wrap != null:
 		_onboarding_wrap.visible = true
-	cam.position = player.position + Vector3(0.65, 1.36, 2.78)
-	cam.look_at(player.position + Vector3(0.62, 0.84, 0.0), Vector3.UP)
+	_apply_mobile_safe_area()
+	var ob_vp := get_viewport().get_visible_rect().size
+	var ob_is_port := ob_vp.x < ob_vp.y
+	cam.position = player.position + (Vector3(0.0, 1.38, 2.75) if ob_is_port else Vector3(0.65, 1.36, 2.78))
+	cam.look_at(player.position + (Vector3(0.0, 0.56, 0.0) if ob_is_port else Vector3(0.62, 0.84, 0.0)), Vector3.UP)
 	_preview_onboarding_character()
 	_refresh_onboarding_texts()
 	if _ob_btn_start != null:

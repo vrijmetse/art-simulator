@@ -499,8 +499,27 @@ def build_elite_street():
         import_kenney_glb(f"Planter_{px}", "planter.glb", (px, 0.9, 0.0), rot_z=0.0, scale=0.65, center_xy=True)
         import_kenney_glb(f"Flower_{px}", "bush-common-flowers.glb", (px, 1.4, 0.0), rot_z=0.4, target_height=0.65, center_xy=True)
 
-    # Parked sedan cleanly on road edge (realistic scale & grounded at -0.08)
-    import_kenney_glb("ParkedSedan", "sedan.glb", (-3.8, -2.15, -0.08), rot_z=-math.pi * 0.5, target_height=1.35, center_xy=True)
+    # Parked sedan cleanly on road edge (realistic metallic paint + dark tinted glass)
+    sedan_root = import_kenney_glb("ParkedSedan", "sedan.glb", (-3.8, -2.15, -0.08), rot_z=-math.pi * 0.5, target_height=1.35, center_xy=True)
+    for img in bpy.data.images:
+        if "colormap" in img.name.lower() and img.size[0] > 0:
+            arr = np.array(img.pixels[:], dtype=np.float32).reshape(-1, 4)
+            lum = arr[:, :3].mean(axis=1)
+            chroma = arr[:, :3].max(axis=1) - arr[:, :3].min(axis=1)
+            glass_mask = (lum > 0.70) & (chroma < 0.16)
+            orange_mask = (arr[:, 0] > 0.55) & (arr[:, 1] < 0.55) & (arr[:, 2] < 0.35)
+            arr[glass_mask, :3] = [0.09, 0.15, 0.24]
+            arr[orange_mask, :3] = [0.18, 0.24, 0.34]
+            img.pixels.foreach_set(arr.reshape(-1).tolist())
+            img.pack()
+    for obj in bpy.data.objects:
+        if obj.type == 'MESH' and "sedan" in obj.name.lower():
+            for m in obj.data.materials:
+                if m and m.use_nodes:
+                    bsdf = m.node_tree.nodes.get("Principled BSDF")
+                    if bsdf:
+                        bsdf.inputs["Roughness"].default_value = 0.26
+                        bsdf.inputs["Metallic"].default_value = 0.35
 
     bake_scene_lightmap_uv2(
         os.path.join(GODOT_DIR, "assets", "lightmaps", "cluster_elite_street_lightmap.png"),

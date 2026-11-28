@@ -161,8 +161,8 @@ static func get_shift_npcs(tier_id: String) -> Array:
 					"label_id": "Adik Bima",
 					"label_en": "Adik Bima",
 					"model_path": "res://assets/models/char_pelajar.glb",
-					"pos": Vector3(-1.45, 0.0, -0.05),
-					"rot_y": 0.65,
+					"pos": Vector3(-0.35, 0.0, -1.48),
+					"rot_y": 0.45,
 					"anim": "Idle",
 				},
 			]

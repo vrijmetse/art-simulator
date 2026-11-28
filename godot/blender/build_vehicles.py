@@ -53,7 +53,24 @@ def add_cyl(name, loc, radius, depth, rot_euler, mat, verts=16):
     return obj
 
 
-def join_and_export(objs, out_path, root_name):
+def join_wheel(parts, wheel_name, axle_pos):
+    bpy.ops.object.select_all(action="DESELECT")
+    for p in parts:
+        p.select_set(True)
+    bpy.context.view_layer.objects.active = parts[0]
+    bpy.ops.object.join()
+    w = bpy.context.active_object
+    w.name = wheel_name
+    # Keep mesh vertices centered around local (0, 0, 0) so Godot rotation spins cleanly around axle
+    for v in w.data.vertices:
+        v.co.x -= axle_pos[0]
+        v.co.y -= axle_pos[1]
+        v.co.z -= axle_pos[2]
+    w.location = axle_pos
+    return w
+
+
+def join_and_export(objs, out_path, root_name, wheels=()):
     bpy.ops.object.select_all(action="DESELECT")
     for o in objs:
         o.select_set(True)
@@ -63,10 +80,19 @@ def join_and_export(objs, out_path, root_name):
     merged.name = root_name
     bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
 
-    vert_count = len(merged.data.vertices)
+    export_objs = [merged]
+    for w in wheels:
+        w.parent = merged
+        export_objs.append(w)
+
+    vert_count = sum(len(o.data.vertices) for o in export_objs)
     print(f"[build_vehicles] {root_name}: {vert_count} verts -> {out_path}")
     assert vert_count <= 1500, f"{root_name} exceeded 1500 verts ({vert_count})"
 
+    bpy.ops.object.select_all(action="DESELECT")
+    for o in export_objs:
+        o.select_set(True)
+    bpy.context.view_layer.objects.active = merged
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     bpy.ops.export_scene.gltf(
         filepath=out_path,
@@ -80,7 +106,7 @@ def build_angkot():
     clear_scene()
     mat_body = make_mat("AngkotBody", (0.11, 0.52, 0.71), roughness=0.42, metallic=0.15)
     mat_roof = make_mat("AngkotRoof", (0.92, 0.93, 0.95), roughness=0.55)
-    mat_glass = make_mat("AngkotGlass", (0.14, 0.22, 0.28), roughness=0.12, metallic=0.1)
+    mat_glass = make_mat("AngkotGlass", (0.10, 0.16, 0.24), roughness=0.10, metallic=0.18)
     mat_tire = make_mat("Tire", (0.09, 0.09, 0.10), roughness=0.85)
     mat_rim = make_mat("Rim", (0.72, 0.74, 0.77), roughness=0.35, metallic=0.75)
     mat_bumper = make_mat("Bumper", (0.18, 0.19, 0.21), roughness=0.65)
@@ -112,13 +138,14 @@ def build_angkot():
         objs.append(add_box(f"Head_{sy}", (1.39, sy, 0.56), (0.05, 0.20, 0.12), mat_headlight, bevel=0.01))
         objs.append(add_box(f"Tail_{sy}", (-1.39, sy, 0.56), (0.05, 0.18, 0.14), mat_taillight, bevel=0.01))
 
-    # 4 Wheels (radius 0.24 -> center at z=0.24)
-    for wx in (-0.82, 0.84):
-        for wy in (-0.60, 0.60):
-            objs.append(add_cyl(f"Tire_{wx}_{wy}", (wx, wy, 0.24), 0.24, 0.16, (math.pi / 2.0, 0.0, 0.0), mat_tire, verts=16))
-            objs.append(add_cyl(f"Rim_{wx}_{wy}", (wx, wy, 0.24), 0.13, 0.17, (math.pi / 2.0, 0.0, 0.0), mat_rim, verts=12))
+    # 4 Articulated Wheels (radius 0.24 -> local axle at (0,0,0), world z=0.24)
+    wheels = []
+    for idx, (wx, wy) in enumerate([(-0.82, -0.60), (-0.82, 0.60), (0.84, -0.60), (0.84, 0.60)]):
+        t = add_cyl(f"Tire_{idx}", (wx, wy, 0.24), 0.24, 0.16, (math.pi / 2.0, 0.0, 0.0), mat_tire, verts=16)
+        r = add_cyl(f"Rim_{idx}", (wx, wy, 0.24), 0.13, 0.17, (math.pi / 2.0, 0.0, 0.0), mat_rim, verts=12)
+        wheels.append(join_wheel([t, r], f"Wheel_{idx}", (wx, wy, 0.24)))
 
-    join_and_export(objs, OUT_ANGKOT, "VehAngkot")
+    join_and_export(objs, OUT_ANGKOT, "VehAngkot", wheels=wheels)
 
 
 def build_motor():
@@ -131,10 +158,12 @@ def build_motor():
     mat_taillight = make_mat("Taillight", (0.90, 0.14, 0.12), roughness=0.25, emission=0.8)
 
     objs = []
-    # Wheels (radius 0.22 -> center at z=0.22)
-    for wx in (-0.52, 0.54):
-        objs.append(add_cyl(f"Tire_{wx}", (wx, 0.0, 0.22), 0.22, 0.10, (math.pi / 2.0, 0.0, 0.0), mat_tire, verts=12))
-        objs.append(add_cyl(f"Rim_{wx}", (wx, 0.0, 0.22), 0.13, 0.11, (math.pi / 2.0, 0.0, 0.0), mat_metal, verts=10))
+    # Articulated Wheels (radius 0.22 -> center at z=0.22)
+    wheels = []
+    for idx, wx in enumerate((-0.52, 0.54)):
+        t = add_cyl(f"Tire_{idx}", (wx, 0.0, 0.22), 0.22, 0.10, (math.pi / 2.0, 0.0, 0.0), mat_tire, verts=12)
+        r = add_cyl(f"Rim_{idx}", (wx, 0.0, 0.22), 0.13, 0.11, (math.pi / 2.0, 0.0, 0.0), mat_metal, verts=10)
+        wheels.append(join_wheel([t, r], f"Wheel_{idx}", (wx, 0.0, 0.22)))
 
     # Frame / Fairing
     objs.append(add_box("BodyMain", (-0.08, 0.0, 0.46), (0.86, 0.26, 0.26), mat_body))
@@ -149,7 +178,7 @@ def build_motor():
     objs.append(add_box("Taillight", (-0.54, 0.0, 0.56), (0.05, 0.12, 0.08), mat_taillight, bevel=0.01))
     objs.append(add_cyl("Exhaust", (-0.28, -0.16, 0.24), 0.04, 0.52, (0.0, math.pi / 2.0, 0.0), mat_metal, verts=10))
 
-    join_and_export(objs, OUT_MOTOR, "VehMotor")
+    join_and_export(objs, OUT_MOTOR, "VehMotor", wheels=wheels)
 
 
 if __name__ == "__main__":

@@ -110,6 +110,15 @@ static func sanitize(raw: Variant) -> Dictionary:
 				valid_wish.append(s_wid)
 	clean["unlocked_wishlist"] = valid_wish
 
+	var valid_inv: Array = []
+	var raw_inv: Variant = d.get("unlocked_investments", [])
+	if typeof(raw_inv) == TYPE_ARRAY:
+		for iid in raw_inv:
+			var s_iid := String(iid)
+			if WishlistStory.FUTURE_INVESTMENTS.has(s_iid) and not (s_iid in valid_inv):
+				valid_inv.append(s_iid)
+	clean["unlocked_investments"] = valid_inv
+
 	var valid_ch_ids := {}
 	for tid in WishlistStory.STORY_CHAPTERS.keys():
 		valid_ch_ids[String(WishlistStory.STORY_CHAPTERS[tid]["id"])] = true

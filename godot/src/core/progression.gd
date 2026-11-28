@@ -5,6 +5,7 @@ const CareerTiers := preload("res://src/core/career_tiers.gd")
 const MajikanProfiles := preload("res://src/core/majikan_profiles.gd")
 const MajikanCall := preload("res://src/core/majikan_call.gd")
 const WishlistStory := preload("res://src/core/wishlist_story.gd")
+const ChoreEngine := preload("res://src/core/chore_engine.gd")
 
 const SKILL_KEYS := ["sweeping", "tidiness", "cooking", "laundry"]
 const SKILL_THRESHOLDS := [0, 30, 80, 160, 280]
@@ -156,6 +157,7 @@ static func create_player_save() -> Dictionary:
 		"muted": false,
 		"bgm_enabled": true,
 		"unlocked_wishlist": [],
+		"unlocked_investments": [],
 		"seen_chapters": [],
 		"tutorial_step": 0,
 		"login_streak": 0,
@@ -212,10 +214,10 @@ static func complete_onboarding(save: Dictionary, raw_name: String, starter_styl
 static func should_collect_weekly_rent(save: Dictionary, tier: Dictionary) -> bool:
 	if bool(tier.get("live_in_room_provided", false)):
 		return false
-	if int(save.get("pending_rent_rp", 0)) > 0:
-		return true
 	var day := int(save.get("day", 1))
 	var last_rent := int(save.get("last_rent_day", 0))
+	if int(save.get("pending_rent_rp", 0)) > 0:
+		return (day - last_rent) >= 3
 	return day >= 7 and (day - last_rent) >= 7
 
 static func pay_weekly_rent(save: Dictionary, pay_now: bool, rent_rp: int = 120000) -> Dictionary:
@@ -231,8 +233,11 @@ static func pay_weekly_rent(save: Dictionary, pay_now: bool, rent_rp: int = 1200
 		nxt["pending_rent_rp"] = 0
 		nxt["last_rent_day"] = day
 		return {"ok": true, "paid": due_rp, "save": nxt}
-	nxt["pending_rent_rp"] = due_rp + 15000
-	return {"ok": true, "paid": 0, "late_fee_rp": 15000, "due_rp": int(nxt["pending_rent_rp"]), "save": nxt}
+	var capped_due := mini(150000, due_rp + 15000)
+	var actual_fee := maxi(0, capped_due - due_rp)
+	nxt["pending_rent_rp"] = capped_due
+	nxt["last_rent_day"] = day
+	return {"ok": true, "paid": 0, "late_fee_rp": actual_fee, "due_rp": capped_due, "save": nxt}
 
 static func get_max_energy(save: Dictionary) -> int:
 	var total := 100
@@ -257,8 +262,19 @@ static func get_shift_starting_mood(save: Dictionary) -> int:
 static func get_level_tip_bonus(xp: int) -> float:
 	return minf(0.32, float(maxi(0, level_from_xp(xp) - 1)) * 0.04)
 
+static func get_max_boosts_for_save(save: Dictionary) -> int:
+	var sk: Dictionary = save.get("skill_xp", {})
+	return 4 if skill_level_from_xp(int(sk.get("sweeping", 0))) >= 3 else ChoreEngine.MAX_TAP_BOOSTS_PER_CHORE
+
+static func get_boost_seconds_for_save(save: Dictionary) -> float:
+	var sk: Dictionary = save.get("skill_xp", {})
+	return 0.85 if skill_level_from_xp(int(sk.get("tidiness", 0))) >= 3 else ChoreEngine.TAP_BOOST_SECONDS
+
 static func get_tip_bonus_multiplier(save: Dictionary) -> float:
 	var bonus := 1.0 + get_level_tip_bonus(int(save.get("xp", 0)))
+	var sk: Dictionary = save.get("skill_xp", {})
+	if skill_level_from_xp(int(sk.get("laundry", 0))) >= 3:
+		bonus += 0.10
 	var ups: Array = save.get("unlocked_kos_upgrades", [])
 	for uid in ups:
 		if KOS_UPGRADES.has(uid):
@@ -336,17 +352,19 @@ static func settle_shift(save: Dictionary, shift: Dictionary, call_state: Dictio
 	if not is_fired and shift_mood >= 80:
 		tip_mult += 0.15
 	var adjusted_contract := int(round(float(prorated_contract) * tip_mult))
-	var total_payout := maxi(0, chore_rp + adjusted_contract)
+	var total_payout := 0 if is_fired else maxi(0, chore_rp + adjusted_contract)
 
 	var raw_xp := maxi(0, int(shift.get("xp_earned", 0)))
-	var xp_gained := int(floor(float(raw_xp) * 0.5)) if is_fired else raw_xp
+	var xp_gained := 0 if is_fired else raw_xp
 
 	var tier := CareerTiers.get_tier(String(save.get("active_tier_id", "kamar_kos")))
 	var cur_day := maxi(1, int(save.get("day", 1)))
 	var cycle_day := ((cur_day - 1) % 30) + 1
 	var is_ramadhan := (cycle_day >= 10 and cycle_day <= 15)
+	var sk_pre: Dictionary = save.get("skill_xp", {})
+	var cook_free_meal := skill_level_from_xp(int(sk_pre.get("cooking", 0))) >= 3
 	var meal_cost := 0
-	if not is_fired and not is_ramadhan and not bool(tier.get("live_in_room_provided", false)) and cur_day >= 3 and (int(save.get("balance_rp", 0)) + total_payout) >= 15000:
+	if not is_fired and not is_ramadhan and not cook_free_meal and not bool(tier.get("live_in_room_provided", false)) and cur_day >= 3 and (int(save.get("balance_rp", 0)) + total_payout) >= 15000:
 		meal_cost = 8000
 
 	var nxt_save := save.duplicate(true)
@@ -359,7 +377,7 @@ static func settle_shift(save: Dictionary, shift: Dictionary, call_state: Dictio
 		nxt_save["cycle_shifts_worked"] = int(nxt_save.get("cycle_shifts_worked", 0)) + 1
 		nxt_save["rest_only_streak"] = 0
 	nxt_save["fired_count"] = int(nxt_save.get("fired_count", 0)) + (1 if is_fired else 0)
-	nxt_save["mood"] = clampi(maxi(45, shift_mood), 25, 100)
+	nxt_save["mood"] = clampi(maxi(25, shift_mood - 15) if is_fired else maxi(45, shift_mood), 25, 100)
 	var max_e := get_max_energy(nxt_save)
 	nxt_save["energy"] = clampi(int(shift.get("energy", max_e)), 0, max_e)
 	nxt_save["worked_since_sleep"] = true
@@ -368,9 +386,7 @@ static func settle_shift(save: Dictionary, shift: Dictionary, call_state: Dictio
 	var sk: Dictionary = nxt_save.get("skill_xp", {})
 	var earned_sk: Dictionary = shift.get("skill_xp_earned", {})
 	for k in SKILL_KEYS:
-		var gain := int(earned_sk.get(k, 0))
-		if is_fired:
-			gain = int(floor(float(gain) * 0.5))
+		var gain := 0 if is_fired else int(earned_sk.get(k, 0))
 		sk[k] = int(sk.get(k, 0)) + gain
 	nxt_save["skill_xp"] = sk
 

@@ -85,6 +85,16 @@ const TAP_BOOST_SECONDS := 0.65
 const MAX_TAP_BOOSTS_PER_CHORE := 3
 const TAP_BOOST_BONUS_RP := 1500
 
+static func evaluate_tap_boost(chore_id: String, progress_ratio: float) -> Dictionary:
+	var has_sweet := chore_id in ["cook_rice", "wash_dishes"]
+	var in_sweet := has_sweet and progress_ratio >= 0.45 and progress_ratio <= 0.75
+	return {
+		"has_sweet_spot": has_sweet,
+		"perfect": in_sweet,
+		"mult": 1.8 if in_sweet else 1.0,
+		"bonus_rp": 2500 if in_sweet else 0,
+	}
+
 static func create_shift(tier_id: String, profile: Dictionary, max_energy: int, initial_energy: int = -1) -> Dictionary:
 	var clamped_max := maxi(10, max_energy)
 	var start_e := clamped_max if initial_energy < 0 else clampi(initial_energy, 0, clamped_max)
