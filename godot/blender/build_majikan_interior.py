@@ -152,6 +152,20 @@ def import_kenney_glb(prefix, filename, loc, rot_z=0.0, scale=1.85, target_heigh
     return parent
 
 
+def world_bbox(parent):
+    bpy.context.view_layer.update()
+    xs, ys, zs = [], [], []
+    def _walk(obj):
+        if obj.type == 'MESH':
+            for v in obj.bound_box:
+                wv = obj.matrix_world @ Vector(v)
+                xs.append(wv.x); ys.append(wv.y); zs.append(wv.z)
+        for ch in obj.children:
+            _walk(ch)
+    _walk(parent)
+    return (min(xs), max(xs), min(ys), max(ys), min(zs), max(zs))
+
+
 def add_beveled_box(name, size, loc, mat, bevel=0.022, rot=(0.0, 0.0, 0.0), cuts=0):
     bpy.ops.mesh.primitive_cube_add(size=1.0, location=loc, rotation=rot)
     obj = bpy.context.active_object
@@ -311,10 +325,19 @@ def build_majikan_living():
     # Nusantara Woven Kilim Rug in Living Zone
     add_beveled_box("LivingRug", (2.55, 1.85, 0.024), (-1.70, 0.65, 0.014), mat_rug, 0.012)
 
-    # Curated CC0 Kenney Furniture: Living Zone
-    import_kenney_glb("Sofa", "loungeSofa.glb", (-1.75, 1.85, 0.0), rot_z=0.0, scale=1.85)
-    import_kenney_glb("CoffeeTable", "tableCoffeeSquare.glb", (-1.75, 0.55, 0.0), rot_z=0.0, scale=1.85)
-    import_kenney_glb("CoffeeBooks", "books.glb", (-1.62, 0.55, 0.42), rot_z=0.35, scale=1.65)
+    # Curated CC0 Kenney Furniture: Living Zone + Beveled Throw Pillows (exact bbox anchored)
+    sofa_p = import_kenney_glb("Sofa", "loungeSofa.glb", (-1.75, 1.85, 0.0), rot_z=0.0, scale=1.85)
+    sx0, sx1, sy0, sy1, sz0, sz1 = world_bbox(sofa_p)
+    scx, scy = (sx0 + sx1) * 0.5, (sy0 + sy1) * 0.5
+    for pi, (px, py, pcol, prot) in enumerate([(scx - 0.36, scy + 0.06, mat_coral, 0.22), (scx + 0.36, scy + 0.06, mat_teal, -0.24)]):
+        add_beveled_box(f"SofaPillow_{pi}", (0.28, 0.12, 0.28), (px, py, sz0 + 0.44), pcol, 0.04, (math.radians(-18), 0.0, prot))
+    ct_p = import_kenney_glb("CoffeeTable", "tableCoffeeSquare.glb", (-1.75, 0.55, 0.0), rot_z=0.0, scale=1.85)
+    cx0, cx1, cy0, cy1, cz0, cz1 = world_bbox(ct_p)
+    ccx, ccy = (cx0 + cx1) * 0.5, (cy0 + cy1) * 0.5
+    add_beveled_box("CoffeeTray", (0.34, 0.24, 0.025), (ccx - 0.15, ccy, cz1 + 0.012), mat_wood, 0.008)
+    bpy.ops.mesh.primitive_cylinder_add(vertices=12, radius=0.036, depth=0.075, location=(ccx - 0.15, ccy, cz1 + 0.055))
+    bpy.context.active_object.data.materials.append(mat_ceramic_w)
+    import_kenney_glb("CoffeeBooks", "books.glb", (ccx + 0.16, ccy, cz1), rot_z=0.35, scale=1.65)
     import_kenney_glb("TVConsole", "cabinetTelevision.glb", (-2.75, -0.75, 0.0), rot_z=math.pi * 0.5, scale=1.85)
     import_kenney_glb("LivingPlant", "pottedPlant.glb", (-2.65, 1.95, 0.0), rot_z=0.2, scale=1.85)
 
@@ -324,27 +347,46 @@ def build_majikan_living():
     add_beveled_box("WallLeftArtFrame", (0.04, 0.76, 0.58), (-3.08, -0.75, 1.55), mat_wood, 0.012)
     add_beveled_box("WallLeftArtCanvas", (0.02, 0.62, 0.44), (-3.05, -0.75, 1.55), mat_art, 0.0)
 
-    # Curated CC0 Kenney Furniture: Dining Zone
-    import_kenney_glb("DiningTable", "tableRound.glb", (1.15, -0.55, 0.0), rot_z=0.0, scale=1.85)
+    # Curated CC0 Kenney Furniture: Dining Zone + Tableware (exact bbox anchored)
+    dt_p = import_kenney_glb("DiningTable", "tableRound.glb", (1.15, -0.55, 0.0), rot_z=0.0, scale=1.85)
+    dx0, dx1, dy0, dy1, dz0, dz1 = world_bbox(dt_p)
+    dcx, dcy = (dx0 + dx1) * 0.5, (dy0 + dy1) * 0.5
+    for dpx, dpy in [(dcx - 0.24, dcy - 0.14), (dcx + 0.24, dcy - 0.14)]:
+        bpy.ops.mesh.primitive_cylinder_add(vertices=14, radius=0.11, depth=0.018, location=(dpx, dpy, dz1 + 0.009))
+        bpy.context.active_object.data.materials.append(mat_ceramic_w)
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=12, ring_count=8, radius=0.08, location=(dcx, dcy + 0.12, dz1 + 0.055))
+    tp_d = bpy.context.active_object
+    tp_d.scale = (1.0, 1.0, 0.75)
+    bpy.ops.object.shade_smooth()
+    tp_d.data.materials.append(mat_teal)
     import_kenney_glb("DiningChair1", "chair.glb", (0.60, -1.15, 0.0), rot_z=0.35, scale=1.85)
     import_kenney_glb("DiningChair2", "chair.glb", (1.70, -1.15, 0.0), rot_z=-0.35, scale=1.85)
 
-    # Curated CC0 Kenney Furniture: Kitchenette
+    # Curated CC0 Kenney Furniture: Kitchenette + Stove Pan/Pot + Dish Rack
     import_kenney_glb("Fridge", "kitchenFridge.glb", (-0.10, 2.18, 0.0), rot_z=0.0, target_height=1.70)
     import_kenney_glb("KitchenSink", "kitchenSink.glb", (0.82, 2.18, 0.0), rot_z=0.0, target_height=0.90)
+    add_beveled_box("DishRack", (0.28, 0.22, 0.05), (0.62, 2.14, 0.925), mat_metal, 0.008)
+    for pl in range(3):
+        bpy.ops.mesh.primitive_cylinder_add(vertices=12, radius=0.085, depth=0.016, location=(0.56 + pl * 0.055, 2.14, 1.00), rotation=(0, math.radians(78), 0))
+        bpy.context.active_object.data.materials.append(mat_ceramic_w)
     import_kenney_glb("KitchenCab", "kitchenCabinet.glb", (1.60, 2.18, 0.0), rot_z=0.0, target_height=0.90)
     import_kenney_glb("KitchenStove", "kitchenStove.glb", (2.36, 2.18, 0.0), rot_z=0.0, target_height=0.90)
+    bpy.ops.mesh.primitive_cylinder_add(vertices=14, radius=0.12, depth=0.055, location=(2.24, 2.12, 0.94))
+    bpy.context.active_object.data.materials.append(mat_dark)
+    add_beveled_box("PanHandle", (0.18, 0.025, 0.018), (2.08, 2.12, 0.945), mat_dark, 0.004)
+    bpy.ops.mesh.primitive_cylinder_add(vertices=14, radius=0.095, depth=0.11, location=(2.48, 2.20, 0.965))
+    bpy.context.active_object.data.materials.append(mat_metal)
     import_kenney_glb("CoffeeMachine", "kitchenCoffeeMachine.glb", (1.58, 2.18, 0.90), rot_z=0.0, scale=1.65)
     import_kenney_glb("Toaster", "toaster.glb", (1.92, 2.18, 0.90), rot_z=0.15, scale=1.65)
     import_kenney_glb("TrashCan", "trashcan.glb", (2.82, 1.55, 0.0), rot_z=0.0, scale=1.85)
     # Iconic Indonesian green 3kg LPG gas canister ("Gas Melon") + Wall Calendar + Spice Jars
     mat_lpg_green = make_solid_mat("LpgMelonGreen", (0.18, 0.56, 0.26), 0.36)
-    bpy.ops.mesh.primitive_cylinder_add(vertices=16, radius=0.145, depth=0.34, location=(2.92, 2.08, 0.19))
+    bpy.ops.mesh.primitive_cylinder_add(vertices=16, radius=0.145, depth=0.34, location=(2.94, 1.88, 0.19))
     lpg = bpy.context.active_object
     lpg.name = "LPG3kg"
     bpy.ops.object.shade_smooth()
     lpg.data.materials.append(mat_lpg_green)
-    bpy.ops.mesh.primitive_torus_add(major_radius=0.08, minor_radius=0.016, major_segments=14, minor_segments=8, location=(2.92, 2.08, 0.38))
+    bpy.ops.mesh.primitive_torus_add(major_radius=0.08, minor_radius=0.016, major_segments=14, minor_segments=8, location=(2.94, 1.88, 0.38))
     bpy.context.active_object.data.materials.append(mat_lpg_green)
     add_beveled_box("WallCalendar", (0.34, 0.02, 0.46), (0.38, 2.48, 1.84), mat_ceramic_w, 0.005)
     add_beveled_box("WallCalendarHdr", (0.34, 0.024, 0.11), (0.38, 2.475, 2.02), mat_coral, 0.004)

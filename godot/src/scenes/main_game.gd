@@ -104,10 +104,13 @@ var _outline_mat: ShaderMaterial = null
 
 # HUD nodes
 var _lbl_balance: Label
+var _lbl_level_badge: Label
 var _lbl_meta: Label
+var _lbl_day_sub: Label
 var _lbl_energy: Label
 var _bar_energy: ProgressBar
 var _lbl_mood: Label
+var _bar_mood: ProgressBar
 var _lbl_trust: Label
 var _lbl_tasks_hdr: Label
 var _tasks_list: VBoxContainer
@@ -161,6 +164,7 @@ var _spotlight_btn_ok: Button
 var _spotlight_btn_skip: Button
 var _spotlight_t := 0.0
 var _phone_os_wrap: Control
+var _phone_os_bezel: PanelContainer
 var _phone_os_bal: Label
 var _phone_os_clock: Label
 var _phone_os_body: VBoxContainer
@@ -168,6 +172,8 @@ var _phone_os_app := "home"
 var _phone_os_nav_back: Button
 var _phone_os_nav_home: Button
 var _phone_os_nav_close: Button
+var _hp_bottom_left: Control
+var _ob_col_btns: Array = []
 var _courier_toast: PanelContainer
 var _courier_lbl: Label
 var _courier_bar: ProgressBar
@@ -306,6 +312,7 @@ func _ready() -> void:
 	_muted = bool(_save.get("muted", false))
 	_build_hud()
 	_apply_mobile_safe_area()
+	get_viewport().size_changed.connect(_on_viewport_size_changed)
 	Settings.apply_graphics_quality(sun_light, world_env.environment if world_env != null else null, String(_save.get("gfx_quality", "high")))
 
 	if _smoke_mode:
@@ -359,8 +366,10 @@ func _ready() -> void:
 	elif _capture_onboarding:
 		_open_onboarding()
 	elif _capture_path != "":
-		if not bool(_save.get("onboarding_done", false)) and not _skip_onboarding:
-			_open_onboarding()
+		_save["onboarding_done"] = true
+		_save["guide_seen"] = true
+		_save["tutorial_step"] = 4
+		_sync_player_outfit()
 	else:
 		_open_title_screen()
 	_refresh_hud()
@@ -598,7 +607,7 @@ func _sync_player_outfit() -> void:
 	var skin_hex := String(_save.get("skin_hex", "#B87A4B"))
 	var model_path := Progression.resolve_player_model_path(_save)
 	player.load_outfit(oid, model_path, hex, skin_hex)
-	SceneVisuals.apply_unified_material_pass(player, false, true, _ensure_outline(), _actor_mat_cache)
+	SceneVisuals.apply_unified_material_pass(player, false, false, _ensure_outline(), _actor_mat_cache)
 
 func _clear_npcs() -> void:
 	if _npcs_root == null:
@@ -623,7 +632,7 @@ func _spawn_npcs(npc_list: Array) -> void:
 		var inst := ps.instantiate() as Node3D
 		inst.scale = Vector3(0.92, 0.92, 0.92)
 		holder.add_child(inst)
-		SceneVisuals.apply_unified_material_pass(inst, false, true, _ensure_outline(), _actor_mat_cache)
+		SceneVisuals.apply_unified_material_pass(inst, false, false, _ensure_outline(), _actor_mat_cache)
 		SceneVisuals.attach_contact_shadow(holder, 0.36)
 
 		var target_anim := String(npc.get("anim", "Idle")).to_lower()
@@ -704,7 +713,7 @@ func _spawn_portal(pid: String, pos: Vector3, color: Color, label_id: String, la
 	var badge := Label3D.new()
 	badge.name = "_Label3D"
 	badge.text = label_en if _loc() == "en" else label_id
-	badge.position = Vector3(0.0, 0.90, 0.0)
+	badge.position = Vector3(0.0, 0.36, 0.0)
 	badge.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	badge.font_size = 20
 	badge.pixel_size = 0.0028
@@ -1301,18 +1310,19 @@ func _process(delta: float) -> void:
 	if _world_mode == "street" and _street_npcs_data.size() > 0:
 		StreetPatrols.step_patrols(_street_npcs_data, _street_cfg, player.position, delta, _cur_weather == "hujan")
 
-	# Wayfinding Label3D fade: keep floor clean at distance, show cleanly within 3.2m
+	# Wayfinding Label3D fade: hide during UI overlays/dialogue/phone, show cleanly within 3.2m
+	var hide_labels := ui_cover or (_dialogue_bar != null and _dialogue_bar.visible) or (_phone_os_wrap != null and _phone_os_wrap.visible)
 	for pnode in _portal_nodes:
 		if is_instance_valid(pnode):
 			var p_lbl3d := pnode.find_child("_Label3D", false, false) as Label3D
 			if p_lbl3d != null:
-				p_lbl3d.visible = pnode.position.distance_to(player.position) <= 3.2
+				p_lbl3d.visible = (not hide_labels) and pnode.position.distance_to(player.position) <= 3.2
 	for s_npc in _street_npcs_data:
 		var sn_node = s_npc.get("node", null)
 		if sn_node != null and is_instance_valid(sn_node):
 			var n_lbl3d := sn_node.find_child("_Label3D", false, false) as Label3D
 			if n_lbl3d != null:
-				n_lbl3d.visible = sn_node.position.distance_to(player.position) <= 3.2
+				n_lbl3d.visible = (not hide_labels) and sn_node.position.distance_to(player.position) <= 3.2
 
 	var np := _nearest_portal()
 	var sn := _nearest_street_npc()
@@ -1530,14 +1540,21 @@ func _on_distract(activity_id: String) -> void:
 	_show_toast(_t("Semangat +Energi naik! Hati-hati panggilan Majikan.", "Mood + Energy up! Watch for employer calls."))
 	_refresh_hud()
 
+func _on_viewport_size_changed() -> void:
+	_apply_mobile_safe_area()
+	if _phone_os_wrap != null and _phone_os_wrap.visible:
+		_render_phone_app()
+	_refresh_hud()
+
+func _effective_window_size() -> Vector2:
+	var scale := maxf(1.0, DisplayServer.screen_get_scale())
+	var win := Vector2(DisplayServer.window_get_size()) / scale
+	if win.x > 0.0 and win.y > 0.0:
+		return win
+	return get_viewport().get_visible_rect().size
+
 func _format_meta_clock() -> String:
-	var cur_day := maxi(1, int(_save.get("day", 1)))
-	var g_min := int(_save.get("game_minutes", 360))
-	var clock_s := LifeRhythm.format_clock(g_min)
-	var season := LifeRhythm.get_season(cur_day)
-	var s_tag := " Puasa" if season == "ramadhan" else (" Lebaran" if season == "lebaran" else "")
-	var w_icon := "🌧" if _cur_weather == "hujan" else ("🌙" if _cur_phase == "malam" else "☀")
-	return "%s%d • %s %s%s" % [_t("H", "D"), cur_day, clock_s, w_icon, s_tag]
+	return LifeRhythm.format_clock(int(_save.get("game_minutes", 360))).replace(":", ".")
 
 func _set_dock_label(key: String, txt: String) -> void:
 	if _dock_labels.has(key):
@@ -1558,6 +1575,8 @@ func _refresh_hud() -> void:
 	var dlg_active := _dialogue_bar != null and _dialogue_bar.visible
 	var phone_os_active := _phone_os_wrap != null and _phone_os_wrap.visible
 	var ui_cover := title_active or ob_active
+	var vp := _effective_window_size()
+	var show_joy := Atmosphere.should_show_virtual_joystick(vp, DisplayServer.is_touchscreen_available(), OS.has_feature("mobile"))
 	if _npcs_root != null:
 		_npcs_root.visible = not ob_active
 	if hotspots_root != null:
@@ -1569,14 +1588,30 @@ func _refresh_hud() -> void:
 	if _br_vbox != null:
 		_br_vbox.visible = (not ui_cover) and (not dlg_active) and (not phone_os_active)
 	if _joy_base != null:
-		_joy_base.visible = (not ui_cover) and (not dlg_active) and (not phone_os_active)
+		_joy_base.visible = show_joy and (not ui_cover) and (not dlg_active) and (not phone_os_active)
+	if _hp_bottom_left != null:
+		_hp_bottom_left.visible = (not ui_cover) and (not dlg_active) and (not phone_os_active)
+		if show_joy:
+			_hp_bottom_left.offset_top = -202
+			_hp_bottom_left.offset_bottom = -124
+		else:
+			_hp_bottom_left.offset_top = -94
+			_hp_bottom_left.offset_bottom = -16
+	if _courier_toast != null:
+		_courier_toast.offset_left = 128 if show_joy else 104
 
 	var xp := int(_save.get("xp", 0))
 	var lv := Progression.level_from_xp(xp)
 	var tier := CareerTiers.get_tier(String(_save.get("active_tier_id", "kamar_kos")))
 	var p_name := String(_save.get("player_name", "Mbak Sari"))
-	_lbl_balance.text = "%s %d  ·  %s" % [_t("Lv", "Lv"), lv, I18n.format_balance(int(_save.get("balance_rp", 0)), _loc())]
-	_lbl_meta.text = _format_meta_clock()
+	if _lbl_level_badge != null:
+		_lbl_level_badge.text = "Lv %d" % lv
+	_lbl_balance.text = I18n.format_balance(int(_save.get("balance_rp", 0)), _loc())
+	_lbl_meta.text = LifeRhythm.format_clock(int(_save.get("game_minutes", 360))).replace(":", ".")
+	if _lbl_day_sub != null:
+		var cur_day := maxi(1, int(_save.get("day", 1)))
+		var w_icon := "🌧" if _cur_weather == "hujan" else ("🌙" if _cur_phase == "malam" else "☀")
+		_lbl_day_sub.text = "%s %d · %s" % [_t("HARI", "DAY"), cur_day, w_icon]
 
 	var star_score := int(_call_state.get("trust", 60)) if _in_shift else clampi(40 + lv * 8, 40, 100)
 	var filled_stars := clampi(int(round(float(star_score) / 20.0)), 1, 5)
@@ -1595,9 +1630,12 @@ func _refresh_hud() -> void:
 		_bar_energy.max_value = e_max
 		_bar_energy.value = e_val
 		if _lbl_mood != null:
-			var bonus_tag := _t(" (+15% Bonus!)", " (+15% Bonus!)") if m_val >= 80 else (_t(" (Lelah)", " (Tired)") if m_val <= 25 else "")
+			var bonus_tag := _t(" (+15%!)", " (+15%!)") if m_val >= 80 else (_t(" (Lelah)", " (Tired)") if m_val <= 25 else "")
 			_lbl_mood.text = "%s %d%%%s" % [_t("SEMANGAT", "MOOD"), m_val, bonus_tag]
 			_lbl_mood.add_theme_color_override("font_color", Color(0.98, 0.84, 0.34) if m_val >= 80 else (Color(0.96, 0.56, 0.34) if m_val <= 25 else Color(0.76, 0.92, 1.0)))
+		if _bar_mood != null:
+			_bar_mood.max_value = 100
+			_bar_mood.value = m_val
 		_lbl_trust.text = "%s · %s" % [p_name, Economy.get_career_rank(xp, _loc())]
 
 		var done_n := (_shift.get("completed_ids", []) as Array).size()
@@ -1638,9 +1676,12 @@ func _refresh_hud() -> void:
 		_bar_energy.max_value = max_e
 		_bar_energy.value = cur_e
 		if _lbl_mood != null:
-			var h_bonus := _t(" (+15% Siap!)", " (+15% Ready!)") if h_mood >= 80 else ""
+			var h_bonus := _t(" (+15%!)", " (+15%!)") if h_mood >= 80 else ""
 			_lbl_mood.text = "%s %d%%%s" % [_t("SEMANGAT", "MOOD"), h_mood, h_bonus]
 			_lbl_mood.add_theme_color_override("font_color", Color(0.98, 0.84, 0.34) if h_mood >= 80 else Color(0.76, 0.92, 1.0))
+		if _bar_mood != null:
+			_bar_mood.max_value = 100
+			_bar_mood.value = h_mood
 		_lbl_trust.text = "%s · %s" % [p_name, tier_label]
 		_tasks_card.visible = false
 		_set_dock_label("shift", _t("Shift", "Shift"))
@@ -2536,42 +2577,42 @@ func _style_bar(bar: ProgressBar, fill_col: Color, bg_col: Color = Color(0.08, 0
 	bar.add_theme_stylebox_override("background", bg)
 	bar.add_theme_stylebox_override("fill", fg)
 
-func _shadow_label(lbl: Label, sz: int, col: Color) -> void:
+func _shadow_label(lbl: Label, sz: int, col: Color, outline_sz: int = 5) -> void:
 	lbl.add_theme_font_size_override("font_size", sz)
 	lbl.add_theme_color_override("font_color", col)
-	lbl.add_theme_color_override("font_outline_color", Color(0.04, 0.05, 0.08, 0.92))
-	lbl.add_theme_constant_override("outline_size", 4)
+	lbl.add_theme_color_override("font_outline_color", Color(0.04, 0.05, 0.08, 0.96))
+	lbl.add_theme_constant_override("outline_size", outline_sz)
 
 func _make_dock_icon_btn(key: String, icon_name: String, badge_col: Color = Color(0.86, 0.18, 0.16)) -> Dictionary:
 	var wrap := VBoxContainer.new()
 	wrap.alignment = BoxContainer.ALIGNMENT_CENTER
 	wrap.add_theme_constant_override("separation", 2)
 	var ic_box := Control.new()
-	ic_box.custom_minimum_size = Vector2(58, 56)
+	ic_box.custom_minimum_size = Vector2(62, 58)
 	var btn := Button.new()
 	btn.set_anchors_preset(Control.PRESET_FULL_RECT)
 	btn.flat = true
 	btn.add_theme_stylebox_override("normal", StyleBoxEmpty.new())
-	btn.add_theme_stylebox_override("hover", _make_box(Color(1, 1, 1, 0.12), Color(0.98, 0.84, 0.34, 0.6), 14, 2, 2))
-	btn.add_theme_stylebox_override("pressed", _make_box(Color(0, 0, 0, 0.18), Color(0.98, 0.84, 0.34, 0.9), 14, 2, 2))
+	btn.add_theme_stylebox_override("hover", _make_box(Color(1, 1, 1, 0.12), Color(0.98, 0.84, 0.34, 0.65), 14, 2, 2))
+	btn.add_theme_stylebox_override("pressed", _make_box(Color(0, 0, 0, 0.18), Color(0.98, 0.84, 0.34, 0.95), 14, 2, 2))
 	var icon_rect := TextureRect.new()
 	icon_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	icon_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
-	icon_rect.offset_left = 4
-	icon_rect.offset_right = -4
-	icon_rect.offset_top = 2
-	icon_rect.offset_bottom = -2
+	icon_rect.offset_left = 2
+	icon_rect.offset_right = -2
+	icon_rect.offset_top = 0
+	icon_rect.offset_bottom = 0
 	icon_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	icon_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	icon_rect.texture = Portraits.get_ui_icon(icon_name)
 	var badge := Label.new()
 	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	badge.visible = false
-	badge.position = Vector2(38, -2)
+	badge.position = Vector2(40, -2)
 	badge.custom_minimum_size = Vector2(20, 20)
 	badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	badge.add_theme_stylebox_override("normal", _make_box(badge_col, Color(1, 1, 1), 10, 4, 1))
-	badge.add_theme_font_size_override("font_size", 10)
+	badge.add_theme_font_size_override("font_size", 11)
 	badge.add_theme_color_override("font_color", Color(1, 1, 1))
 	ic_box.add_child(btn)
 	ic_box.add_child(icon_rect)
@@ -2579,7 +2620,7 @@ func _make_dock_icon_btn(key: String, icon_name: String, badge_col: Color = Colo
 	var lbl := Label.new()
 	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	lbl.custom_minimum_size = Vector2(68, 0)
-	_shadow_label(lbl, 11, Color(0.98, 0.97, 0.94))
+	_shadow_label(lbl, 12, Color(0.98, 0.97, 0.94), 5)
 	wrap.add_child(ic_box)
 	wrap.add_child(lbl)
 	_dock_labels[key] = lbl
@@ -2602,55 +2643,72 @@ func _build_hud() -> void:
 	var dark_ink := Color(0.11, 0.09, 0.06)
 	var light_ink := Color(0.97, 0.96, 0.93)
 
-	# 1. TOP-LEFT FRAMELESS WARUNG-LIFE TYPOGRAPHIC HUD (Clock + 5 Star Icons + Sleek Energy/Mood)
+	# 1. TOP-LEFT FRAMELESS WARUNG-LIFE TYPOGRAPHIC HUD (Big Clock + 5 Stars + Both ENERGI & SEMANGAT Bars)
 	_tl_card = MarginContainer.new()
 	_tl_card.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	_tl_card.position = Vector2(16, 12)
+	_tl_card.position = Vector2(18, 12)
 	var tl_v := VBoxContainer.new()
-	tl_v.add_theme_constant_override("separation", 3)
+	tl_v.add_theme_constant_override("separation", 4)
 
+	var clock_row := HBoxContainer.new()
+	clock_row.add_theme_constant_override("separation", 10)
 	_lbl_meta = Label.new()
-	_lbl_meta.custom_minimum_size = Vector2(220, 0)
-	_lbl_meta.clip_text = true
-	_shadow_label(_lbl_meta, 17, light_ink)
-
+	_shadow_label(_lbl_meta, 25, light_ink, 6)
+	var day_col := VBoxContainer.new()
+	day_col.add_theme_constant_override("separation", 1)
+	_lbl_day_sub = Label.new()
+	_shadow_label(_lbl_day_sub, 12, Color(0.98, 0.86, 0.42), 5)
 	_lbl_trust = Label.new()
-	_shadow_label(_lbl_trust, 12, Color(0.98, 0.86, 0.42))
+	_shadow_label(_lbl_trust, 12, Color(0.92, 0.94, 0.98), 5)
+	day_col.add_child(_lbl_day_sub)
+	day_col.add_child(_lbl_trust)
+	clock_row.add_child(_lbl_meta)
+	clock_row.add_child(day_col)
 
 	_stars_row = HBoxContainer.new()
-	_stars_row.add_theme_constant_override("separation", 3)
+	_stars_row.add_theme_constant_override("separation", 5)
 	for _si in range(5):
 		var st := TextureRect.new()
-		st.custom_minimum_size = Vector2(14, 14)
+		st.custom_minimum_size = Vector2(18, 18)
 		st.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		st.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		st.texture = Portraits.get_ui_icon("star_empty")
 		_stars_row.add_child(st)
 
-	var e_row := HBoxContainer.new()
-	e_row.add_theme_constant_override("separation", 6)
+	var bars_row := HBoxContainer.new()
+	bars_row.add_theme_constant_override("separation", 12)
+	var e_col := VBoxContainer.new()
+	e_col.add_theme_constant_override("separation", 2)
 	_lbl_energy = Label.new()
-	_shadow_label(_lbl_energy, 11, Color(0.45, 0.96, 0.48))
+	_shadow_label(_lbl_energy, 11, Color(0.45, 0.96, 0.48), 5)
 	_bar_energy = ProgressBar.new()
-	_bar_energy.custom_minimum_size = Vector2(118, 9)
-	_bar_energy.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_bar_energy.custom_minimum_size = Vector2(120, 10)
 	_bar_energy.show_percentage = false
-	_style_bar(_bar_energy, Color(0.32, 0.88, 0.40), Color(0.06, 0.08, 0.10, 0.55))
-	e_row.add_child(_lbl_energy)
-	e_row.add_child(_bar_energy)
+	_style_bar(_bar_energy, Color(0.32, 0.88, 0.40), Color(0.06, 0.08, 0.10, 0.65))
+	e_col.add_child(_lbl_energy)
+	e_col.add_child(_bar_energy)
 
+	var m_col := VBoxContainer.new()
+	m_col.add_theme_constant_override("separation", 2)
 	_lbl_mood = Label.new()
-	_shadow_label(_lbl_mood, 11, Color(0.76, 0.92, 1.0))
+	_shadow_label(_lbl_mood, 11, Color(0.76, 0.92, 1.0), 5)
+	_bar_mood = ProgressBar.new()
+	_bar_mood.custom_minimum_size = Vector2(120, 10)
+	_bar_mood.show_percentage = false
+	_style_bar(_bar_mood, Color(0.98, 0.78, 0.24), Color(0.06, 0.08, 0.10, 0.65))
+	m_col.add_child(_lbl_mood)
+	m_col.add_child(_bar_mood)
 
-	tl_v.add_child(_lbl_meta)
-	tl_v.add_child(_lbl_trust)
+	bars_row.add_child(e_col)
+	bars_row.add_child(m_col)
+
+	tl_v.add_child(clock_row)
 	tl_v.add_child(_stars_row)
-	tl_v.add_child(e_row)
-	tl_v.add_child(_lbl_mood)
+	tl_v.add_child(bars_row)
 	_tl_card.add_child(tl_v)
 	hud.add_child(_tl_card)
 
-	# 2. TOP-RIGHT FRAMELESS BALANCE + COMPACT MENU + EXPANDABLE TASKS DROPDOWN
+	# 2. TOP-RIGHT FRAMELESS BALANCE + LEVEL BADGE + COMPACT MENU + TASKS DROPDOWN
 	_tr_vbox = VBoxContainer.new()
 	_tr_vbox.set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	_tr_vbox.grow_horizontal = Control.GROW_DIRECTION_BEGIN
@@ -2660,17 +2718,25 @@ func _build_hud() -> void:
 
 	var top_r_row := HBoxContainer.new()
 	top_r_row.alignment = BoxContainer.ALIGNMENT_END
-	top_r_row.add_theme_constant_override("separation", 8)
+	top_r_row.add_theme_constant_override("separation", 10)
+
+	var lv_pill := PanelContainer.new()
+	lv_pill.add_theme_stylebox_override("panel", _make_box(Color(0.96, 0.78, 0.24, 0.96), Color(0.99, 0.92, 0.60), 10, 10, 4))
+	_lbl_level_badge = Label.new()
+	_lbl_level_badge.add_theme_font_size_override("font_size", 13)
+	_lbl_level_badge.add_theme_color_override("font_color", dark_ink)
+	lv_pill.add_child(_lbl_level_badge)
 
 	_lbl_balance = Label.new()
-	_shadow_label(_lbl_balance, 19, Color(0.44, 0.96, 0.44))
+	_shadow_label(_lbl_balance, 23, Color(0.44, 0.96, 0.44), 6)
 
 	_btn_map = Button.new()
 	_btn_settings = Button.new()
-	_style_btn(_btn_map, Color(0.10, 0.13, 0.18, 0.78), Color(0.95, 0.78, 0.26, 0.65))
-	_style_btn(_btn_settings, Color(0.10, 0.13, 0.18, 0.78), Color(0.95, 0.78, 0.26, 0.65))
+	_style_btn(_btn_map, Color(0.10, 0.13, 0.18, 0.82), Color(0.95, 0.78, 0.26, 0.75))
+	_style_btn(_btn_settings, Color(0.10, 0.13, 0.18, 0.82), Color(0.95, 0.78, 0.26, 0.75))
 	_btn_map.pressed.connect(_open_map_modal)
 	_btn_settings.pressed.connect(_open_settings_modal)
+	top_r_row.add_child(lv_pill)
 	top_r_row.add_child(_lbl_balance)
 	top_r_row.add_child(_btn_map)
 	top_r_row.add_child(_btn_settings)
@@ -2820,7 +2886,25 @@ func _build_hud() -> void:
 	_joy_base.add_child(_joy_knob)
 	hud.add_child(_joy_base)
 
-	# 5. BOTTOM-RIGHT ILLUSTRATED ICON DOCK (Warung Life Pattern!)
+	# 4B. STANDALONE BOTTOM-LEFT HP (SMARTPHONE OS) BUTTON (Anchored cleanly!)
+	var d_ph := _make_dock_icon_btn("phone", "icon_phone")
+	_btn_phone = d_ph["btn"]
+	_lbl_phone_badge = d_ph["badge"]
+	_set_dock_label("phone", "HP")
+	_btn_phone.pressed.connect(func():
+		if _is_sleeping:
+			return
+		_open_phone_os("home")
+	)
+	_hp_bottom_left = d_ph["wrap"]
+	_hp_bottom_left.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	_hp_bottom_left.offset_left = 18
+	_hp_bottom_left.offset_right = 88
+	_hp_bottom_left.offset_top = -94
+	_hp_bottom_left.offset_bottom = -16
+	hud.add_child(_hp_bottom_left)
+
+	# 5. BOTTOM-RIGHT FRAMELESS 3D PROP ICON DOCK (Warung Life Pattern!)
 	_br_vbox = VBoxContainer.new()
 	_br_vbox.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
 	_br_vbox.grow_horizontal = Control.GROW_DIRECTION_BEGIN
@@ -2838,7 +2922,7 @@ func _build_hud() -> void:
 
 	var dock := HBoxContainer.new()
 	dock.alignment = BoxContainer.ALIGNMENT_END
-	dock.add_theme_constant_override("separation", 6)
+	dock.add_theme_constant_override("separation", 8)
 
 	var d_act := _make_dock_icon_btn("action", "icon_door")
 	_btn_action = d_act["btn"]
@@ -2865,16 +2949,7 @@ func _build_hud() -> void:
 	_btn_kos = d_up["btn"]
 	_btn_kos.pressed.connect(_open_kos_modal)
 
-	var d_ph := _make_dock_icon_btn("phone", "icon_phone")
-	_btn_phone = d_ph["btn"]
-	_lbl_phone_badge = d_ph["badge"]
-	_btn_phone.pressed.connect(func():
-		if _is_sleeping:
-			return
-		_open_phone_os("home")
-	)
-
-	for dw in [d_act["wrap"], d_shift["wrap"], d_car["wrap"], d_ward["wrap"], d_up["wrap"], d_ph["wrap"]]:
+	for dw in [d_act["wrap"], d_shift["wrap"], d_car["wrap"], d_ward["wrap"], d_up["wrap"]]:
 		dock.add_child(dw)
 	_br_vbox.add_child(dock)
 	hud.add_child(_br_vbox)
@@ -3031,17 +3106,24 @@ func _build_onboarding_overlay(card_sb: StyleBoxFlat, gold_pill: StyleBoxFlat, d
 
 	var col_row := HBoxContainer.new()
 	col_row.add_theme_constant_override("separation", 8)
-	for c_hex in ["#4E7D63", "#C9855E", "#5A6D8C", "#8C4A5E"]:
+	_ob_col_btns.clear()
+	for c_cfg in [
+		{"hex": "#4E7D63", "id": "Hijau Batik", "en": "Batik Sage"},
+		{"hex": "#C9855E", "id": "Koral Hangat", "en": "Warm Coral"},
+		{"hex": "#5A6D8C", "id": "Biru Denim", "en": "Denim Blue"},
+		{"hex": "#8C4A5E", "id": "Marun", "en": "Maroon"},
+	]:
 		var cb := Button.new()
 		cb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		cb.text = "●"
-		var ch := String(c_hex)
+		cb.custom_minimum_size = Vector2(0, 40)
+		var ch := String(c_cfg["hex"])
 		_style_btn(cb, Color.html(ch), Color(0.96, 0.88, 0.65))
 		cb.pressed.connect(func():
 			_ob_color = ch
 			_preview_onboarding_character()
 		)
 		col_row.add_child(cb)
+		_ob_col_btns.append({"btn": cb, "hex": ch, "id": String(c_cfg["id"]), "en": String(c_cfg["en"])})
 	vb.add_child(col_row)
 
 	_ob_btn_start = Button.new()
@@ -3078,7 +3160,7 @@ func _build_title_overlay(card_sb: StyleBoxFlat, dark_ink: Color, light_ink: Col
 	left_col.add_theme_constant_override("separation", 12)
 
 	var logo := TextureRect.new()
-	logo.custom_minimum_size = Vector2(310, 116)
+	logo.custom_minimum_size = Vector2(350, 146)
 	logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	logo.texture = Portraits.get_ui_icon("logo_art_simulator")
@@ -3237,29 +3319,30 @@ func _build_dialogue_bar() -> void:
 	_dialogue_bar = PanelContainer.new()
 	_dialogue_bar.visible = false
 	_dialogue_bar.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
-	_dialogue_bar.offset_top = -146
+	_dialogue_bar.offset_top = -132
 	_dialogue_bar.offset_bottom = 0
-	_dialogue_bar.add_theme_stylebox_override("panel", _make_box(Color(0.06, 0.08, 0.12, 0.92), Color(0.96, 0.78, 0.26, 0.90), 0, 22, 14))
+	_dialogue_bar.add_theme_stylebox_override("panel", _make_box(Color(0.06, 0.08, 0.12, 0.94), Color(0.96, 0.78, 0.26, 0.92), 0, 22, 12))
 	var hbox := HBoxContainer.new()
 	hbox.add_theme_constant_override("separation", 16)
 
 	_dlg_portrait_wrap = PanelContainer.new()
-	_dlg_portrait_wrap.custom_minimum_size = Vector2(96, 110)
-	_dlg_portrait_wrap.add_theme_stylebox_override("panel", _make_box(Color(0.12, 0.20, 0.28), Color(0.96, 0.80, 0.34), 12, 6, 6))
-	var pv := VBoxContainer.new()
-	pv.add_theme_constant_override("separation", 2)
-	_dlg_phone_badge = Label.new()
-	_dlg_phone_badge.text = _t("📞 TELEPON", "📞 CALL")
-	_dlg_phone_badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_dlg_phone_badge.add_theme_font_size_override("font_size", 10)
-	_dlg_phone_badge.add_theme_color_override("font_color", Color(0.45, 0.96, 0.65))
+	_dlg_portrait_wrap.custom_minimum_size = Vector2(96, 96)
+	_dlg_portrait_wrap.add_theme_stylebox_override("panel", _make_box(Color(0.10, 0.16, 0.22), Color(0.96, 0.80, 0.34), 14, 3, 3))
+	var p_over := Control.new()
+	p_over.custom_minimum_size = Vector2(90, 90)
 	_dlg_portrait = TextureRect.new()
-	_dlg_portrait.custom_minimum_size = Vector2(80, 80)
+	_dlg_portrait.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_dlg_portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	_dlg_portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	pv.add_child(_dlg_phone_badge)
-	pv.add_child(_dlg_portrait)
-	_dlg_portrait_wrap.add_child(pv)
+	_dlg_portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	_dlg_phone_badge = Label.new()
+	_dlg_phone_badge.text = _t("📞 TELP", "📞 CALL")
+	_dlg_phone_badge.position = Vector2(4, 4)
+	_dlg_phone_badge.add_theme_stylebox_override("normal", _make_box(Color(0.10, 0.54, 0.32, 0.94), Color(0.96, 0.84, 0.34), 6, 5, 1))
+	_dlg_phone_badge.add_theme_font_size_override("font_size", 10)
+	_dlg_phone_badge.add_theme_color_override("font_color", Color(1, 1, 1))
+	p_over.add_child(_dlg_portrait)
+	p_over.add_child(_dlg_phone_badge)
+	_dlg_portrait_wrap.add_child(p_over)
 
 	var tv := VBoxContainer.new()
 	tv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -3582,9 +3665,27 @@ func _build_phone_os_overlay() -> void:
 	var ctr := CenterContainer.new()
 	ctr.set_anchors_preset(Control.PRESET_FULL_RECT)
 
-	var bezel := PanelContainer.new()
-	bezel.custom_minimum_size = Vector2(338, 390)
-	bezel.add_theme_stylebox_override("panel", _make_box(Color(0.09, 0.11, 0.16, 0.98), Color(0.95, 0.78, 0.26), 22, 12, 10))
+	_phone_os_bezel = PanelContainer.new()
+	_phone_os_bezel.custom_minimum_size = Vector2(360, 480)
+	_phone_os_bezel.add_theme_stylebox_override("panel", _make_box(Color(0.07, 0.08, 0.11, 0.99), Color(0.32, 0.36, 0.44), 28, 12, 10))
+	var shell_v := VBoxContainer.new()
+	shell_v.add_theme_constant_override("separation", 6)
+	var speaker_bar := HBoxContainer.new()
+	speaker_bar.alignment = BoxContainer.ALIGNMENT_CENTER
+	speaker_bar.add_theme_constant_override("separation", 8)
+	var cam_dot := Panel.new()
+	cam_dot.custom_minimum_size = Vector2(8, 8)
+	cam_dot.add_theme_stylebox_override("panel", _make_box(Color(0.18, 0.36, 0.62), Color(0.42, 0.56, 0.80), 4, 0, 0))
+	var ear_slot := Panel.new()
+	ear_slot.custom_minimum_size = Vector2(46, 5)
+	ear_slot.add_theme_stylebox_override("panel", _make_box(Color(0.18, 0.20, 0.26), Color(0, 0, 0, 0), 3, 0, 0))
+	speaker_bar.add_child(cam_dot)
+	speaker_bar.add_child(ear_slot)
+	shell_v.add_child(speaker_bar)
+
+	var screen_panel := PanelContainer.new()
+	screen_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	screen_panel.add_theme_stylebox_override("panel", _make_box(Color(0.08, 0.13, 0.22, 1.0), Color(0.95, 0.78, 0.26, 0.55), 18, 12, 10))
 	var pv := VBoxContainer.new()
 	pv.add_theme_constant_override("separation", 8)
 
@@ -3592,17 +3693,17 @@ func _build_phone_os_overlay() -> void:
 	var status_row := HBoxContainer.new()
 	_phone_os_clock = Label.new()
 	_phone_os_clock.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_phone_os_clock.add_theme_font_size_override("font_size", 12)
+	_phone_os_clock.add_theme_font_size_override("font_size", 13)
 	_phone_os_clock.add_theme_color_override("font_color", Color(0.92, 0.94, 0.98))
 	_phone_os_bal = Label.new()
-	_phone_os_bal.add_theme_font_size_override("font_size", 12)
+	_phone_os_bal.add_theme_font_size_override("font_size", 13)
 	_phone_os_bal.add_theme_color_override("font_color", Color(0.44, 0.96, 0.44))
 	status_row.add_child(_phone_os_clock)
 	status_row.add_child(_phone_os_bal)
 	pv.add_child(status_row)
 
 	var sc := ScrollContainer.new()
-	sc.custom_minimum_size = Vector2(310, 290)
+	sc.custom_minimum_size = Vector2(332, 340)
 	sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_phone_os_body = VBoxContainer.new()
@@ -3614,14 +3715,17 @@ func _build_phone_os_overlay() -> void:
 	var nav := HBoxContainer.new()
 	nav.add_theme_constant_override("separation", 6)
 	_phone_os_nav_back = Button.new()
+	_phone_os_nav_back.custom_minimum_size = Vector2(0, 44)
 	_phone_os_nav_back.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_style_btn(_phone_os_nav_back, Color(0.16, 0.20, 0.28), Color(0.75, 0.78, 0.85))
 	_phone_os_nav_back.pressed.connect(func(): _open_phone_os("home"))
 	_phone_os_nav_home = Button.new()
+	_phone_os_nav_home.custom_minimum_size = Vector2(0, 44)
 	_phone_os_nav_home.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_style_btn(_phone_os_nav_home, Color(0.16, 0.20, 0.28), Color(0.75, 0.78, 0.85))
 	_phone_os_nav_home.pressed.connect(func(): _open_phone_os("home"))
 	_phone_os_nav_close = Button.new()
+	_phone_os_nav_close.custom_minimum_size = Vector2(0, 44)
 	_phone_os_nav_close.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_style_btn(_phone_os_nav_close, Color(0.64, 0.20, 0.20), Color(0.95, 0.78, 0.26))
 	_phone_os_nav_close.pressed.connect(func():
@@ -3633,8 +3737,10 @@ func _build_phone_os_overlay() -> void:
 	nav.add_child(_phone_os_nav_close)
 	pv.add_child(nav)
 
-	bezel.add_child(pv)
-	ctr.add_child(bezel)
+	screen_panel.add_child(pv)
+	shell_v.add_child(screen_panel)
+	_phone_os_bezel.add_child(shell_v)
+	ctr.add_child(_phone_os_bezel)
 	_phone_os_wrap.add_child(ctr)
 	hud.add_child(_phone_os_wrap)
 
@@ -3647,10 +3753,14 @@ func _open_phone_os(app_id: String = "home") -> void:
 func _render_phone_app() -> void:
 	for c in _phone_os_body.get_children():
 		c.queue_free()
-	var vp := get_viewport().get_visible_rect().size
+	var vp := _effective_window_size()
+	var layout_mode := Progression.get_phone_layout_mode(vp)
+	var is_land := layout_mode == "landscape"
+	if _phone_os_bezel != null:
+		_phone_os_bezel.custom_minimum_size = Vector2(640, 384) if is_land else Vector2(360, 480)
 	var sc := _phone_os_body.get_parent() as ScrollContainer
 	if sc != null:
-		sc.custom_minimum_size = Vector2(310, clampf(vp.y - 135.0, 210.0, 360.0))
+		sc.custom_minimum_size = Vector2(596, 260) if is_land else Vector2(332, clampf(vp.y - 165.0, 240.0, 355.0))
 	_phone_os_clock.text = "%s · 4G" % LifeRhythm.format_clock(int(_save.get("game_minutes", 360)))
 	_phone_os_bal.text = I18n.format_balance(int(_save.get("balance_rp", 0)), _loc())
 	_phone_os_nav_back.text = _t("Kembali", "Back")
@@ -3659,8 +3769,8 @@ func _render_phone_app() -> void:
 
 	if _phone_os_app == "home":
 		var grid := GridContainer.new()
-		grid.columns = 3
-		grid.add_theme_constant_override("h_separation", 8)
+		grid.columns = 5 if is_land else 3
+		grid.add_theme_constant_override("h_separation", 10)
 		grid.add_theme_constant_override("v_separation", 10)
 		var apps := [
 			{"id": "bank", "ic": "app_bank", "id_lbl": "Bank Desaku", "en_lbl": "Village Bank"},
@@ -3896,6 +4006,7 @@ func _open_onboarding() -> void:
 func _preview_onboarding_character() -> void:
 	var mpath := "res://assets/models/char_art_hijab.glb" if _ob_style == "hijab" else "res://assets/models/char_art.glb"
 	player.load_outfit(String(_save.get("equipped_outfit_id", "starter_kasual")), mpath, _ob_color, _ob_skin)
+	SceneVisuals.apply_unified_material_pass(player, false, false, _ensure_outline(), _actor_mat_cache)
 	_refresh_onboarding_texts()
 
 func _refresh_onboarding_texts() -> void:
@@ -3911,6 +4022,13 @@ func _refresh_onboarding_texts() -> void:
 	for entry in _ob_skin_btns:
 		var b: Button = entry["btn"]
 		b.text = String(entry["en"] if _loc() == "en" else entry["id"])
+	for c_entry in _ob_col_btns:
+		var cb: Button = c_entry["btn"]
+		var ch := String(c_entry["hex"])
+		var nm := String(c_entry["en"] if _loc() == "en" else c_entry["id"])
+		var is_sel := (_ob_color == ch)
+		cb.text = ("✓ " + nm) if is_sel else nm
+		_style_btn(cb, Color.html(ch), Color(0.99, 0.90, 0.36) if is_sel else Color(0.32, 0.36, 0.42))
 	_ob_btn_lang.text = "EN" if _loc() == "id" else "ID"
 	_ob_btn_cepol.text = _t("Mba2 Cepol (Daster)", "Mba2 Bun (Daster)")
 	_ob_btn_hijab.text = _t("Mba2 Hijab (Bergo)", "Mba2 Hijab (Bergo)")

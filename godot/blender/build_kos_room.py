@@ -365,7 +365,14 @@ def build_room():
     mat_sandal = make_solid_mat("SandalBlue", (0.16, 0.46, 0.76), 0.72)
     mat_tote = make_solid_mat("CanvasTote", (0.92, 0.86, 0.74), 0.88)
 
-    # 1. Room Shell & Trim (Skirt, Crown, Wainscot, Dado)
+    # 1. Grounded Outer Courtyard + Room Shell & Trim (Skirt, Crown, Wainscot, Dado)
+    mat_yard = make_solid_mat("KosOuterYard", (0.26, 0.24, 0.21), 0.90)
+    mat_yard_patio = make_solid_mat("KosYardPatio", (0.58, 0.52, 0.44), 0.86)
+    add_beveled_box("OuterYard", (16.0, 16.0, 0.12), (0.0, 0.0, -0.24), mat_yard, 0.0, use_wn=False)
+    add_beveled_box("YardPatio", (6.6, 6.6, 0.10), (0.0, 0.0, -0.17), mat_yard_patio, 0.02, use_wn=False)
+    add_beveled_box("YardFenceBack", (10.0, 0.20, 1.35), (0.0, 4.4, 0.45), mat_wainscot, 0.02, use_wn=False)
+    add_beveled_box("YardFenceLeft", (0.20, 10.0, 1.35), (-4.4, 0.0, 0.45), mat_wainscot, 0.02, use_wn=False)
+
     add_beveled_box("FloorSlab", (4.8, 4.8, 0.16), (0.0, 0.0, -0.08), mat_floor, 0.015, cuts=2, use_wn=False)
     add_beveled_box("WallBack", (4.8, 0.14, 2.75), (0.0, 2.38, 1.375), mat_wall, 0.008, cuts=2, use_wn=False)
     add_beveled_box("WallLeft", (0.14, 4.8, 2.75), (-2.38, 0.0, 1.375), mat_wall, 0.008, cuts=2, use_wn=False)

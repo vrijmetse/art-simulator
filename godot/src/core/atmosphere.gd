@@ -23,6 +23,15 @@ static func get_phase(_world_mode: String, _day: int, shift_elapsed_s: float) ->
 		return "sore"
 	return "malam"
 
+static func should_show_virtual_joystick(viewport_size: Vector2, is_touch: bool, is_mobile_os: bool = false) -> bool:
+	if is_mobile_os:
+		return true
+	if viewport_size.x <= 960.0:
+		return true
+	if is_touch and viewport_size.x <= 1024.0:
+		return true
+	return false
+
 static func get_weather(day: int, weather_fx: bool) -> String:
 	if not weather_fx:
 		return "cerah"
@@ -41,31 +50,31 @@ static func apply_lighting(sun: DirectionalLight3D, bounce: DirectionalLight3D, 
 
 	match phase:
 		"pagi":
-			sun_col = Color(1.0, 0.88, 0.68)
-			sun_energy = 0.98
-			bounce_col = Color(0.84, 0.78, 0.70)
-			bounce_energy = 0.20
-			amb_col = Color(0.46, 0.58, 0.84)
-			amb_energy = 0.24
-			sky_top = Color(0.18, 0.52, 0.90)
+			sun_col = Color(1.0, 0.87, 0.66)
+			sun_energy = 1.06
+			bounce_col = Color(1.0, 0.84, 0.64)
+			bounce_energy = 0.34
+			amb_col = Color(0.74, 0.76, 0.84)
+			amb_energy = 0.42
+			sky_top = Color(0.22, 0.56, 0.92)
 		"siang":
-			sun_col = Color(1.0, 0.94, 0.82)
-			sun_energy = 1.04
-			bounce_col = Color(0.86, 0.82, 0.76)
-			bounce_energy = 0.20
-			amb_col = Color(0.50, 0.66, 0.90)
-			amb_energy = 0.26
-			sky_top = Color(0.14, 0.54, 0.96)
+			sun_col = Color(1.0, 0.92, 0.76)
+			sun_energy = 1.10
+			bounce_col = Color(0.98, 0.86, 0.70)
+			bounce_energy = 0.32
+			amb_col = Color(0.76, 0.80, 0.88)
+			amb_energy = 0.42
+			sky_top = Color(0.18, 0.56, 0.96)
 		"sore":
-			sun_col = Color(1.0, 0.64, 0.36)
-			sun_energy = 0.90
-			bounce_col = Color(0.78, 0.56, 0.48)
-			bounce_energy = 0.18
-			amb_col = Color(0.42, 0.48, 0.74)
-			amb_energy = 0.24
+			sun_col = Color(1.0, 0.68, 0.40)
+			sun_energy = 0.94
+			bounce_col = Color(0.90, 0.62, 0.48)
+			bounce_energy = 0.28
+			amb_col = Color(0.60, 0.58, 0.74)
+			amb_energy = 0.36
 			adj_sat = 1.18
-			adj_con = 1.14
-			sky_top = Color(0.20, 0.32, 0.68)
+			adj_con = 1.12
+			sky_top = Color(0.22, 0.34, 0.68)
 		"malam":
 			sun_col = Color(0.44, 0.56, 0.90)
 			sun_energy = 0.44

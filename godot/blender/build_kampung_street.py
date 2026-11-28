@@ -623,12 +623,12 @@ def build_scene():
     add_box("CurbGutter", (22.0, 0.24, 0.015), (0.0, -2.42, -0.008), mat_tile, 0.004)
 
     for dx in range(-10, 11, 2):
-        add_box(f"RoadDash_{dx}", (0.85, 0.12, 0.01), (float(dx), -5.45, -0.004), mat_white, 0.002)
+        add_box(f"RoadDash_{dx}", (0.85, 0.12, 0.012), (float(dx), -5.20, 0.002), mat_white, 0.002)
 
-    # Indonesian crisp white Zebra Crossing across the street near the village gate
+    # Indonesian crisp white Zebra Crossing across the street clearly visible from sidewalk
     for zi in range(6):
-        zx = -0.35 + zi * 0.52
-        add_box(f"ZebraStripe_{zi}", (0.30, 2.40, 0.012), (zx, -4.15, -0.003), mat_white, 0.004)
+        zx = -0.75 + zi * 0.52
+        add_box(f"ZebraStripe_{zi}", (0.30, 2.35, 0.014), (zx, -3.75, 0.004), mat_white, 0.004)
 
     # Roadside drainage grates (got beton) along the curb
     for gx in (-6.8, -3.4, 0.0, 3.4, 6.8):
@@ -681,22 +681,34 @@ def build_scene():
         add_box(f"PerimeterFrontWall_{px}", (0.26, 0.26, 1.05), (px, 0.26, 0.525), mat_stone, 0.015)
         add_box(f"PerimeterFrontCap_{px}", (0.32, 0.32, 0.08), (px, 0.26, 1.08), mat_trim, 0.012)
 
-    # Real Quaternius Stylized Nature CC0 trees cleanly positioned clear of porch roofs!
-    for ti, (glb, tx, ty, ts, rot_d, leaf_rgb) in enumerate([
-        ("common-tree-1.glb", -8.8, 1.6, 0.56, 35, (0.18, 0.48, 0.16)),
-        ("common-tree-2.glb", -10.5, 3.2, 0.62, 120, (0.20, 0.52, 0.18)),
-        ("common-tree-1.glb", -5.85, 0.95, 0.42, 15, (0.20, 0.50, 0.17)),
-        ("common-tree-2.glb", -1.88, -0.45, 0.26, 65, (0.26, 0.58, 0.20)),
-        ("common-tree-1.glb", 1.88, -0.45, 0.27, 130, (0.18, 0.46, 0.16)),
-        ("common-tree-2.glb", 5.85, 0.95, 0.42, 210, (0.20, 0.50, 0.17)),
-        ("common-tree-1.glb", -3.6, 5.2, 0.54, 40, (0.16, 0.42, 0.15)),
-        ("common-tree-2.glb", 0.2, 5.4, 0.56, 100, (0.24, 0.54, 0.19)),
-        ("common-tree-1.glb", 3.8, 5.2, 0.52, 180, (0.18, 0.48, 0.16)),
+    # Smooth organic multi-lobe tropical trees (zero jagged faceted icosphere triangles!)
+    for ti, (tx, ty, ts, leaf_rgb) in enumerate([
+        (-8.8, 1.6, 1.05, (0.18, 0.48, 0.16)),
+        (-10.5, 3.2, 1.15, (0.20, 0.52, 0.18)),
+        (-5.85, 0.95, 0.86, (0.20, 0.50, 0.17)),
+        (-1.88, -0.45, 0.58, (0.24, 0.56, 0.20)),
+        (1.88, -0.45, 0.60, (0.18, 0.46, 0.16)),
+        (5.85, 0.95, 0.86, (0.20, 0.50, 0.17)),
+        (-3.6, 5.2, 1.05, (0.16, 0.42, 0.15)),
+        (0.2, 5.4, 1.10, (0.24, 0.54, 0.19)),
+        (3.8, 5.2, 1.02, (0.18, 0.48, 0.16)),
     ]):
-        import_unpacked_asset(glb, (tx, ty, 0.0), ts, rot_d, {
-            "bark": (0.34, 0.22, 0.14),
-            "leaves": leaf_rgb,
-        })
+        lmat = make_solid_mat(f"SmoothLeaf_{ti}", leaf_rgb, 0.72)
+        bpy.ops.mesh.primitive_cylinder_add(vertices=10, radius=0.11 * ts, depth=1.55 * ts, location=(tx, ty, 0.78 * ts))
+        trk = bpy.context.active_object
+        trk.name = f"SmoothTreeTrunk_{ti}"
+        bpy.ops.object.shade_smooth()
+        trk.data.materials.append(mat_wood)
+        for li, (ox, oy, oz, rad) in enumerate([
+            (0.0, 0.0, 1.92, 0.68), (-0.32, 0.16, 1.65, 0.52),
+            (0.34, -0.14, 1.68, 0.50), (0.05, 0.28, 1.72, 0.46),
+        ]):
+            bpy.ops.mesh.primitive_uv_sphere_add(segments=12, ring_count=8, radius=rad * ts, location=(tx + ox * ts, ty + oy * ts, oz * ts))
+            cn = bpy.context.active_object
+            cn.name = f"SmoothTreeCanopy_{ti}_{li}"
+            cn.scale = (1.05, 1.02, 0.84)
+            bpy.ops.object.shade_smooth()
+            cn.data.materials.append(lmat)
 
     # Natural stylized bushes between houses (zero flat neon slabs)
     for bx, by in [(-5.15, 0.45), (-1.85, 0.42), (1.85, 0.42), (5.20, 0.45)]:
@@ -731,7 +743,7 @@ def build_scene():
     add_cc0_vehicle("van.glb", 5.4, -3.45, 90)
     add_utility_pole_and_wires([-5.6, 2.20, 5.6], -2.02, mat_iron, mat_white, mat_lamp)
     add_trash_bin("TrashBin_0", -1.98, -1.92, mat_bin_body, mat_bin_green)
-    add_sculpted_scooter("Scooter_0", 1.15, -2.85, math.radians(78), mat_scooter, mat_tire, mat_metal, mat_lamp, mat_tail)
+    add_sculpted_scooter("Scooter_0", 1.10, -2.05, math.radians(74), mat_scooter, mat_tire, mat_metal, mat_lamp, mat_tail)
 
     # Place Jl. Melati street sign inward at x=3.55, y=-2.02 so it is 100% framed
     bpy.ops.mesh.primitive_cylinder_add(vertices=8, radius=0.025, depth=1.95, location=(3.55, -2.02, 0.975))

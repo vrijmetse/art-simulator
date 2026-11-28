@@ -10,8 +10,8 @@ static func ensure_detail_outline_material() -> ShaderMaterial:
 		if sh != null:
 			_default_outline_mat = ShaderMaterial.new()
 			_default_outline_mat.shader = sh
-			_default_outline_mat.set_shader_parameter("outline_color", Color(0.16, 0.10, 0.07, 1.0))
-			_default_outline_mat.set_shader_parameter("outline_width", 0.0038)
+			_default_outline_mat.set_shader_parameter("outline_color", Color(0.24, 0.16, 0.11, 1.0))
+			_default_outline_mat.set_shader_parameter("outline_width", 0.0018)
 	return _default_outline_mat
 
 static func apply_unified_material_pass(
@@ -101,14 +101,21 @@ static func apply_unified_material_pass(
 							sm.rim = 0.18
 					else:
 						sm.rim_enabled = true
-						sm.rim = 0.20
-						sm.rim_tint = 0.48
-						if "skin" in m_low and sm.roughness > 0.72:
-							sm.roughness = 0.58
+						sm.rim = 0.14
+						sm.rim_tint = 0.52
+						sm.metallic = 0.0
+						if "skin" in m_low:
+							sm.roughness = maxf(sm.roughness, 0.74)
+							sm.metallic_specular = 0.22
+						elif not ("eye" in m_low or "iris" in m_low or "glass" in m_low or "buckle" in m_low):
+							sm.roughness = maxf(sm.roughness, 0.68)
+							sm.metallic_specular = 0.26
 					if sm.normal_enabled:
 						sm.normal_scale = 1.35
 					if wants_outline and outline_mat != null and sm.transparency == BaseMaterial3D.TRANSPARENCY_DISABLED:
 						sm.next_pass = outline_mat
+					elif not is_room and not force_outline:
+						sm.next_pass = null
 					mat_cache[cache_key] = sm
 					mi.set_surface_override_material(s, sm)
 	for child in node.get_children():

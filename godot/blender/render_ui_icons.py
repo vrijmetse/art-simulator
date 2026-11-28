@@ -24,26 +24,26 @@ def hex_rgb(h: str):
 
 
 PORTRAIT_MAP = [
-    ("player", "player_cepol", "#2A4B5C", "#4E8299"),
+    ("player", "player", "#2A4B5C", "#4E8299"),
     ("player_cepol", "player_cepol", "#2A4B5C", "#4E8299"),
     ("player_hijab", "player_hijab", "#265146", "#458875"),
-    ("ibu_melati", "ibu", "#542C44", "#8A4D70"),
+    ("ibu_melati", "ibu_melati", "#542C44", "#8A4D70"),
     ("ibu_sari", "ibu_sari", "#264B3D", "#447C66"),
     ("ibu_citra", "ibu_citra", "#433259", "#745996"),
-    ("ibu_tini", "ibu", "#3A4E31", "#628252"),
+    ("ibu_tini", "ibu_tini", "#3A4E31", "#628252"),
     ("ibu_kampung", "ibu_kampung", "#6E4223", "#B5723F"),
-    ("pak_budi", "budi", "#453628", "#7A5E44"),
-    ("pak_hendra", "hendra", "#2A3D54", "#4A6B91"),
+    ("pak_budi", "pak_budi", "#453628", "#7A5E44"),
+    ("pak_hendra", "pak_hendra", "#2A3D54", "#4A6B91"),
     ("pak_rt", "pak_rt", "#4C3B26", "#856742"),
-    ("pak_agus", "agus", "#32454E", "#567482"),
-    ("bang_ojek", "ojek", "#1E4D32", "#348456"),
-    ("kurir_paket", "kurir", "#59371E", "#995E34"),
-    ("anak_sekolah", "pelajar", "#2D4761", "#4C759E"),
-    ("adik_bima", "pelajar", "#2B4A68", "#4A7DB0"),
-    ("mbak_dewi", "dewi", "#3A543E", "#628B68"),
-    ("kakak_nadine", "kakak", "#592D40", "#964C6B"),
-    ("kakak_maya", "kakak", "#2A445E", "#4A749E"),
-    ("mbak_rina", "rina", "#294F48", "#46867A"),
+    ("pak_agus", "pak_agus", "#32454E", "#567482"),
+    ("bang_ojek", "bang_ojek", "#1E4D32", "#348456"),
+    ("kurir_paket", "kurir_paket", "#59371E", "#995E34"),
+    ("anak_sekolah", "anak_sekolah", "#2D4761", "#4C759E"),
+    ("adik_bima", "adik_bima", "#5C2A34", "#9E4C5E"),
+    ("mbak_dewi", "mbak_dewi", "#3A543E", "#628B68"),
+    ("kakak_nadine", "kakak_nadine", "#592D40", "#964C6B"),
+    ("kakak_maya", "kakak_maya", "#2A445E", "#4A749E"),
+    ("mbak_rina", "mbak_rina", "#294F48", "#46867A"),
 ]
 
 
@@ -75,9 +75,7 @@ def composite_portraits():
         bg.alpha_composite(sh, (3, 5))
         bg.alpha_composite(bust, (0, 0))
 
-        # Soft circular vignette ring for clean framing in both round & square slots
-        draw = ImageDraw.Draw(bg)
-        draw.ellipse((4, 4, size - 5, size - 5), outline=(245, 206, 98, 220), width=5)
+        # Clean full-bleed square portrait (HUD frame adds single border cleanly)
         out_p = os.path.join(PORTRAIT_DIR, f"portrait_{pid}.png")
         bg.save(out_p)
     print(f"Composited {len(PORTRAIT_MAP)} high-res 256x256 portraits.")
@@ -327,4 +325,3 @@ def build_ui_icons():
 
 if __name__ == "__main__":
     composite_portraits()
-    build_ui_icons()

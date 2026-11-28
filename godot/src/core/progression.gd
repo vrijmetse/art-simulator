@@ -604,3 +604,8 @@ static func get_spotlight_tutorial_steps(locale: String = "id") -> Array:
 			"text": "Upgrade your kos room to boost max Energy, Mood, and daily tips!" if en else "Upgrade kamar kos untuk menambah Energi maksimal, Semangat, dan tip harian!",
 		},
 	]
+
+static func get_phone_layout_mode(viewport_size: Vector2) -> String:
+	if viewport_size.y <= 500.0 and viewport_size.x > viewport_size.y:
+		return "landscape"
+	return "portrait"

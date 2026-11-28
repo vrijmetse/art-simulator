@@ -258,9 +258,11 @@ def build_elite_living():
     mat_marble_top = make_solid_mat("IslandMarbleTop", (0.95, 0.94, 0.91), 0.22)
     mat_glass = make_solid_mat("PanoramicGlass", (0.72, 0.86, 0.92), 0.06, 0.05, alpha=0.18)
 
-    # Diorama base: 7.6m x 6.0m open-plan luxury living + island kitchen
+    # Diorama base: 7.6m x 6.0m open-plan luxury living + wide stone patio sealing raw grass edges
     add_beveled_box("OuterYard", (20.0, 20.0, 0.12), (0.0, 0.0, -0.24), mat_grass, 0.0)
-    add_beveled_box("YardPatio", (8.4, 6.8, 0.10), (0.0, 0.0, -0.17), mat_patio, 0.02)
+    add_beveled_box("YardPatio", (13.6, 11.4, 0.10), (0.0, -0.6, -0.17), mat_patio, 0.02)
+    add_beveled_box("YardWallBack", (16.0, 0.24, 1.35), (0.0, 5.8, 0.45), mat_wall, 0.02)
+    add_beveled_box("YardWallLeft", (0.24, 16.0, 1.35), (-6.8, 0.0, 0.45), mat_wall, 0.02)
 
     # Panoramic garden trees visible through large back window
     import_kenney_glb("GardenTree1", "common-tree-1.glb", (0.65, 4.25, -0.18), rot_z=0.4, target_height=3.10)
@@ -294,16 +296,31 @@ def build_elite_living():
     add_beveled_box("WallArtFrame", (1.05, 0.05, 0.75), (-2.10, 2.78, 1.68), mat_dark, 0.015)
     add_beveled_box("WallArtCanvas", (0.90, 0.02, 0.60), (-2.10, 2.75, 1.68), mat_art, 0.0)
 
-    # Living Zone: Rug + L-set Sofas + TV Console + Potted Plant
+    # Living Zone: Rug + L-set Sofas + Throw Pillows + TV Console + Potted Plant
     add_beveled_box("LivingRug", (3.10, 2.30, 0.024), (-1.95, 0.65, 0.014), mat_rug, 0.012)
     import_kenney_glb("SofaMain", "loungeSofa.glb", (-2.05, 2.05, 0.0), rot_z=0.0, scale=1.95)
     import_kenney_glb("SofaSide", "loungeSofa.glb", (-0.65, 0.75, 0.0), rot_z=-math.pi * 0.5, scale=1.95)
+    mat_cush_gold = make_solid_mat("ElitePillowGold", (0.88, 0.66, 0.24), 0.72)
+    mat_cush_teal = make_solid_mat("ElitePillowTeal", (0.18, 0.52, 0.48), 0.72)
+    add_beveled_box("SofaPillowMainL", (0.30, 0.12, 0.30), (-2.55, 2.12, 0.58), mat_cush_gold, 0.04, (math.radians(-16), 0.0, 0.22))
+    add_beveled_box("SofaPillowMainR", (0.30, 0.12, 0.30), (-1.55, 2.12, 0.58), mat_cush_teal, 0.04, (math.radians(-16), 0.0, -0.22))
+    add_beveled_box("SofaPillowSide", (0.12, 0.30, 0.30), (-0.58, 0.75, 0.58), mat_cush_gold, 0.04, (0.0, math.radians(-16), 0.15))
     import_kenney_glb("TVConsole", "cabinetTelevision.glb", (-3.25, 0.65, 0.0), rot_z=math.pi * 0.5, scale=1.95)
     import_kenney_glb("LivingPlant1", "pottedPlant.glb", (-3.20, 2.25, 0.0), rot_z=0.3, scale=1.95)
     import_kenney_glb("LivingPlant2", "pottedPlant.glb", (3.25, 2.25, 0.0), rot_z=-0.4, scale=1.95)
 
-    # Dining Zone: Round Table + 4 Chairs
+    # Dining Zone: Round Table + Tableware + 4 Chairs
     import_kenney_glb("DiningTable", "tableRound.glb", (-1.35, -1.55, 0.0), rot_z=0.0, scale=1.95)
+    mat_bowl_g = make_solid_mat("DiningBowlGold", (0.86, 0.68, 0.28), 0.24, 0.80)
+    mat_plate_w = make_solid_mat("DiningPlateWhite", (0.95, 0.94, 0.91), 0.28)
+    for dpx, dpy in [(-1.62, -1.55), (-1.08, -1.55)]:
+        bpy.ops.mesh.primitive_cylinder_add(vertices=14, radius=0.11, depth=0.018, location=(dpx, dpy, 0.80))
+        bpy.context.active_object.data.materials.append(mat_plate_w)
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=14, ring_count=8, radius=0.12, location=(-1.35, -1.55, 0.84))
+    db = bpy.context.active_object
+    db.scale = (1.0, 1.0, 0.45)
+    bpy.ops.object.shade_smooth()
+    db.data.materials.append(mat_bowl_g)
     for ci, (cx, cy, crot) in enumerate([
         (-2.38, -1.55, math.pi * 0.5),
         (-0.32, -1.55, -math.pi * 0.5),
@@ -421,13 +438,24 @@ def build_elite_street():
             arch_objs.append(add_beveled_box(f"GatePillar_{px}", (0.55, 0.55, 2.10), (px, 1.0, 1.05), mat_batu, 0.02))
             arch_objs.append(add_beveled_box(f"GateLamp_{px}", (0.28, 0.28, 0.16), (px, 1.0, 2.18), mat_lamp, 0.01))
 
-    # Manicured trees, planter boxes & flowers (do NOT bake AO on Kenney foliage/cars)
-    for tx, ty, th, tglb in [
-        (-8.6, 1.4, 3.4, "common-tree-1.glb"),
-        (0.0, 2.2, 3.6, "common-tree-2.glb"),
-        (8.6, 1.4, 3.4, "common-tree-1.glb"),
-    ]:
-        import_kenney_glb(f"StreetTree_{tx}", tglb, (tx, ty, 0.08), rot_z=0.3, target_height=th)
+    # Smooth multi-lobe tropical trees for cluster_elite_street
+    mat_elite_trunk = make_solid_mat("EliteTreeTrunk", (0.36, 0.23, 0.14), 0.86)
+    mat_elite_leaf = make_solid_mat("EliteTreeLeaf", (0.20, 0.48, 0.18), 0.72)
+    for ti, (tx, ty, ts) in enumerate([
+        (-8.6, 1.4, 1.05),
+        (0.0, 2.2, 1.12),
+        (8.6, 1.4, 1.05),
+    ]):
+        bpy.ops.mesh.primitive_cylinder_add(vertices=10, radius=0.12 * ts, depth=1.65 * ts, location=(tx, ty, 0.88 * ts))
+        tr = bpy.context.active_object
+        bpy.ops.object.shade_smooth()
+        tr.data.materials.append(mat_elite_trunk)
+        for ox, oy, oz, rad in [(0.0, 0.0, 2.08, 0.72), (-0.36, 0.14, 1.80, 0.54), (0.36, -0.14, 1.82, 0.52)]:
+            bpy.ops.mesh.primitive_uv_sphere_add(segments=12, ring_count=8, radius=rad * ts, location=(tx + ox * ts, ty + oy * ts, oz * ts))
+            cn = bpy.context.active_object
+            cn.scale = (1.06, 1.02, 0.84)
+            bpy.ops.object.shade_smooth()
+            cn.data.materials.append(mat_elite_leaf)
 
     for px in (-2.4, 0.0, 2.4):
         import_kenney_glb(f"Planter_{px}", "planter.glb", (px, 0.9, 0.08), rot_z=0.0, scale=0.65)

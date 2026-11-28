@@ -845,8 +845,8 @@ func _initialize() -> void:
 	ArtAtmosphere.apply_lighting(cg_sun, cg_bounce, cg_env, "siang", "cerah")
 	_assert_true(cg_env.adjustment_enabled, "color adjustment enabled on Environment")
 	_assert_true(cg_env.adjustment_saturation >= 1.20, "sunny siang resets & boosts saturation >= 1.20")
-	_assert_true(cg_env.ambient_light_energy <= 0.38, "ambient energy stays crisp (<= 0.38) instead of washed out")
-	_assert_true(cg_bounce.light_energy <= 0.24, "bounce light subtle (<= 0.24) for shadow depth")
+	_assert_true(cg_env.ambient_light_energy >= 0.34 and cg_env.ambient_light_energy <= 0.48, "ambient energy stays warm & balanced (0.34..0.48)")
+	_assert_true(cg_bounce.light_energy >= 0.28 and cg_bounce.light_energy <= 0.45, "bounce light warm & lifts shadows (0.28..0.45)")
 	_assert_true(cg_sky_mat.sky_top_color.b > 0.85, "sunny sky top color vibrant tropical blue")
 	cg_sun.free()
 	cg_bounce.free()
@@ -1165,7 +1165,7 @@ func _initialize() -> void:
 		var sp_layer := mg_inst.find_child("SharpenPost", true, false) as CanvasLayer
 		var hud_layer := mg_inst.find_child("HUD", true, false) as CanvasLayer
 		_assert_true(wenv != null and wenv.environment.tonemap_mode == Environment.TONE_MAPPER_AGX, "main_game uses AgX tonemapper")
-		_assert_true(wenv != null and absf(wenv.environment.glow_bloom) < 0.001, "main_game disables soft bloom haze")
+		_assert_true(wenv != null and wenv.environment.glow_bloom <= 0.08, "main_game keeps bloom subtle (<= 0.08)")
 		_assert_true(sunl != null and sunl.directional_shadow_mode == DirectionalLight3D.SHADOW_ORTHOGONAL, "main_game uses tight orthogonal shadow map")
 		_assert_true(sp_layer != null and hud_layer != null and sp_layer.layer == 0 and sp_layer.layer < hud_layer.layer, "SharpenPost sits on layer 0 below HUD")
 		mg_inst.free()
@@ -1397,6 +1397,39 @@ func _initialize() -> void:
 	rem_miss["day"] = 11
 	var rem_dl := ArtWishlistStory.check_remittance_deadline(rem_miss)
 	_assert_true(bool(rem_dl["penalty_applied"]) and int(rem_dl["save"]["remittance_deadline_day"]) == 16, "check_remittance_deadline applies mood penalty once and extends grace deadline")
+
+	# 39. Round 2 World-Class Parity: Responsive Joystick/Phone, Warm Ground, Matte Characters & Export Hygiene
+	_assert_true(not ArtAtmosphere.should_show_virtual_joystick(Vector2(1280, 720), false, false), "desktop 1280x720 hides virtual joystick")
+	_assert_true(not ArtAtmosphere.should_show_virtual_joystick(Vector2(1280, 720), true, false), "touch-laptop at 1280x720 does not show virtual joystick")
+	_assert_true(ArtAtmosphere.should_show_virtual_joystick(Vector2(780, 437), true, true), "mobile 780x437 shows virtual joystick")
+	_assert_eq(Progression.get_phone_layout_mode(Vector2(780, 437)), "landscape", "780x437 uses landscape Smartphone OS layout")
+	_assert_eq(Progression.get_phone_layout_mode(Vector2(1280, 720)), "portrait", "1280x720 uses portrait Smartphone OS layout")
+
+	var char_root := Node3D.new()
+	var char_mesh := MeshInstance3D.new()
+	char_mesh.name = "BodySkin"
+	char_mesh.mesh = BoxMesh.new()
+	var cmat := StandardMaterial3D.new()
+	cmat.resource_name = "SkinMat"
+	cmat.roughness = 0.40
+	char_mesh.mesh.surface_set_material(0, cmat)
+	char_root.add_child(char_mesh)
+	var c_cache := {}
+	ArtSceneVisuals.apply_unified_material_pass(char_root, false, false, ol_mat, c_cache)
+	var cov := char_mesh.get_surface_override_material(0) as StandardMaterial3D
+	_assert_true(cov != null and cov.next_pass == null, "characters do not get harsh cel-outline next_pass")
+	_assert_true(cov != null and cov.roughness >= 0.70 and cov.metallic_specular <= 0.28, "character skin gets soft matte roughness without plastic glare")
+	char_root.free()
+
+	var tscn_txt := FileAccess.get_file_as_string("res://scenes/main_game.tscn")
+	_assert_true("ground_bottom_color = Color(0.11, 0.10, 0.12" in tscn_txt, "main_game.tscn ground_bottom_color uses warm dark studio charcoal instead of green void")
+	_assert_true("shadow_opacity = 0.68" in tscn_txt, "SunLight uses softer cozy shadow_opacity = 0.68")
+
+	var ep_txt2 := FileAccess.get_file_as_string("res://export_presets.cfg")
+	_assert_true("assets/portraits/_raw/*" in ep_txt2, "export_presets.cfg excludes intermediate _raw portrait renders")
+
+	_assert_true("should_show_virtual_joystick" in mg_src and "get_phone_layout_mode" in mg_src, "main_game wires responsive joystick and Smartphone OS layout")
+	_assert_true("_hp_bottom_left" in mg_src and "apply_unified_material_pass(player, false, false" in mg_src, "main_game places HP bottom-left and disables harsh character outline")
 
 	print("GODOT TDD RESULT: %d passed, %d failed" % [_passed, _failed])
 	quit(0 if _failed == 0 else 1)
