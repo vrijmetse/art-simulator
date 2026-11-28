@@ -11,8 +11,8 @@ os.makedirs(RAW_BUST_DIR, exist_ok=True)
 
 # (tag, glb_name, shirt_rgb, hijab_rgb, yaw_deg, extra_prop)
 UNIQUE_MODELS = [
-    ("player", "char_art.glb", (0.14, 0.46, 0.36), None, 12.0, None),
-    ("player_cepol", "char_art.glb", (0.14, 0.46, 0.36), None, 12.0, None),
+    ("player", "char_art.glb", (0.14, 0.46, 0.36), None, -14.0, None),
+    ("player_cepol", "char_art.glb", (0.78, 0.44, 0.28), None, 16.0, "headband"),
     ("player_hijab", "char_art_hijab.glb", (0.14, 0.46, 0.36), (0.14, 0.44, 0.34), -12.0, None),
     ("ibu_melati", "char_ibu.glb", (0.48, 0.14, 0.28), (0.58, 0.16, 0.34), 10.0, "glasses"),
     ("ibu_sari", "char_dewi.glb", (0.12, 0.46, 0.42), None, -16.0, "pearl"),

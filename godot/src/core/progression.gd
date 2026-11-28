@@ -609,3 +609,26 @@ static func get_phone_layout_mode(viewport_size: Vector2) -> String:
 	if viewport_size.y <= 500.0 and viewport_size.x > viewport_size.y:
 		return "landscape"
 	return "portrait"
+
+const COLOR_LABELS := {
+	"#4E7D63": {"id": "Hijau Batik", "en": "Batik Sage"},
+	"#C9855E": {"id": "Koral Hangat", "en": "Warm Coral"},
+	"#5A6D8C": {"id": "Biru Denim", "en": "Denim Blue"},
+	"#D6C5A9": {"id": "Krem Katun", "en": "Cotton Cream"},
+	"#8C4A5E": {"id": "Marun", "en": "Maroon"},
+	"#237A75": {"id": "Toska Rapi", "en": "Neat Teal"},
+	"#3E6B89": {"id": "Biru Langit", "en": "Sky Slate"},
+	"#7B4F6D": {"id": "Ungu Plum", "en": "Plum"},
+	"#A86444": {"id": "Cokelat Bata", "en": "Terracotta"},
+	"#1E3442": {"id": "Dongker Elite", "en": "Elite Navy"},
+	"#59382C": {"id": "Cokelat Kopi", "en": "Espresso"},
+	"#2C4A3B": {"id": "Hijau Zamrud", "en": "Forest Emerald"},
+	"#4A3E63": {"id": "Ungu Royal", "en": "Royal Indigo"},
+}
+
+static func get_color_label(hex: String, locale: String = "id") -> String:
+	var key := hex.strip_edges().to_upper()
+	if COLOR_LABELS.has(key):
+		var d: Dictionary = COLOR_LABELS[key]
+		return String(d.get("en" if locale == "en" else "id", key))
+	return "Warna Khusus" if locale != "en" else "Custom Color"

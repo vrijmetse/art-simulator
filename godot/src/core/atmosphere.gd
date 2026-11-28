@@ -32,6 +32,19 @@ static func should_show_virtual_joystick(viewport_size: Vector2, is_touch: bool,
 		return true
 	return false
 
+static func should_show_keyboard_hints(viewport_size: Vector2, is_touch: bool, is_mobile_os: bool = false) -> bool:
+	return not should_show_virtual_joystick(viewport_size, is_touch, is_mobile_os)
+
+static func format_action_prompt(action_label: String, locale: String = "id", show_key_hint: bool = true) -> String:
+	if show_key_hint:
+		return "[E] %s" % action_label
+	return ("%s: %s" % ["Tap" if locale == "en" else "Ketuk", action_label])
+
+static func format_tasks_hint(locale: String = "id", show_key_hint: bool = true) -> String:
+	if show_key_hint:
+		return "How: walk to green ring & press [E]" if locale == "en" else "Cara: dekati lingkaran hijau & tekan [E]"
+	return "How: walk to green ring & tap action" if locale == "en" else "Cara: dekati lingkaran hijau lalu ketuk aksi"
+
 static func get_weather(day: int, weather_fx: bool) -> String:
 	if not weather_fx:
 		return "cerah"

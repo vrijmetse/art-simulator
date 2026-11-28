@@ -209,9 +209,10 @@ var _toast_timer := 0.0
 var _tutorial_panel: PanelContainer
 var _lbl_tutorial: Label
 var _btn_tutorial_skip: Button
-var _world_prompt: PanelContainer
-var _lbl_world_prompt: Label
+var _world_prompt: Button
 var _modal_backdrop: ColorRect
+var _modal_card: PanelContainer
+var _modal_scroll: ScrollContainer
 var _modal_title: Label
 var _modal_list: VBoxContainer
 var _btn_modal_close: Button
@@ -1326,16 +1327,16 @@ func _process(delta: float) -> void:
 
 	var np := _nearest_portal()
 	var sn := _nearest_street_npc()
-	if ui_cover:
+	var show_key := _show_keyboard_hints()
+	if ui_cover or (_dialogue_bar != null and _dialogue_bar.visible) or (_phone_os_wrap != null and _phone_os_wrap.visible):
 		if _world_prompt != null:
 			_world_prompt.visible = false
 	elif not _in_shift:
 		if _world_prompt != null:
 			if np != null and not cam.is_position_behind(np.global_position):
 				var p_lbl := String(np.get_meta("label_en" if _loc() == "en" else "label_id", ""))
-				_lbl_world_prompt.text = "[E] %s" % p_lbl
-				var p_scr := cam.unproject_position(np.global_position + Vector3(0.0, 0.55, 0.0))
-				_world_prompt.position = p_scr - _world_prompt.size * 0.5
+				_world_prompt.text = Atmosphere.format_action_prompt(p_lbl, _loc(), show_key)
+				_position_world_prompt(np.global_position + Vector3(0.0, 0.72, 0.0))
 				_world_prompt.visible = true
 				var short_lbl := p_lbl.split(" ")[0] if p_lbl.length() > 8 else p_lbl
 				_set_dock_label("action", short_lbl)
@@ -1343,9 +1344,8 @@ func _process(delta: float) -> void:
 				var npos: Vector3 = sn.get("pos", Vector3.ZERO)
 				if not cam.is_position_behind(npos):
 					var n_lbl := String(sn.get("label_en") if _loc() == "en" else sn.get("label_id"))
-					_lbl_world_prompt.text = "[E] %s %s" % [_t("Ngobrol:", "Chat:"), n_lbl]
-					var n_scr := cam.unproject_position(npos + Vector3(0.0, 1.35, 0.0))
-					_world_prompt.position = n_scr - _world_prompt.size * 0.5
+					_world_prompt.text = Atmosphere.format_action_prompt("%s %s" % [_t("Ngobrol:", "Chat:"), n_lbl], _loc(), show_key)
+					_position_world_prompt(npos + Vector3(0.0, 1.55, 0.0))
 					_world_prompt.visible = true
 					_set_dock_label("action", _t("Ngobrol", "Chat"))
 				else:
@@ -1367,11 +1367,12 @@ func _process(delta: float) -> void:
 		if c is ChoreHotspotScene:
 			c.set_highlighted(c == near)
 	if _world_prompt != null:
-		if near != null and _active_chore_id == "" and not cam.is_position_behind(near.global_position):
+		if ui_cover or (_dialogue_bar != null and _dialogue_bar.visible) or (_phone_os_wrap != null and _phone_os_wrap.visible):
+			_world_prompt.visible = false
+		elif near != null and _active_chore_id == "" and not cam.is_position_behind(near.global_position):
 			var w_lbl: String = near.label_en if _loc() == "en" else near.label_id
-			_lbl_world_prompt.text = "[E] %s" % w_lbl
-			var scr := cam.unproject_position(near.global_position + Vector3(0.0, 0.45, 0.0))
-			_world_prompt.position = scr - _world_prompt.size * 0.5
+			_world_prompt.text = Atmosphere.format_action_prompt(w_lbl, _loc(), show_key)
+			_position_world_prompt(near.global_position + Vector3(0.0, 0.65, 0.0))
 			_world_prompt.visible = true
 			_set_dock_label("action", _t("Kerjakan", "Chore"))
 		elif _active_chore_id == "":
@@ -1380,9 +1381,8 @@ func _process(delta: float) -> void:
 				var sh_pos: Vector3 = sn_sh.get("pos", Vector3.ZERO)
 				if not cam.is_position_behind(sh_pos):
 					var sh_lbl := String(sn_sh.get("label_en") if _loc() == "en" else sn_sh.get("label_id"))
-					_lbl_world_prompt.text = "[E] %s %s" % [_t("Sapa:", "Greet:"), sh_lbl]
-					var sh_scr := cam.unproject_position(sh_pos + Vector3(0.0, 1.35, 0.0))
-					_world_prompt.position = sh_scr - _world_prompt.size * 0.5
+					_world_prompt.text = Atmosphere.format_action_prompt("%s %s" % [_t("Sapa:", "Greet:"), sh_lbl], _loc(), show_key)
+					_position_world_prompt(sh_pos + Vector3(0.0, 1.55, 0.0))
 					_world_prompt.visible = true
 					_set_dock_label("action", _t("Sapa", "Greet"))
 				else:
@@ -1401,7 +1401,7 @@ func _process(delta: float) -> void:
 		_bar_chore.max_value = _chore_duration
 		_bar_chore.value = _chore_progress
 		var cfg: Dictionary = ChoreEngine.CHORES[_active_chore_id]
-		var tap_hint := _t("  [Ketuk E = Cepat!]", "  [Tap E = Boost!]") if _chore_boosts_used < ChoreEngine.MAX_TAP_BOOSTS_PER_CHORE else "  ⚡"
+		var tap_hint := (_t("  [Tekan E = Cepat!]", "  [Press E = Boost!]") if show_key else _t("  [Ketuk Aksi = Cepat!]", "  [Tap Action = Boost!]")) if _chore_boosts_used < ChoreEngine.MAX_TAP_BOOSTS_PER_CHORE else "  ⚡"
 		_lbl_chore_prog.text = "%s%s" % [String(cfg["label_en"] if _loc() == "en" else cfg["label_id"]), tap_hint]
 		if _chore_progress >= _chore_duration:
 			_chore_bar_wrap.visible = false
@@ -1553,6 +1553,19 @@ func _effective_window_size() -> Vector2:
 		return win
 	return get_viewport().get_visible_rect().size
 
+func _show_keyboard_hints() -> bool:
+	return Atmosphere.should_show_keyboard_hints(_effective_window_size(), DisplayServer.is_touchscreen_available(), OS.has_feature("mobile"))
+
+func _position_world_prompt(world_pos: Vector3) -> void:
+	if _world_prompt == null or cam == null:
+		return
+	var scr := cam.unproject_position(world_pos)
+	var vp := get_viewport().get_visible_rect().size
+	var sz := _world_prompt.get_combined_minimum_size().max(_world_prompt.size)
+	var px := clampf(scr.x - sz.x * 0.5, 8.0, maxf(8.0, vp.x - sz.x - 8.0))
+	var py := clampf(scr.y - sz.y - 18.0, 78.0, maxf(78.0, vp.y - sz.y - 96.0))
+	_world_prompt.position = Vector2(px, py)
+
 func _format_meta_clock() -> String:
 	return LifeRhythm.format_clock(int(_save.get("game_minutes", 360))).replace(":", ".")
 
@@ -1656,7 +1669,8 @@ func _refresh_hud() -> void:
 			row.add_theme_color_override("font_color", Color(0.50, 0.95, 0.52) if bool(item["done"]) else Color(0.95, 0.94, 0.90))
 			_tasks_list.add_child(row)
 		var hint_row := Label.new()
-		hint_row.text = _t("Cara: dekati lingkaran hijau & tekan [E]", "How: walk to green ring & press [E]")
+		hint_row.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		hint_row.text = Atmosphere.format_tasks_hint(_loc(), _show_keyboard_hints())
 		hint_row.add_theme_font_size_override("font_size", 11)
 		hint_row.add_theme_color_override("font_color", Color(0.72, 0.88, 0.98))
 		_tasks_list.add_child(hint_row)
@@ -1743,9 +1757,27 @@ func _refresh_tutorial_banner() -> void:
 		_tutorial_panel.visible = false
 	_refresh_spotlight()
 
+func _auto_style_modal_buttons(node: Node) -> void:
+	for ch in node.get_children():
+		if ch is Button:
+			var b := ch as Button
+			b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			b.custom_minimum_size.y = maxf(b.custom_minimum_size.y, 44.0)
+			if not b.has_theme_stylebox_override("normal") and not b.has_meta("skip_auto_style"):
+				_style_btn(b, Color(0.15, 0.19, 0.27), Color(0.95, 0.78, 0.26, 0.85))
+		elif ch.get_child_count() > 0:
+			_auto_style_modal_buttons(ch)
+
 func _show_modal() -> void:
 	if _is_sleeping:
 		return
+	var vs := _effective_window_size()
+	if _modal_card != null:
+		_modal_card.custom_minimum_size = Vector2(minf(540.0, vs.x - 32.0), minf(320.0, vs.y - 28.0))
+	if _modal_scroll != null:
+		_modal_scroll.custom_minimum_size = Vector2(minf(500.0, vs.x - 68.0), minf(240.0, vs.y - 140.0))
+	if _modal_list != null:
+		_auto_style_modal_buttons(_modal_list)
 	if _modal_backdrop != null:
 		_modal_backdrop.visible = true
 	_refresh_tutorial_banner()
@@ -2018,16 +2050,24 @@ func _open_low_energy_modal(cur_e: int) -> void:
 func _open_storybook_modal() -> void:
 	_clear_modal()
 	_modal_title.text = _t("BUKU CERITA PERJALANAN ART", "ART JOURNEY STORY BOOK")
+	var sub := Label.new()
+	sub.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	sub.text = _t("Setiap langkah kariermu dari kamar kos hingga Cluster Elite tercatat di sini.", "Every milestone from your simple kos room to Cluster Elite is recorded here.")
+	sub.add_theme_font_size_override("font_size", 12)
+	sub.add_theme_color_override("font_color", Color(0.84, 0.88, 0.94))
+	_modal_list.add_child(sub)
 	for entry in WishlistStory.get_storybook_entries(_save, _loc()):
 		var btn := Button.new()
 		var ok_u := bool(entry["unlocked"])
 		if ok_u:
 			btn.text = "✓ %s" % String(entry["title"])
+			_style_btn(btn, Color(0.16, 0.34, 0.30), Color(0.96, 0.78, 0.26))
 			var ch_dict: Dictionary = entry["chapter"]
 			btn.pressed.connect(func(): _open_chapter_modal(ch_dict))
 		else:
-			btn.text = "%s (%s %d XP)" % [String(entry["title"]), _t("Terkunci •", "Locked •"), int(entry["min_xp"])]
+			btn.text = "🔒 %s (%s %d XP)" % [String(entry["title"]), _t("Buka di", "Unlocks at"), int(entry["min_xp"])]
 			btn.disabled = true
+			_style_btn(btn, Color(0.14, 0.16, 0.20), Color(0.45, 0.45, 0.48))
 		_modal_list.add_child(btn)
 	_show_modal()
 
@@ -2044,29 +2084,43 @@ func _open_chapter_modal(ch: Dictionary) -> void:
 	_save = WishlistStory.mark_chapter_seen(_save, String(ch.get("id", "")))
 	SaveStore.save_to_slot(_save, _active_slot)
 	_modal_title.text = String(ch["title_en"] if _loc() == "en" else ch["title_id"])
+	var story_card := PanelContainer.new()
+	story_card.add_theme_stylebox_override("panel", _make_box(Color(0.12, 0.16, 0.24), Color(0.96, 0.78, 0.26, 0.80), 12, 12, 10))
 	var hdr_row := HBoxContainer.new()
-	hdr_row.add_theme_constant_override("separation", 10)
+	hdr_row.add_theme_constant_override("separation", 12)
+	var p_frame := PanelContainer.new()
+	p_frame.custom_minimum_size = Vector2(72, 72)
+	p_frame.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	p_frame.add_theme_stylebox_override("panel", _make_box(Color(0.08, 0.12, 0.18), Color(0.96, 0.78, 0.26), 10, 2, 2))
 	var p_rect := TextureRect.new()
 	p_rect.texture = _get_player_portrait_tex("happy")
-	p_rect.custom_minimum_size = Vector2(48, 48)
-	p_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	hdr_row.add_child(p_rect)
+	p_rect.custom_minimum_size = Vector2(66, 66)
+	p_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	p_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	p_frame.add_child(p_rect)
+	hdr_row.add_child(p_frame)
 	var body := Label.new()
 	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	body.custom_minimum_size = Vector2(360, 0)
+	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	body.text = String(ch["body_en"] if _loc() == "en" else ch["body_id"])
-	body.add_theme_color_override("font_color", Color(0.95, 0.94, 0.90))
+	body.add_theme_font_size_override("font_size", 13)
+	body.add_theme_color_override("font_color", Color(0.96, 0.95, 0.92))
 	hdr_row.add_child(body)
-	_modal_list.add_child(hdr_row)
+	story_card.add_child(hdr_row)
+	_modal_list.add_child(story_card)
 	var ch_tier := String(ch.get("tier_id", "kamar_kos"))
 	var q_txt := WishlistStory.get_tier_milestone_quote(ch_tier, _loc())
 	if q_txt != "":
+		var q_card := PanelContainer.new()
+		q_card.add_theme_stylebox_override("panel", _make_box(Color(0.18, 0.14, 0.08), Color(0.96, 0.80, 0.34, 0.75), 10, 12, 8))
 		var qlbl := Label.new()
 		qlbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		qlbl.custom_minimum_size = Vector2(400, 0)
+		qlbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		qlbl.text = q_txt
-		qlbl.add_theme_color_override("font_color", Color(0.96, 0.82, 0.38))
-		_modal_list.add_child(qlbl)
+		qlbl.add_theme_font_size_override("font_size", 13)
+		qlbl.add_theme_color_override("font_color", Color(0.98, 0.86, 0.42))
+		q_card.add_child(qlbl)
+		_modal_list.add_child(q_card)
 	_show_modal()
 
 func _open_wishlist_modal() -> void:
@@ -2117,16 +2171,23 @@ func _open_wardrobe_modal() -> void:
 		var unlocked := CareerTiers.can_equip_outfit(oid, xp)
 		var lbl := Label.new()
 		var name_txt := String(o["label_en"] if _loc() == "en" else o["label_id"])
+		lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		lbl.text = "%s (%d XP)%s" % [name_txt, int(o["min_xp"]), " ✓" if oid == cur_oid else ""]
+		lbl.add_theme_color_override("font_color", Color(0.98, 0.86, 0.38) if unlocked else Color(0.70, 0.72, 0.76))
 		_modal_list.add_child(lbl)
 		var hbox := HBoxContainer.new()
+		hbox.add_theme_constant_override("separation", 6)
 		for hex in o["customizable_colors"]:
+			var ch := String(hex)
+			var col_val := Color.html(ch)
+			var is_light := col_val.get_luminance() > 0.52
 			var b := Button.new()
-			b.text = String(hex)
+			b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			b.text = Progression.get_color_label(ch, _loc())
 			b.disabled = not unlocked
-			b.modulate = Color.html(String(hex))
+			_style_btn(b, col_val, Color(0.96, 0.78, 0.26) if unlocked else Color(0.45, 0.45, 0.48), Color(0.10, 0.08, 0.06) if is_light else Color(0.98, 0.97, 0.94))
 			b.pressed.connect(func():
-				var res := Progression.equip_outfit(_save, oid, String(hex))
+				var res := Progression.equip_outfit(_save, oid, ch)
 				if res["ok"]:
 					_save = res["save"]
 					SaveStore.save_to_slot(_save, _active_slot)
@@ -2232,6 +2293,8 @@ func _open_rent_modal(res: Dictionary = {}, leveled_up_to: int = 0) -> void:
 	p_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	hdr_row.add_child(p_rect)
 	var quote_lbl := Label.new()
+	quote_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	quote_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	quote_lbl.text = _t("\"Waktunya bayar sewa kamar mingguan ya, Neng.\"", "\"Time for your weekly kos room rent.\"")
 	quote_lbl.add_theme_color_override("font_color", Color(0.98, 0.88, 0.65))
 	hdr_row.add_child(quote_lbl)
@@ -2257,6 +2320,8 @@ func _open_rent_modal(res: Dictionary = {}, leveled_up_to: int = 0) -> void:
 	var rent_rp := pending if pending > 0 else 120000
 	var bal := int(_save.get("balance_rp", 0))
 	var info := Label.new()
+	info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	info.text = _t(
 		"Tagihan sewa kamar kos: %s.\nSaldo dompetmu: %s." % [I18n.format_balance(rent_rp, "id"), I18n.format_balance(bal, "id")],
 		"Kos room rent due: %s.\nYour wallet: %s." % [I18n.format_balance(rent_rp, "en"), I18n.format_balance(bal, "en")]
@@ -2559,6 +2624,7 @@ func _make_box(bg: Color, border: Color, radius: int = 12, pad_h: int = 12, pad_
 	return sb
 
 func _style_btn(btn: Button, bg: Color, border: Color, txt: Color = Color(0.98, 0.97, 0.94)) -> void:
+	btn.custom_minimum_size.y = maxf(btn.custom_minimum_size.y, 44.0)
 	btn.add_theme_stylebox_override("normal", _make_box(bg, border, 10, 12, 7))
 	btn.add_theme_stylebox_override("hover", _make_box(bg.lightened(0.10), border, 10, 12, 7))
 	btn.add_theme_stylebox_override("pressed", _make_box(bg.darkened(0.12), border, 10, 12, 7))
@@ -2836,14 +2902,14 @@ func _build_hud() -> void:
 	tc_center.add_child(tc_v)
 	hud.add_child(tc_center)
 
-	# World floating prompt for nearest chore
-	_world_prompt = PanelContainer.new()
+	# World floating prompt for nearest chore/portal/NPC (tappable on mobile & clickable on desktop!)
+	_world_prompt = Button.new()
 	_world_prompt.visible = false
-	_world_prompt.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_world_prompt.add_theme_stylebox_override("panel", _make_box(Color(0.16, 0.56, 0.40, 0.94), Color(0.96, 0.84, 0.42), 10, 10, 5))
-	_lbl_world_prompt = Label.new()
-	_lbl_world_prompt.add_theme_color_override("font_color", light_ink)
-	_world_prompt.add_child(_lbl_world_prompt)
+	_world_prompt.focus_mode = Control.FOCUS_NONE
+	_world_prompt.mouse_filter = Control.MOUSE_FILTER_STOP
+	_world_prompt.custom_minimum_size = Vector2(0, 44)
+	_style_btn(_world_prompt, Color(0.14, 0.54, 0.38, 0.95), Color(0.96, 0.84, 0.42), light_ink)
+	_world_prompt.pressed.connect(_trigger_world_action)
 	hud.add_child(_world_prompt)
 
 	# Chore progress bar (anchored bottom-center)
@@ -2963,26 +3029,27 @@ func _build_hud() -> void:
 	_modal_backdrop.visible = false
 	var center := CenterContainer.new()
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
-	var card := PanelContainer.new()
-	card.custom_minimum_size = Vector2(490, 260)
-	card.add_theme_stylebox_override("panel", _make_box(Color(0.08, 0.09, 0.12, 0.96), Color(0.96, 0.78, 0.26), 16, 18, 14))
+	_modal_card = PanelContainer.new()
+	_modal_card.custom_minimum_size = Vector2(490, 260)
+	_modal_card.add_theme_stylebox_override("panel", _make_box(Color(0.08, 0.09, 0.12, 0.96), Color(0.96, 0.78, 0.26), 16, 18, 14))
 	var vb := VBoxContainer.new()
 	vb.add_theme_constant_override("separation", 10)
 	var hdr_pill := PanelContainer.new()
 	hdr_pill.add_theme_stylebox_override("panel", gold_pill)
 	_modal_title = Label.new()
 	_modal_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_modal_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_modal_title.add_theme_font_size_override("font_size", 15)
 	_modal_title.add_theme_color_override("font_color", dark_ink)
 	hdr_pill.add_child(_modal_title)
-	var sc := ScrollContainer.new()
-	sc.custom_minimum_size = Vector2(454, 240)
-	sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_modal_scroll = ScrollContainer.new()
+	_modal_scroll.custom_minimum_size = Vector2(454, 240)
+	_modal_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_modal_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_modal_list = VBoxContainer.new()
 	_modal_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_modal_list.add_theme_constant_override("separation", 8)
-	sc.add_child(_modal_list)
+	_modal_scroll.add_child(_modal_list)
 	_btn_modal_close = Button.new()
 	_style_btn(_btn_modal_close, Color(0.96, 0.78, 0.24), Color(0.99, 0.89, 0.48), dark_ink)
 	_btn_modal_close.pressed.connect(func():
@@ -2998,10 +3065,10 @@ func _build_hud() -> void:
 				_open_chapter_modal(ep)
 	)
 	vb.add_child(hdr_pill)
-	vb.add_child(sc)
+	vb.add_child(_modal_scroll)
 	vb.add_child(_btn_modal_close)
-	card.add_child(vb)
-	center.add_child(card)
+	_modal_card.add_child(vb)
+	center.add_child(_modal_card)
 	_modal_backdrop.add_child(center)
 	hud.add_child(_modal_backdrop)
 
@@ -3875,6 +3942,7 @@ func _render_phone_app() -> void:
 				_phone_os_body.add_child(send_b)
 	elif _phone_os_app == "shop":
 		var hdr := Label.new()
+		hdr.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		hdr.text = _t("Belanja Perlengkapan (Antar Kurir 16 dtk)", "Supply Shop (16s Courier Delivery)")
 		hdr.add_theme_color_override("font_color", Color(0.98, 0.84, 0.34))
 		_phone_os_body.add_child(hdr)
@@ -3882,6 +3950,7 @@ func _render_phone_app() -> void:
 			var it_id := String(raw_id)
 			var it: Dictionary = Progression.SUPPLY_SHOP_ITEMS[it_id]
 			var row_b := Button.new()
+			row_b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			var lbl := String(it["label_en"] if _loc() == "en" else it["label_id"])
 			row_b.text = "%s — %s\n%s" % [lbl, I18n.format_balance(int(it["cost_rp"]), _loc()), String(it["desc_en"] if _loc() == "en" else it["desc_id"])]
 			row_b.disabled = int(_save.get("balance_rp", 0)) < int(it["cost_rp"])
@@ -3959,6 +4028,8 @@ func _render_phone_app() -> void:
 				var paid := bool(row.get("paid", false))
 				var amt := int(row.get("amount_rp", 0))
 				var rb := Button.new()
+				rb.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+				_style_btn(rb, Color(0.16, 0.22, 0.30), Color(0.95, 0.78, 0.26, 0.75))
 				if paid:
 					rb.text = "✓ %s · %s (%s)" % [String(row["who"]), I18n.format_balance(amt, _loc()), _t("Lunas", "Paid")]
 					rb.disabled = true

@@ -1431,5 +1431,22 @@ func _initialize() -> void:
 	_assert_true("should_show_virtual_joystick" in mg_src and "get_phone_layout_mode" in mg_src, "main_game wires responsive joystick and Smartphone OS layout")
 	_assert_true("_hp_bottom_left" in mg_src and "apply_unified_material_pass(player, false, false" in mg_src, "main_game places HP bottom-left and disables harsh character outline")
 
+	# 40. Mobile Touch Prompts (Zero [E] on Touch), Tappable World Prompt, Friendly Color Labels & Modal Wrapping
+	_assert_true(not ArtAtmosphere.should_show_keyboard_hints(Vector2(780, 437), true, true), "mobile 780x437 hides keyboard [E] hints")
+	_assert_true(not ArtAtmosphere.should_show_keyboard_hints(Vector2(900, 600), true, false), "narrow touch screen hides keyboard [E] hints")
+	_assert_true(ArtAtmosphere.should_show_keyboard_hints(Vector2(1280, 720), false, false), "desktop 1280x720 shows keyboard [E] hints")
+	_assert_eq(ArtAtmosphere.format_action_prompt("Keluar Kamar", "id", true), "[E] Keluar Kamar", "desktop prompt keeps [E] shortcut")
+	_assert_eq(ArtAtmosphere.format_action_prompt("Keluar Kamar", "id", false), "Ketuk: Keluar Kamar", "mobile ID prompt says Ketuk without [E]")
+	_assert_eq(ArtAtmosphere.format_action_prompt("Step Outside", "en", false), "Tap: Step Outside", "mobile EN prompt says Tap without [E]")
+	_assert_true(not ("[E]" in ArtAtmosphere.format_tasks_hint("id", false)), "mobile ID tasks hint has zero [E]")
+	_assert_true(not ("[E]" in ArtAtmosphere.format_tasks_hint("en", false)), "mobile EN tasks hint has zero [E]")
+	_assert_true("[E]" in ArtAtmosphere.format_tasks_hint("id", true), "desktop tasks hint shows [E]")
+	_assert_true(not ("[E]" in ArtWishlistStory.get_tutorial_hint(2, "id", false)), "mobile tutorial step 2 ID omits [E]")
+	_assert_true(not ("[E]" in ArtWishlistStory.get_tutorial_hint(2, "en", false)), "mobile tutorial step 2 EN omits [E]")
+	_assert_eq(Progression.get_color_label("#4E7D63", "id"), "Hijau Batik", "wardrobe color #4E7D63 maps to Hijau Batik (no raw hex)")
+	_assert_eq(Progression.get_color_label("#4E7D63", "en"), "Batik Sage", "wardrobe color #4E7D63 maps to Batik Sage in EN")
+	_assert_true("format_action_prompt" in mg_src and "_world_prompt: Button" in mg_src, "main_game makes _world_prompt a tappable Button using format_action_prompt")
+	_assert_true("_modal_card" in mg_src and "_modal_scroll" in mg_src and "AUTOWRAP_WORD_SMART" in mg_src, "main_game sizes modal responsively and wraps buttons")
+
 	print("GODOT TDD RESULT: %d passed, %d failed" % [_passed, _failed])
 	quit(0 if _failed == 0 else 1)

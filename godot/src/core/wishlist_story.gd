@@ -203,14 +203,16 @@ static func get_newly_unlocked_chapter_tier(prev_xp: int, new_xp: int, save: Dic
 				found = tid
 	return found
 
-static func get_tutorial_hint(step: int, locale: String = "id") -> String:
+static func get_tutorial_hint(step: int, locale: String = "id", show_key_hint: bool = true) -> String:
 	match step:
 		0:
 			return "Step 1/4: Step out of your room to the street." if locale == "en" else "Langkah 1/4: Keluar dari kamar kos menuju jalanan."
 		1:
 			return "Step 2/4: Greet a neighbor or enter Employer's House." if locale == "en" else "Langkah 2/4: Sapa tetangga atau masuk ke Rumah Majikan."
 		2:
-			return "Step 3/4: Complete a household task [E]." if locale == "en" else "Langkah 3/4: Kerjakan tugas rumah tangga [E]."
+			if show_key_hint:
+				return "Step 3/4: Complete a household task [E]." if locale == "en" else "Langkah 3/4: Kerjakan tugas rumah tangga [E]."
+			return "Step 3/4: Walk to a green circle & tap action." if locale == "en" else "Langkah 3/4: Dekati lingkaran hijau & ketuk aksi."
 		3:
 			return "Step 4/4: Finish your shift when tasks are done." if locale == "en" else "Langkah 4/4: Selesaikan shift setelah tugas beres."
 		_:
