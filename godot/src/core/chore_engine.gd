@@ -178,6 +178,17 @@ static func is_shift_complete(shift: Dictionary) -> bool:
 			return false
 	return true
 
+static func compute_room_cleanliness(shift: Dictionary, active_chore_id: String = "", active_ratio: float = 0.0) -> int:
+	var assigned: Array = shift.get("assigned_ids", [])
+	if assigned.is_empty():
+		return 0
+	var completed: Array = shift.get("completed_ids", [])
+	var total := float(assigned.size())
+	var units := float(completed.size())
+	if active_chore_id != "" and (active_chore_id in assigned) and not (active_chore_id in completed):
+		units += clampf(active_ratio, 0.0, 1.0)
+	return clampi(int(round((units / total) * 100.0)), 0, 100)
+
 static func rest_recover(shift: Dictionary, gain: int) -> Dictionary:
 	var nxt := shift.duplicate(true)
 	var max_e := maxi(10, int(nxt.get("max_energy", 100)))

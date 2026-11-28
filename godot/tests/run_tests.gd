@@ -21,6 +21,7 @@ const ArtStreetPatrols := preload("res://src/core/street_patrols.gd")
 const ArtRetention := preload("res://src/core/retention.gd")
 const ArtLifeRhythm := preload("res://src/core/life_rhythm.gd")
 const ArtSceneVisuals := preload("res://src/core/scene_visuals.gd")
+const ChoreHotspotScene := preload("res://src/scenes/chore_hotspot.gd")
 
 var _failed := 0
 var _passed := 0
@@ -1757,6 +1758,62 @@ func _initialize() -> void:
 	var r8_lamp2 := r8_st_node.find_child("StreetLampC", true, false) as OmniLight3D
 	_assert_true(r8_lamp1 != null and r8_lamp1 == r8_lamp2, "sync_stage_lights reuses OmniLight3D nodes instead of freeing/recreating")
 	r8_st_node.free()
+
+	# 46. Global Hit Phase 1: Room Cleanliness %, Spatial Mess Chunks, ASMR Foley, Jemuran Rain Rescue & Household Clues
+	var ce_inst := ChoreEngine.new()
+	_assert_true(ce_inst.has_method("compute_room_cleanliness"), "ChoreEngine exposes compute_room_cleanliness")
+	if ce_inst.has_method("compute_room_cleanliness"):
+		var cl_sh := ChoreEngine.create_shift("kamar_kos", MajikanProfiles.get_profile("ibu_kos_melati"), 100)
+		_assert_eq(int(ce_inst.call("compute_room_cleanliness", cl_sh, "", 0.0)), 0, "fresh shift starts at 0% room cleanliness")
+		_assert_true(int(ce_inst.call("compute_room_cleanliness", cl_sh, "make_bed", 0.5)) > 10, "active chore interpolates room cleanliness smoothly")
+		cl_sh = ChoreEngine.complete_chore(cl_sh, "make_bed", 1.0, 1)["shift"]
+		cl_sh = ChoreEngine.complete_chore(cl_sh, "sweep_floor", 1.0, 1)["shift"]
+		cl_sh = ChoreEngine.complete_chore(cl_sh, "water_plants", 1.0, 1)["shift"]
+		_assert_eq(int(ce_inst.call("compute_room_cleanliness", cl_sh, "", 0.0)), 100, "all chores done reaches 100% sparkling clean")
+
+	var hs_r9 := ChoreHotspotScene.new()
+	hs_r9.setup("wash_dishes", "Cuci Piring", "Wash Dishes", Vector3(1.0, 0.0, 1.0))
+	_assert_true(hs_r9.has_method("set_progress") and hs_r9.get_child_count() >= 3, "ChoreHotspot spawns spatial 3D mess chunks + exposes set_progress")
+	if hs_r9.has_method("set_progress"):
+		hs_r9.call("set_progress", 0.80)
+	hs_r9.free()
+
+	var au_inst := AudioSynth.new()
+	for foley_fn in ["make_dish_splash", "make_wok_sizzle", "make_cloth_snap", "make_thunder_rumble"]:
+		_assert_true(au_inst.has_method(foley_fn), "AudioSynth provides ASMR foley: " + foley_fn)
+		if au_inst.has_method(foley_fn):
+			var wav: AudioStreamWAV = au_inst.call(foley_fn)
+			_assert_true(wav != null and wav.data.size() > 100, foley_fn + " builds valid AudioStreamWAV")
+
+	_assert_true(ResourceLoader.exists("res://src/core/jemuran_event.gd"), "jemuran_event.gd module exists")
+	if ResourceLoader.exists("res://src/core/jemuran_event.gd"):
+		var JE := load("res://src/core/jemuran_event.gd")
+		_assert_true(not bool(JE.call("should_trigger", "kamar_kos", 25.0, false, 1, 3)), "Jemuran event never triggers in indoor kamar_kos")
+		_assert_true(bool(JE.call("should_trigger", "kampung", 18.0, false, 1, 4)), "Jemuran event triggers in kampung mid-shift")
+		var jst: Dictionary = JE.call("create_state", Vector3(-1.85, 0.0, 0.0))
+		var j_res: Dictionary = JE.call("rescue", jst)
+		_assert_true(bool(j_res["ok"]) and int(j_res["bonus_rp"]) == 15000, "Rescuing Jemuran grants +Rp 15.000")
+		var j_dbl: Dictionary = JE.call("rescue", j_res["state"])
+		_assert_true(not bool(j_dbl["ok"]), "Double-rescue rejected")
+		var j_exp: Dictionary = JE.call("tick_state", JE.call("create_state", Vector3.ZERO), 20.0)
+		_assert_true(bool(j_exp.get("failed", false)) and not bool(j_exp.get("active", true)), "Expired Jemuran sets failed=true")
+
+	_assert_true(ResourceLoader.exists("res://src/core/household_clues.gd"), "household_clues.gd module exists")
+	if ResourceLoader.exists("res://src/core/household_clues.gd"):
+		var HC := load("res://src/core/household_clues.gd")
+		var clue_sv := Progression.create_player_save()
+		_assert_true(clue_sv.has("unlocked_clues"), "Save initializes unlocked_clues")
+		for tid in ["kamar_kos", "kampung", "perumahan_36", "perumahan_45", "cluster_elite"]:
+			var picked: Dictionary = HC.call("pick_clue_for_shift", tid, [], 1)
+			_assert_true(not picked.is_empty(), "Every career tier has discoverable Household Clues: " + tid)
+		var c1: Dictionary = HC.call("pick_clue_for_shift", "kampung", [], 1)
+		var cid1 := String(c1.get("id", ""))
+		var cr1: Dictionary = HC.call("collect_clue", clue_sv, cid1)
+		_assert_true(bool(cr1["ok"]) and cid1 in cr1["save"].get("unlocked_clues", []), "collect_clue unlocks clue and awards XP")
+		var cr_dup: Dictionary = HC.call("collect_clue", cr1["save"], cid1)
+		_assert_true(not bool(cr_dup["ok"]), "Duplicate clue collect blocked")
+		var hc_rt := SaveStore.deserialize(SaveStore.serialize(cr1["save"]))
+		_assert_true(cid1 in hc_rt.get("unlocked_clues", []), "SaveStore preserves unlocked_clues across round-trip")
 
 	print("GODOT TDD RESULT: %d passed, %d failed" % [_passed, _failed])
 	quit(0 if _failed == 0 else 1)

@@ -20,6 +20,8 @@ const WishlistStory := preload("res://src/core/wishlist_story.gd")
 const StreetPatrols := preload("res://src/core/street_patrols.gd")
 const Retention := preload("res://src/core/retention.gd")
 const LifeRhythm := preload("res://src/core/life_rhythm.gd")
+const JemuranEvent := preload("res://src/core/jemuran_event.gd")
+const HouseholdClues := preload("res://src/core/household_clues.gd")
 const PlayerControllerScene := preload("res://src/scenes/player_controller.gd")
 const ChoreHotspotScene := preload("res://src/scenes/chore_hotspot.gd")
 
@@ -86,6 +88,15 @@ var _wav_chore_tick: AudioStreamWAV
 var _wav_step: AudioStreamWAV
 var _wav_prayer: AudioStreamWAV
 var _wav_sleep: AudioStreamWAV
+var _wav_dish: AudioStreamWAV
+var _wav_sizzle: AudioStreamWAV
+var _wav_cloth: AudioStreamWAV
+var _wav_thunder: AudioStreamWAV
+var _jemuran_state: Dictionary = {}
+var _jemuran_triggered_shift := false
+var _jemuran_node: Node3D = null
+var _shift_clue: Dictionary = {}
+var _clue_node: Node3D = null
 var _bgm_player: AudioStreamPlayer
 var _rain_player: AudioStreamPlayer
 var _step_player: AudioStreamPlayer
@@ -268,6 +279,10 @@ func _ready() -> void:
 	_wav_step = AudioSynth.make_footstep_tick()
 	_wav_prayer = AudioSynth.make_prayer_chime()
 	_wav_sleep = AudioSynth.make_sleep_lullaby()
+	_wav_dish = AudioSynth.make_dish_splash()
+	_wav_sizzle = AudioSynth.make_wok_sizzle()
+	_wav_cloth = AudioSynth.make_cloth_snap()
+	_wav_thunder = AudioSynth.make_thunder_rumble()
 
 	_bgm_player = AudioStreamPlayer.new()
 	_bgm_player.name = "BgmPlayer"
@@ -831,6 +846,7 @@ func _enter_home_mode() -> void:
 	if _toast_panel != null:
 		_toast_panel.visible = false
 	_clear_hotspots()
+	_clear_shift_events()
 	_portal_nodes.clear()
 	var tier_id := String(_save.get("active_tier_id", "kamar_kos"))
 	var tier := CareerTiers.get_tier(tier_id)
@@ -870,6 +886,7 @@ func _enter_street_mode(from_mode: String = "home") -> void:
 	if _toast_panel != null:
 		_toast_panel.visible = false
 	_clear_hotspots()
+	_clear_shift_events()
 	_portal_nodes.clear()
 
 	var tier_id := String(_save.get("active_tier_id", "kamar_kos"))
@@ -947,6 +964,10 @@ func _start_shift(force_low_energy: bool = false) -> void:
 	_shift_npcs_data = NpcRoster.get_shift_npcs(tier_id)
 	_spawn_npcs(_shift_npcs_data)
 	_clear_street_traffic()
+	_clear_shift_events()
+	_shift_clue = HouseholdClues.pick_clue_for_shift(tier_id, _save.get("unlocked_clues", []), int(_save.get("day", 1)))
+	if not _shift_clue.is_empty():
+		_spawn_clue_marker(HouseholdClues.get_clue_pos(tier_id))
 	if int(_save.get("tutorial_step", 0)) < 2:
 		_save = WishlistStory.advance_tutorial(_save, 2)
 		SaveStore.save_to_slot(_save, _active_slot)
@@ -962,6 +983,127 @@ func _start_shift(force_low_energy: bool = false) -> void:
 func _clear_hotspots() -> void:
 	for c in hotspots_root.get_children():
 		c.queue_free()
+
+func _clear_shift_events() -> void:
+	_jemuran_state = {}
+	_jemuran_triggered_shift = false
+	if _jemuran_node != null and is_instance_valid(_jemuran_node):
+		_jemuran_node.queue_free()
+	_jemuran_node = null
+	_shift_clue = {}
+	if _clue_node != null and is_instance_valid(_clue_node):
+		_clue_node.queue_free()
+	_clue_node = null
+
+func _spawn_clue_marker(pos: Vector3) -> void:
+	if _clue_node != null and is_instance_valid(_clue_node):
+		_clue_node.queue_free()
+	_clue_node = Node3D.new()
+	_clue_node.position = Vector3(pos.x, 0.35, pos.z)
+	var gem := MeshInstance3D.new()
+	var pm := BoxMesh.new()
+	pm.size = Vector3(0.16, 0.16, 0.16)
+	gem.mesh = pm
+	gem.rotation_degrees = Vector3(35.0, 45.0, 35.0)
+	gem.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.99, 0.84, 0.28)
+	mat.emission_enabled = true
+	mat.emission = Color(0.99, 0.80, 0.22)
+	mat.emission_energy_multiplier = 0.85
+	gem.material_override = mat
+	_clue_node.add_child(gem)
+	add_child(_clue_node)
+
+func _spawn_jemuran_marker(pos: Vector3) -> void:
+	if _jemuran_node != null and is_instance_valid(_jemuran_node):
+		_jemuran_node.queue_free()
+	_jemuran_node = Node3D.new()
+	_jemuran_node.position = Vector3(pos.x, 0.04, pos.z)
+	var ring := MeshInstance3D.new()
+	var cm := CylinderMesh.new()
+	cm.top_radius = 0.42
+	cm.bottom_radius = 0.46
+	cm.height = 0.02
+	ring.mesh = cm
+	ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.24, 0.78, 0.98)
+	mat.emission_enabled = true
+	mat.emission = Color(0.24, 0.82, 0.99)
+	mat.emission_energy_multiplier = 0.95
+	ring.material_override = mat
+	_jemuran_node.add_child(ring)
+	var rack := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = Vector3(0.60, 0.08, 0.12)
+	rack.mesh = bm
+	rack.position = Vector3(0.0, 0.78, 0.0)
+	rack.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var rmat := StandardMaterial3D.new()
+	rmat.albedo_color = Color(0.96, 0.92, 0.82)
+	rack.material_override = rmat
+	_jemuran_node.add_child(rack)
+	add_child(_jemuran_node)
+
+func _play_chore_foley(cid: String) -> void:
+	match cid:
+		"wash_dishes", "water_plants":
+			_play_sfx(_wav_dish)
+		"cook_rice":
+			_play_sfx(_wav_sizzle)
+		"iron_laundry", "make_bed":
+			_play_sfx(_wav_cloth)
+		_:
+			_play_sfx(_wav_sweep)
+
+func _near_jemuran() -> bool:
+	return _world_mode == "shift" and bool(_jemuran_state.get("active", false)) and _jemuran_node != null and is_instance_valid(_jemuran_node) and Vector2(player.position.x - _jemuran_node.position.x, player.position.z - _jemuran_node.position.z).length() <= 1.55
+
+func _near_clue() -> bool:
+	return _world_mode == "shift" and not _shift_clue.is_empty() and _clue_node != null and is_instance_valid(_clue_node) and Vector2(player.position.x - _clue_node.position.x, player.position.z - _clue_node.position.z).length() <= 1.45
+
+func _rescue_jemuran() -> void:
+	var res := JemuranEvent.rescue(_jemuran_state)
+	_jemuran_state = res["state"]
+	if not bool(res["ok"]):
+		return
+	if _jemuran_node != null and is_instance_valid(_jemuran_node):
+		_jemuran_node.queue_free()
+	_jemuran_node = null
+	var bonus_rp := int(res["bonus_rp"])
+	_shift["earned_rp"] = int(_shift.get("earned_rp", 0)) + bonus_rp
+	_shift["xp_earned"] = int(_shift.get("xp_earned", 0)) + int(res["xp"])
+	_call_state["mood"] = clampi(int(_call_state.get("mood", 60)) + int(res["mood_bonus"]), 0, 100)
+	_call_state["trust"] = clampi(int(_call_state.get("trust", 60)) + int(res["trust_bonus"]), 0, 100)
+	_play_sfx(_wav_fanfare)
+	_cam_punch = 0.28
+	_burst_chore_sparkles(player.position)
+	_spawn_float_popup(player.position + Vector3(0.0, 1.95, 0.0), _t("Jemuran Aman! +%s" % I18n.format_balance(bonus_rp, "id"), "Laundry Saved! +%s" % I18n.format_balance(bonus_rp, "en")), Color(0.45, 0.96, 0.99))
+	_show_toast(_t("Hebat! Jemuran berhasil diselamatkan sebelum hujan (+%s)!" % I18n.format_balance(bonus_rp, "id"), "Heroic save! Laundry rescued before rain (+%s)!" % I18n.format_balance(bonus_rp, "en")), "player", "happy")
+	_refresh_hud()
+
+func _collect_shift_clue() -> void:
+	if _shift_clue.is_empty():
+		return
+	var cid := String(_shift_clue.get("id", ""))
+	var res := HouseholdClues.collect_clue(_save, cid)
+	_shift_clue = {}
+	if _clue_node != null and is_instance_valid(_clue_node):
+		_clue_node.queue_free()
+	_clue_node = null
+	if not bool(res["ok"]):
+		return
+	_save = res["save"]
+	SaveStore.save_to_slot(_save, _active_slot)
+	var clue: Dictionary = res["clue"]
+	var title_c := String(clue["title_en"] if _loc() == "en" else clue["title_id"])
+	var story_c := String(clue["story_en"] if _loc() == "en" else clue["story_id"])
+	_play_sfx(_wav_coin)
+	_burst_chore_sparkles(player.position)
+	_spawn_float_popup(player.position + Vector3(0.0, 1.9, 0.0), _t("Jejak Cerita! +20 XP", "Story Clue! +20 XP"), Color(0.99, 0.86, 0.34))
+	_show_toast("✨ %s: %s" % [title_c, story_c], String(_save.get("active_profile_id", "player")), "happy")
+	_refresh_hud()
 
 func _get_chore_positions(work_glb: String) -> Dictionary:
 	if "elite_living" in work_glb:
@@ -1128,7 +1270,10 @@ func _try_tap_boost() -> void:
 		_shift["earned_rp"] = int(_shift.get("earned_rp", 0)) + sweet_bonus
 	_save["shift_boost_count"] = int(_save.get("shift_boost_count", 0)) + 1
 	_save = Retention.record_mission_progress(_save, "boosts", 1, _today_date_str())
-	_play_sfx(_wav_coin if bool(ev.get("perfect", false)) else _wav_chore_tick)
+	if bool(ev.get("perfect", false)):
+		_play_sfx(_wav_coin)
+	else:
+		_play_chore_foley(_active_chore_id)
 	_cam_punch = maxf(_cam_punch, 0.28 if bool(ev.get("perfect", false)) else 0.22)
 	if player != null:
 		var pop_txt := _t("Pas Banget! +%s" % I18n.format_balance(sweet_bonus, "id"), "Perfect! +%s" % I18n.format_balance(sweet_bonus, "en")) if bool(ev.get("perfect", false)) else _t("+Cepat!", "+Boost!")
@@ -1149,6 +1294,12 @@ func _trigger_world_action() -> void:
 			return
 		if _active_chore_id != "":
 			_try_tap_boost()
+			return
+		if _near_jemuran():
+			_rescue_jemuran()
+			return
+		if _near_clue():
+			_collect_shift_clue()
 			return
 		if _nearest_hotspot() != null:
 			_begin_nearest_chore()
@@ -1208,7 +1359,7 @@ func _begin_nearest_chore() -> void:
 	_chore_boost_cd = 0.0
 	player.set_cleaning(true)
 	StreetPatrols.sync_chore_tool(player, String(ChoreEngine.CHORE_TOOLS.get(_active_chore_id, "broom")))
-	_play_sfx(_wav_sweep)
+	_play_chore_foley(_active_chore_id)
 
 func _finish_active_chore() -> void:
 	var cid := _active_chore_id
@@ -1264,11 +1415,14 @@ func _finish_active_chore() -> void:
 func _finish_shift() -> void:
 	if not _in_shift:
 		return
+	var final_clean_pct := ChoreEngine.compute_room_cleanliness(_shift)
+	_clear_shift_events()
 	var prev_lv := Progression.level_from_xp(int(_save.get("xp", 0)))
 	var prev_xp := int(_save.get("xp", 0))
 	var res := Progression.settle_shift(_save, _shift, _call_state)
 	if not res["ok"]:
 		return
+	res["clean_pct"] = final_clean_pct
 	_save = res["save"]
 	_shift = res["shift"]
 	if bool(res.get("aborted", false)):
@@ -1500,6 +1654,29 @@ func _process(delta: float) -> void:
 	if _world_prompt != null:
 		if ui_cover or modal_cover or (_dialogue_bar != null and _dialogue_bar.visible) or (_phone_os_wrap != null and _phone_os_wrap.visible):
 			_world_prompt.visible = false
+		elif _near_jemuran() and _active_chore_id == "" and not cam.is_position_behind(_jemuran_node.global_position):
+			var j_sec := int(ceil(float(_jemuran_state.get("remaining_s", 0.0))))
+			var j_lbl := _t("Selamatkan Jemuran! (%dd)" % j_sec, "Save Laundry! (%ds)" % j_sec)
+			_last_prompt_key = "j:" + str(j_sec)
+			_world_prompt.text = Atmosphere.format_action_prompt(j_lbl, _loc(), show_key)
+			_position_world_prompt(_jemuran_node.global_position + Vector3(0.0, 0.95, 0.0))
+			_world_prompt.visible = true
+			var j_btn_lbl := _t("Jemuran", "Rescue")
+			if _last_dock_action_key != j_btn_lbl:
+				_last_dock_action_key = j_btn_lbl
+				_set_dock_label("action", j_btn_lbl)
+		elif _near_clue() and _active_chore_id == "" and not cam.is_position_behind(_clue_node.global_position):
+			var cl_lbl := _t("Periksa Jejak Cerita", "Inspect Clue")
+			var clk := "cl:" + cl_lbl + ":" + str(show_key)
+			if clk != _last_prompt_key:
+				_last_prompt_key = clk
+				_world_prompt.text = Atmosphere.format_action_prompt(cl_lbl, _loc(), show_key)
+			_position_world_prompt(_clue_node.global_position + Vector3(0.0, 0.45, 0.0))
+			_world_prompt.visible = true
+			var cl_btn_lbl := _t("Periksa", "Inspect")
+			if _last_dock_action_key != cl_btn_lbl:
+				_last_dock_action_key = cl_btn_lbl
+				_set_dock_label("action", cl_btn_lbl)
 		elif near != null and _active_chore_id == "" and not cam.is_position_behind(near.global_position):
 			var w_lbl: String = near.label_en if _loc() == "en" else near.label_id
 			var wk := "c:" + w_lbl + ":" + str(show_key)
@@ -1552,6 +1729,9 @@ func _process(delta: float) -> void:
 		_bar_chore.value = _chore_progress
 		var cfg: Dictionary = ChoreEngine.CHORES[_active_chore_id]
 		var ratio_bar := _chore_progress / maxf(0.1, _chore_duration)
+		for hs_m in hotspots_root.get_children():
+			if hs_m is ChoreHotspotScene and hs_m.chore_id == _active_chore_id:
+				hs_m.set_progress(ratio_bar)
 		var is_sweet_now := bool(ChoreEngine.evaluate_tap_boost(_active_chore_id, ratio_bar).get("perfect", false))
 		var max_b_hint := Progression.get_max_boosts_for_save(_save)
 		var tap_hint := ""
@@ -1568,6 +1748,34 @@ func _process(delta: float) -> void:
 			_finish_active_chore()
 	else:
 		_chore_bar_wrap.visible = false
+
+	if _clue_node != null and is_instance_valid(_clue_node):
+		_clue_node.rotation.y += delta * 2.2
+	if _jemuran_node != null and is_instance_valid(_jemuran_node):
+		_jemuran_node.scale = Vector3.ONE * (1.0 + sin(_shift_elapsed_s * 7.0) * 0.08)
+
+	if _in_shift and not ui_cover and not bool(_call_state.get("fired", false)):
+		var tier_id_j := String(_save.get("active_tier_id", "kamar_kos"))
+		var done_j := (_shift.get("completed_ids", []) as Array).size()
+		var tot_j := (_shift.get("assigned_ids", []) as Array).size()
+		if not _jemuran_triggered_shift and JemuranEvent.should_trigger(tier_id_j, _shift_elapsed_s, _jemuran_triggered_shift, done_j, tot_j):
+			_jemuran_triggered_shift = true
+			var jpos := JemuranEvent.get_stage_pos(tier_id_j)
+			_jemuran_state = JemuranEvent.create_state(jpos)
+			_spawn_jemuran_marker(jpos)
+			_play_sfx(_wav_thunder)
+			_cam_punch = 0.25
+			_show_toast(_t("⚡ GUNTUR! Jemuran mau kehujanan — lari ke teras & selamatkan (15d)!", "⚡ THUNDER! Laundry outside is about to get soaked — rescue it (15s)!"), "player", "worried")
+		elif bool(_jemuran_state.get("active", false)):
+			_jemuran_state = JemuranEvent.tick_state(_jemuran_state, delta)
+			if bool(_jemuran_state.get("failed", false)):
+				if _jemuran_node != null and is_instance_valid(_jemuran_node):
+					_jemuran_node.queue_free()
+				_jemuran_node = null
+				_call_state["mood"] = maxi(0, int(_call_state.get("mood", 60)) - 6)
+				_call_state["trust"] = maxi(0, int(_call_state.get("trust", 60)) - 5)
+				_play_sfx(_wav_buzz)
+				_show_toast(_t("Yah! Jemuran keburu kehujanan (-5 Trust).", "Oh no! Laundry got soaked in the rain (-5 Trust)."), "player", "worried")
 
 	# Majikan call & distraction loop (active strictly during shifts, never on Title/Home!)
 	if _in_shift and bool(_call_state.get("active_call", false)):
@@ -1845,8 +2053,10 @@ func _refresh_hud() -> void:
 
 		var done_n := (_shift.get("completed_ids", []) as Array).size()
 		var tot_n := (_shift.get("assigned_ids", []) as Array).size()
+		var active_r := (_chore_progress / maxf(0.1, _chore_duration)) if _active_chore_id != "" else 0.0
+		var clean_pct := ChoreEngine.compute_room_cleanliness(_shift, _active_chore_id, active_r)
 		var arrow := " ▼" if _tasks_collapsed else " ▲"
-		_lbl_tasks_hdr.text = "%d/%d %s%s" % [done_n, tot_n, _t("TUGAS", "TASKS"), arrow]
+		_lbl_tasks_hdr.text = "%d/%d %s · %d%%%s" % [done_n, tot_n, _t("BERSIH", "CLEAN"), clean_pct, arrow]
 		if _btn_tasks_toggle != null:
 			_btn_tasks_toggle.text = _lbl_tasks_hdr.text
 		for c in _tasks_list.get_children():
@@ -2354,6 +2564,36 @@ func _open_storybook_modal() -> void:
 			btn.disabled = true
 			_style_btn(btn, Color(0.14, 0.16, 0.20), Color(0.45, 0.45, 0.48))
 		_modal_list.add_child(btn)
+	var unlocked_cl: Array = _save.get("unlocked_clues", [])
+	_add_modal_section(_t("JEJAK RUMAH & CERITA WARGA (%d/%d)" % [unlocked_cl.size(), HouseholdClues.CLUES.size()], "HOUSEHOLD CLUES & STORIES (%d/%d)" % [unlocked_cl.size(), HouseholdClues.CLUES.size()]))
+	if unlocked_cl.is_empty():
+		var empty_cl := Label.new()
+		empty_cl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		empty_cl.text = _t("Cari kilauan emas saat shift untuk menemukan cerita hangat di balik rumah majikan.", "Inspect golden sparkles during shifts to uncover hidden stories inside each household.")
+		empty_cl.add_theme_color_override("font_color", Color(0.84, 0.88, 0.94))
+		_modal_list.add_child(empty_cl)
+	else:
+		for raw_cid in unlocked_cl:
+			var scid := String(raw_cid)
+			if not HouseholdClues.CLUES.has(scid):
+				continue
+			var cl_d: Dictionary = HouseholdClues.CLUES[scid]
+			var cl_card := PanelContainer.new()
+			cl_card.add_theme_stylebox_override("panel", _make_box(Color(0.11, 0.16, 0.24), Color(0.96, 0.78, 0.26, 0.65), 10, 10, 8))
+			var cl_v := VBoxContainer.new()
+			cl_v.add_theme_constant_override("separation", 3)
+			var cl_t := Label.new()
+			cl_t.text = "✨ %s" % String(cl_d["title_en" if _loc() == "en" else "title_id"])
+			cl_t.add_theme_color_override("font_color", Color(0.98, 0.84, 0.34))
+			var cl_b := Label.new()
+			cl_b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			cl_b.text = String(cl_d["story_en" if _loc() == "en" else "story_id"])
+			cl_b.add_theme_font_size_override("font_size", 11)
+			cl_b.add_theme_color_override("font_color", Color(0.92, 0.92, 0.90))
+			cl_v.add_child(cl_t)
+			cl_v.add_child(cl_b)
+			cl_card.add_child(cl_v)
+			_modal_list.add_child(cl_card)
 	_show_modal()
 
 func _maybe_show_chapter_modal(tier_id: String) -> void:
@@ -2629,6 +2869,11 @@ func _open_summary_modal(res: Dictionary) -> void:
 	_modal_list.add_child(l1)
 	_modal_list.add_child(l2)
 	_modal_list.add_child(l3)
+	var clean_sum := int(res.get("clean_pct", 100))
+	var l_clean := Label.new()
+	l_clean.text = _t("✨ Kebersihan Rumah: 0%% → %d%% %s" % [clean_sum, "BERKILAU!" if clean_sum >= 100 else ""], "✨ Room Cleanliness: 0%% → %d%% %s" % [clean_sum, "SPARKLING!" if clean_sum >= 100 else ""])
+	l_clean.add_theme_color_override("font_color", Color(0.45, 0.96, 0.90))
+	_modal_list.add_child(l_clean)
 	var meal_rp := int(res.get("meal_cost_rp", 0))
 	if meal_rp > 0:
 		var l_meal := Label.new()

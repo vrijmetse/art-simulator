@@ -6,6 +6,7 @@ const Progression := preload("res://src/core/progression.gd")
 const SettingsStore := preload("res://src/core/settings_store.gd")
 const WishlistStory := preload("res://src/core/wishlist_story.gd")
 const Retention := preload("res://src/core/retention.gd")
+const HouseholdClues := preload("res://src/core/household_clues.gd")
 
 const DEFAULT_PATH := "user://save_v1.json"
 const SLOT_COUNT := 3
@@ -118,6 +119,15 @@ static func sanitize(raw: Variant) -> Dictionary:
 			if WishlistStory.FUTURE_INVESTMENTS.has(s_iid) and not (s_iid in valid_inv):
 				valid_inv.append(s_iid)
 	clean["unlocked_investments"] = valid_inv
+
+	var valid_clues: Array = []
+	var raw_clues: Variant = d.get("unlocked_clues", [])
+	if typeof(raw_clues) == TYPE_ARRAY:
+		for clid in raw_clues:
+			var s_clid := String(clid)
+			if HouseholdClues.CLUES.has(s_clid) and not (s_clid in valid_clues):
+				valid_clues.append(s_clid)
+	clean["unlocked_clues"] = valid_clues
 
 	var valid_ch_ids := {}
 	for tid in WishlistStory.STORY_CHAPTERS.keys():

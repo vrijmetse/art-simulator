@@ -158,6 +158,7 @@ static func create_player_save() -> Dictionary:
 		"bgm_enabled": true,
 		"unlocked_wishlist": [],
 		"unlocked_investments": [],
+		"unlocked_clues": [],
 		"seen_chapters": [],
 		"tutorial_step": 0,
 		"login_streak": 0,

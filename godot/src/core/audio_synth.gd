@@ -227,3 +227,70 @@ static func make_sleep_lullaby() -> AudioStreamWAV:
 	_append_kalimba(buf, 0, 523.25, 0.32, 0.22)
 	_append_kalimba(buf, int(0.22 * SAMPLE_RATE), 392.00, 0.44, 0.24)
 	return _build_wav(buf)
+
+
+static func make_dish_splash() -> AudioStreamWAV:
+	var total := int(0.26 * SAMPLE_RATE)
+	var buf := PackedFloat32Array()
+	buf.resize(total)
+	var seed_val := 33211
+	var lp := 0.0
+	for i in range(total):
+		seed_val = (seed_val * 1103515245 + 12345) & 0x7FFFFFFF
+		var noise := (float(seed_val % 2000) / 1000.0) - 1.0
+		lp = lp * 0.65 + noise * 0.35
+		var t := float(i) / float(total)
+		buf[i] = lp * 0.26 * sin(PI * t)
+	_append_tone(buf, int(0.03 * SAMPLE_RATE), 1174.66, 0.09, 0.18)
+	return _build_wav(buf)
+
+
+static func make_wok_sizzle() -> AudioStreamWAV:
+	var total := int(0.30 * SAMPLE_RATE)
+	var buf := PackedFloat32Array()
+	buf.resize(total)
+	var seed_val := 77419
+	var prev := 0.0
+	for i in range(total):
+		seed_val = (seed_val * 1103515245 + 12345) & 0x7FFFFFFF
+		var noise := (float(seed_val % 2000) / 1000.0) - 1.0
+		var hp := noise - prev * 0.65
+		prev = noise
+		var t := float(i) / float(total)
+		buf[i] = hp * 0.20 * sin(PI * t)
+	_append_tone(buf, 0, 932.33, 0.04, 0.16)
+	return _build_wav(buf)
+
+
+static func make_cloth_snap() -> AudioStreamWAV:
+	var total := int(0.20 * SAMPLE_RATE)
+	var buf := PackedFloat32Array()
+	buf.resize(total)
+	var seed_val := 19283
+	var lp := 0.0
+	for i in range(total):
+		seed_val = (seed_val * 1103515245 + 12345) & 0x7FFFFFFF
+		var noise := (float(seed_val % 2000) / 1000.0) - 1.0
+		lp = lp * 0.72 + noise * 0.28
+		var t := float(i) / float(total)
+		buf[i] = lp * 0.32 * exp(-t * 14.0)
+	_append_kalimba(buf, int(0.04 * SAMPLE_RATE), 659.25, 0.14, 0.18)
+	return _build_wav(buf)
+
+
+static func make_thunder_rumble() -> AudioStreamWAV:
+	var total := int(0.85 * SAMPLE_RATE)
+	var buf := PackedFloat32Array()
+	buf.resize(total)
+	var seed_val := 51509
+	var lp1 := 0.0
+	var lp2 := 0.0
+	for i in range(total):
+		seed_val = (seed_val * 1103515245 + 12345) & 0x7FFFFFFF
+		var noise := (float(seed_val % 2000) / 1000.0) - 1.0
+		lp1 = lp1 * 0.94 + noise * 0.06
+		lp2 = lp2 * 0.95 + lp1 * 0.05
+		var t := float(i) / float(total)
+		var env := minf(1.0, t * 8.0) * exp(-t * 2.4)
+		buf[i] = lp2 * 0.85 * env
+	return _build_wav(buf)
