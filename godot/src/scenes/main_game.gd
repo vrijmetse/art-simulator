@@ -22,6 +22,9 @@ const Retention := preload("res://src/core/retention.gd")
 const LifeRhythm := preload("res://src/core/life_rhythm.gd")
 const JemuranEvent := preload("res://src/core/jemuran_event.gd")
 const HouseholdClues := preload("res://src/core/household_clues.gd")
+const HouseholdSchedules := preload("res://src/core/household_schedules.gd")
+const HouseholdDilemmas := preload("res://src/core/household_dilemmas.gd")
+const CulturalNotes := preload("res://src/core/cultural_notes.gd")
 const PlayerControllerScene := preload("res://src/scenes/player_controller.gd")
 const ChoreHotspotScene := preload("res://src/scenes/chore_hotspot.gd")
 
@@ -97,6 +100,7 @@ var _jemuran_triggered_shift := false
 var _jemuran_node: Node3D = null
 var _shift_clue: Dictionary = {}
 var _clue_node: Node3D = null
+var _dilemma_triggered_shift := false
 var _bgm_player: AudioStreamPlayer
 var _rain_player: AudioStreamPlayer
 var _step_player: AudioStreamPlayer
@@ -961,7 +965,7 @@ func _start_shift(force_low_energy: bool = false) -> void:
 		player.position = Vector3(0.0, 0.0, 0.25)
 	player.cancel_movement()
 	_spawn_hotspots(work_glb)
-	_shift_npcs_data = NpcRoster.get_shift_npcs(tier_id)
+	_shift_npcs_data = HouseholdSchedules.create_runtime_shift_npcs(NpcRoster.get_shift_npcs(tier_id), tier_id)
 	_spawn_npcs(_shift_npcs_data)
 	_clear_street_traffic()
 	_clear_shift_events()
@@ -994,6 +998,7 @@ func _clear_shift_events() -> void:
 	if _clue_node != null and is_instance_valid(_clue_node):
 		_clue_node.queue_free()
 	_clue_node = null
+	_dilemma_triggered_shift = false
 
 func _spawn_clue_marker(pos: Vector3) -> void:
 	if _clue_node != null and is_instance_valid(_clue_node):
@@ -1217,7 +1222,8 @@ func _nearest_shift_npc(max_dist: float = 1.75) -> Dictionary:
 	var best: Dictionary = {}
 	var best_d := max_dist
 	for npc in _shift_npcs_data:
-		var pos: Vector3 = npc.get("pos", Vector3.ZERO)
+		var n3 = npc.get("node", null)
+		var pos: Vector3 = (n3 as Node3D).position if (n3 != null and is_instance_valid(n3)) else npc.get("pos", Vector3.ZERO)
 		var d := Vector2(player.position.x - pos.x, player.position.z - pos.z).length()
 		if d < best_d:
 			best_d = d
@@ -1754,6 +1760,9 @@ func _process(delta: float) -> void:
 	if _jemuran_node != null and is_instance_valid(_jemuran_node):
 		_jemuran_node.scale = Vector3.ONE * (1.0 + sin(_shift_elapsed_s * 7.0) * 0.08)
 
+	if _in_shift and _shift_npcs_data.size() > 0:
+		HouseholdSchedules.step_shift_npcs(_shift_npcs_data, player.position, delta, ui_cover or modal_cover)
+
 	if _in_shift and not ui_cover and not bool(_call_state.get("fired", false)):
 		var tier_id_j := String(_save.get("active_tier_id", "kamar_kos"))
 		var done_j := (_shift.get("completed_ids", []) as Array).size()
@@ -1776,9 +1785,13 @@ func _process(delta: float) -> void:
 				_call_state["trust"] = maxi(0, int(_call_state.get("trust", 60)) - 5)
 				_play_sfx(_wav_buzz)
 				_show_toast(_t("Yah! Jemuran keburu kehujanan (-5 Trust).", "Oh no! Laundry got soaked in the rain (-5 Trust)."), "player", "worried")
+		var blocked_dil := ui_cover or modal_cover or bool(_call_state.get("active_call", false)) or bool(_jemuran_state.get("active", false)) or not _active_chore_id.is_empty()
+		if not _smoke_mode and _capture_path == "" and HouseholdDilemmas.should_trigger(tier_id_j, _shift_elapsed_s, _dilemma_triggered_shift, done_j, blocked_dil):
+			_dilemma_triggered_shift = true
+			_open_dilemma_modal(HouseholdDilemmas.pick_for_tier(tier_id_j))
 
-	# Majikan call & distraction loop (active strictly during shifts, never on Title/Home!)
-	if _in_shift and bool(_call_state.get("active_call", false)):
+	# Majikan call & distraction loop (active strictly during shifts, never on Title/Home/Modals!)
+	if _in_shift and not ui_cover and bool(_call_state.get("active_call", false)):
 		var prev_warn := int(_call_state.get("warnings", 0))
 		_call_state = MajikanCall.tick_call(_call_state, delta)
 		if not bool(_call_state.get("active_call", false)) and int(_call_state.get("warnings", 0)) > prev_warn:
@@ -2594,6 +2607,100 @@ func _open_storybook_modal() -> void:
 			cl_v.add_child(cl_b)
 			cl_card.add_child(cl_v)
 			_modal_list.add_child(cl_card)
+	var cult_btn := Button.new()
+	cult_btn.text = _t("🌏 Kamus Budaya Indonesia (Global Notes)", "🌏 Indonesian Cultural Notes (Glossary)")
+	_style_btn(cult_btn, Color(0.14, 0.24, 0.42), Color(0.96, 0.78, 0.26))
+	cult_btn.pressed.connect(func(): call_deferred("_open_cultural_notes_modal"))
+	_modal_list.add_child(cult_btn)
+	_show_modal()
+
+func _open_dilemma_modal(dilemma: Dictionary) -> void:
+	if dilemma.is_empty():
+		return
+	_clear_modal()
+	if _btn_modal_close != null:
+		_btn_modal_close.visible = false
+	var did := String(dilemma.get("id", ""))
+	_modal_title.text = String(dilemma["title_en" if _loc() == "en" else "title_id"])
+	var card := PanelContainer.new()
+	card.add_theme_stylebox_override("panel", _make_box(Color(0.12, 0.16, 0.24), Color(0.96, 0.78, 0.26, 0.85), 12, 12, 10))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	var p_frame := PanelContainer.new()
+	p_frame.custom_minimum_size = Vector2(68, 68)
+	p_frame.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	p_frame.add_theme_stylebox_override("panel", _make_box(Color(0.08, 0.12, 0.18), Color(0.96, 0.78, 0.26), 10, 2, 2))
+	var p_rect := TextureRect.new()
+	p_rect.texture = Portraits.get_portrait(String(dilemma.get("speaker_id", "player")), "neutral")
+	p_rect.custom_minimum_size = Vector2(62, 62)
+	p_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	p_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	p_frame.add_child(p_rect)
+	row.add_child(p_frame)
+	var body := Label.new()
+	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	body.text = String(dilemma["prompt_en" if _loc() == "en" else "prompt_id"])
+	body.add_theme_font_size_override("font_size", 13)
+	body.add_theme_color_override("font_color", Color(0.96, 0.95, 0.92))
+	row.add_child(body)
+	card.add_child(row)
+	_modal_list.add_child(card)
+	var choices: Array = dilemma.get("choices", [])
+	for ci in range(choices.size()):
+		var ch: Dictionary = choices[ci]
+		var cbtn := Button.new()
+		cbtn.text = String(ch["label_en" if _loc() == "en" else "label_id"])
+		_style_btn(cbtn, Color(0.18, 0.36, 0.32) if ci == 0 else Color(0.18, 0.22, 0.30), Color(0.96, 0.78, 0.26))
+		cbtn.pressed.connect(func():
+			var res := HouseholdDilemmas.resolve_choice(_save, _call_state, _shift, did, ci)
+			if bool(res["ok"]):
+				_save = res["save"]
+				_call_state = res["call_state"]
+				_shift = res["shift"]
+				if int(res["delta_rp"]) != 0:
+					_save = Settings.append_daily_log(_save, {
+						"day": int(_save.get("day", 1)),
+						"kind": "dilemma",
+						"title_id": String(dilemma["title_id"]),
+						"title_en": String(dilemma["title_en"]),
+						"delta_rp": int(res["delta_rp"]),
+					})
+				SaveStore.save_to_slot(_save, _active_slot)
+				_modal_backdrop.visible = false
+				_play_sfx(_wav_coin)
+				_show_toast(String(res["outcome_en" if _loc() == "en" else "outcome_id"]), String(res.get("speaker_id", "player")), "happy")
+				_refresh_hud()
+		)
+		_modal_list.add_child(cbtn)
+	_show_modal()
+
+func _open_cultural_notes_modal() -> void:
+	_clear_modal()
+	_modal_title.text = _t("CATATAN BUDAYA INDONESIA", "INDONESIAN CULTURAL NOTES")
+	var sub := Label.new()
+	sub.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	sub.text = _t("Mengenal istilah khas kehidupan perantau & rumah tangga Indonesia.", "A warm guide to authentic Indonesian daily life & household traditions in Cozy Homekeeper.")
+	sub.add_theme_font_size_override("font_size", 12)
+	sub.add_theme_color_override("font_color", Color(0.84, 0.88, 0.94))
+	_modal_list.add_child(sub)
+	for note in CulturalNotes.get_notes(_loc()):
+		var nc := PanelContainer.new()
+		nc.add_theme_stylebox_override("panel", _make_box(Color(0.11, 0.16, 0.24), Color(0.96, 0.78, 0.26, 0.65), 10, 10, 8))
+		var nv := VBoxContainer.new()
+		nv.add_theme_constant_override("separation", 3)
+		var nt := Label.new()
+		nt.text = "🌏 %s" % String(note["title"])
+		nt.add_theme_color_override("font_color", Color(0.98, 0.84, 0.34))
+		var nb := Label.new()
+		nb.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		nb.text = String(note["body"])
+		nb.add_theme_font_size_override("font_size", 11)
+		nb.add_theme_color_override("font_color", Color(0.93, 0.93, 0.90))
+		nv.add_child(nt)
+		nv.add_child(nb)
+		nc.add_child(nv)
+		_modal_list.add_child(nc)
 	_show_modal()
 
 func _maybe_show_chapter_modal(tier_id: String) -> void:
@@ -4265,6 +4372,11 @@ func _open_guide_modal(guide_idx: int = 0) -> void:
 	_style_btn(next_b, Color(0.22, 0.64, 0.38), Color(0.96, 0.78, 0.26))
 	next_b.pressed.connect(func(): _open_guide_modal(guide_idx + 1))
 	_modal_list.add_child(next_b)
+	var cult_g_b := Button.new()
+	cult_g_b.text = _t("🌏 Catatan Budaya Indonesia", "🌏 Indonesian Cultural Notes")
+	_style_btn(cult_g_b, Color(0.14, 0.24, 0.42), Color(0.96, 0.78, 0.26))
+	cult_g_b.pressed.connect(func(): call_deferred("_open_cultural_notes_modal"))
+	_modal_list.add_child(cult_g_b)
 	_show_modal()
 	if _btn_modal_close != null:
 		_btn_modal_close.visible = false

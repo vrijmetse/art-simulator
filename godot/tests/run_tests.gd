@@ -1815,5 +1815,64 @@ func _initialize() -> void:
 		var hc_rt := SaveStore.deserialize(SaveStore.serialize(cr1["save"]))
 		_assert_true(cid1 in hc_rt.get("unlocked_clues", []), "SaveStore preserves unlocked_clues across round-trip")
 
+	# 47. Global Hit Phase 2: Living Indoor NPC Schedules, Moral Micro-Dilemmas & Cultural Notes
+	_assert_true(ResourceLoader.exists("res://src/core/household_schedules.gd"), "household_schedules.gd module exists")
+	if ResourceLoader.exists("res://src/core/household_schedules.gd"):
+		var HS := load("res://src/core/household_schedules.gd")
+		for tid in ["kamar_kos", "kampung", "perumahan_36", "perumahan_45", "cluster_elite"]:
+			var bounds_info := NpcRoster.get_tier_bounds_and_chores(tid)
+			var wrect: Rect2 = bounds_info["walk_rect"]
+			var chores_map: Dictionary = bounds_info["chores"]
+			var p2_rt_npcs: Array = HS.call("create_runtime_shift_npcs", NpcRoster.get_shift_npcs(tid), tid)
+			_assert_true(p2_rt_npcs.size() >= 1, "Schedule initializes runtime shift NPCs for " + tid)
+			for npc in p2_rt_npcs:
+				var wps: Array = npc.get("waypoints", [])
+				_assert_eq(wps.size(), 2, "Every shift NPC has 2 waypoints: " + String(npc.get("id", "")))
+				for wp in wps:
+					var v: Vector3 = wp
+					_assert_true(v.x >= wrect.position.x and v.x <= wrect.end.x and v.z >= wrect.position.y and v.z <= wrect.end.y, "Waypoint inside walk_rect for " + String(npc.get("id", "")) + "@" + tid)
+					for cid in chores_map.keys():
+						var cpos: Vector3 = chores_map[cid]
+						_assert_true(Vector2(v.x, v.z).distance_to(Vector2(cpos.x, cpos.z)) >= 0.85, "Waypoint >=0.85m clear of " + String(cid) + " in " + tid)
+		var k_npcs: Array = HS.call("create_runtime_shift_npcs", NpcRoster.get_shift_npcs("kampung"), "kampung")
+		k_npcs[0]["wait_s"] = 0.0
+		var pos_before: Vector3 = k_npcs[0]["pos"]
+		HS.call("step_shift_npcs", k_npcs, Vector3(10.0, 0.0, 10.0), 1.0, false)
+		_assert_true(k_npcs[0]["pos"] != pos_before and bool(k_npcs[0]["is_walking"]), "Distant NPC walks along schedule")
+		HS.call("step_shift_npcs", k_npcs, k_npcs[0]["pos"] + Vector3(0.5, 0.0, 0.0), 0.5, false)
+		_assert_true(not bool(k_npcs[0]["is_walking"]), "Nearby NPC pauses cleanly in Idle to greet player")
+
+	_assert_true(ResourceLoader.exists("res://src/core/household_dilemmas.gd"), "household_dilemmas.gd module exists")
+	if ResourceLoader.exists("res://src/core/household_dilemmas.gd"):
+		var HD := load("res://src/core/household_dilemmas.gd")
+		var d_sv := Progression.create_player_save()
+		_assert_true(d_sv.has("resolved_dilemmas"), "Save initializes resolved_dilemmas")
+		_assert_true(not bool(HD.call("should_trigger", "kampung", 5.0, false, 1, false)), "Dilemma blocks early trigger (<10s)")
+		_assert_true(not bool(HD.call("should_trigger", "kampung", 14.0, false, 1, true)), "Dilemma blocks trigger during UI/call/jemuran conflict")
+		_assert_true(bool(HD.call("should_trigger", "kampung", 14.0, false, 1, false)), "Dilemma triggers cleanly mid-shift")
+		for tid in ["kamar_kos", "kampung", "perumahan_36", "perumahan_45", "cluster_elite"]:
+			var dl: Dictionary = HD.call("pick_for_tier", tid)
+			_assert_true(not dl.is_empty() and (dl.get("choices", []) as Array).size() >= 2, "Every tier has dilemma >=2 choices: " + tid)
+		var d_cs := MajikanCall.create_state(MajikanProfiles.get_profile("pak_agus_kampung"))
+		var d_sh := ChoreEngine.create_shift("kampung", MajikanProfiles.get_profile("pak_agus_kampung"), 100, 3)
+		var d_pick: Dictionary = HD.call("pick_for_tier", "kampung")
+		var d_id := String(d_pick["id"])
+		var r_first: Dictionary = HD.call("resolve_choice", d_sv, d_cs, d_sh, d_id, 0)
+		_assert_true(bool(r_first["ok"]) and d_id in r_first["save"].get("resolved_dilemmas", []), "resolve_choice records dilemma_id")
+		_assert_true(int(r_first["save"]["xp"]) > 0 and int(r_first["save"]["energy"]) >= 0 and int(r_first["save"]["balance_rp"]) >= 0, "resolve_choice clamps energy/balance >= 0 and awards first-time XP")
+		var xp_once := int(r_first["save"]["xp"])
+		var r_rep: Dictionary = HD.call("resolve_choice", r_first["save"], r_first["call_state"], r_first["shift"], d_id, 0)
+		_assert_eq(int(r_rep["save"]["xp"]), xp_once, "Repeat dilemma choice grants 0 XP (no XP farm)")
+		var d_rt := SaveStore.deserialize(SaveStore.serialize(r_first["save"]))
+		_assert_true(d_id in d_rt.get("resolved_dilemmas", []), "SaveStore preserves resolved_dilemmas across round-trip")
+
+	_assert_true(ResourceLoader.exists("res://src/core/cultural_notes.gd"), "cultural_notes.gd module exists")
+	if ResourceLoader.exists("res://src/core/cultural_notes.gd"):
+		var CN := load("res://src/core/cultural_notes.gd")
+		var cn_id: Array = CN.call("get_notes", "id")
+		var cn_en: Array = CN.call("get_notes", "en")
+		_assert_true(cn_id.size() >= 8 and cn_en.size() >= 8, "Cultural Notes exposes >=8 entries in ID and EN")
+		_assert_true(String(cn_id[0]["title"]) != String(cn_en[0]["title"]) or String(cn_id[0]["body"]) != String(cn_en[0]["body"]), "Cultural Notes cleanly localized ID/EN")
+
 	print("GODOT TDD RESULT: %d passed, %d failed" % [_passed, _failed])
 	quit(0 if _failed == 0 else 1)

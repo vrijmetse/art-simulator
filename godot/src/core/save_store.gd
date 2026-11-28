@@ -7,6 +7,7 @@ const SettingsStore := preload("res://src/core/settings_store.gd")
 const WishlistStory := preload("res://src/core/wishlist_story.gd")
 const Retention := preload("res://src/core/retention.gd")
 const HouseholdClues := preload("res://src/core/household_clues.gd")
+const HouseholdDilemmas := preload("res://src/core/household_dilemmas.gd")
 
 const DEFAULT_PATH := "user://save_v1.json"
 const SLOT_COUNT := 3
@@ -128,6 +129,15 @@ static func sanitize(raw: Variant) -> Dictionary:
 			if HouseholdClues.CLUES.has(s_clid) and not (s_clid in valid_clues):
 				valid_clues.append(s_clid)
 	clean["unlocked_clues"] = valid_clues
+
+	var valid_dil: Array = []
+	var raw_dil: Variant = d.get("resolved_dilemmas", [])
+	if typeof(raw_dil) == TYPE_ARRAY:
+		for did in raw_dil:
+			var s_did := String(did)
+			if HouseholdDilemmas.DILEMMAS.has(s_did) and not (s_did in valid_dil):
+				valid_dil.append(s_did)
+	clean["resolved_dilemmas"] = valid_dil
 
 	var valid_ch_ids := {}
 	for tid in WishlistStory.STORY_CHAPTERS.keys():
