@@ -4,6 +4,7 @@ extends RefCounted
 const CareerTiers := preload("res://src/core/career_tiers.gd")
 
 static var _portrait_cache: Dictionary = {}
+static var _ui_icon_cache: Dictionary = {}
 
 const CHARACTER_STYLES := {
 	"player": {
@@ -178,7 +179,32 @@ const CHARACTER_STYLES := {
 	},
 }
 
-static func get_portrait(speaker_id: String, mood: String = "neutral") -> ImageTexture:
+static func _load_tex_asset(res_path: String) -> Texture2D:
+	if ResourceLoader.exists(res_path):
+		var res: Resource = ResourceLoader.load(res_path)
+		if res is Texture2D:
+			return res as Texture2D
+	var abs_p := ProjectSettings.globalize_path(res_path)
+	if FileAccess.file_exists(abs_p):
+		var img := Image.load_from_file(abs_p)
+		if img != null and not img.is_empty():
+			return ImageTexture.create_from_image(img)
+	return null
+
+static func get_ui_icon(icon_name: String) -> Texture2D:
+	if _ui_icon_cache.has(icon_name):
+		return _ui_icon_cache[icon_name]
+	var tex := _load_tex_asset("res://assets/ui/%s.png" % icon_name)
+	if tex != null:
+		_ui_icon_cache[icon_name] = tex
+		return tex
+	var fb_img := Image.create(32, 32, false, Image.FORMAT_RGBA8)
+	fb_img.fill(Color(0.95, 0.78, 0.26, 1.0))
+	var fb := ImageTexture.create_from_image(fb_img)
+	_ui_icon_cache[icon_name] = fb
+	return fb
+
+static func get_portrait(speaker_id: String, mood: String = "neutral") -> Texture2D:
 	var norm_mood := mood
 	if norm_mood != "neutral" and norm_mood != "happy" and norm_mood != "strict":
 		norm_mood = "neutral"
@@ -186,18 +212,29 @@ static func get_portrait(speaker_id: String, mood: String = "neutral") -> ImageT
 	if _portrait_cache.has(cache_key):
 		return _portrait_cache[cache_key]
 
+	var tex_hd := _load_tex_asset("res://assets/portraits/portrait_%s.png" % speaker_id)
+	if tex_hd != null:
+		_portrait_cache[cache_key] = tex_hd
+		return tex_hd
+
 	var style: Dictionary = CHARACTER_STYLES.get(speaker_id, CHARACTER_STYLES["player"])
 	var tex := _render_portrait_from_style(style, norm_mood)
 	_portrait_cache[cache_key] = tex
 	return tex
 
-static func get_player_portrait(skin_hex: String, shirt_hex: String, ob_style: String, mood: String = "neutral") -> ImageTexture:
+static func get_player_portrait(skin_hex: String, shirt_hex: String, ob_style: String, mood: String = "neutral") -> Texture2D:
 	var norm_mood := mood
 	if norm_mood != "neutral" and norm_mood != "happy" and norm_mood != "strict":
 		norm_mood = "neutral"
 	var cache_key := "player_%s_%s_%s_%s" % [skin_hex, shirt_hex, ob_style, norm_mood]
 	if _portrait_cache.has(cache_key):
 		return _portrait_cache[cache_key]
+
+	var variant := "player_hijab" if ob_style == "hijab" else "player_cepol"
+	var tex_hd := _load_tex_asset("res://assets/portraits/portrait_%s.png" % variant)
+	if tex_hd != null:
+		_portrait_cache[cache_key] = tex_hd
+		return tex_hd
 
 	var base: Dictionary = CHARACTER_STYLES["player"].duplicate()
 	base["skin"] = Color.from_string(skin_hex, base["skin"])

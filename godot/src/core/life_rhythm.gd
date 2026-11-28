@@ -145,6 +145,12 @@ static func sleep_in_bed(save: Dictionary, owned_upgrades: Array) -> Dictionary:
 	nxt["prayed_day"] = cur_day
 	nxt["prayed_today"] = []
 	nxt["game_minutes"] = 270 if get_season(cur_day) == "ramadhan" else 360
+	if nxt.has("courier_orders") and typeof(nxt["courier_orders"]) == TYPE_ARRAY:
+		var orders: Array = nxt["courier_orders"]
+		for o in orders:
+			if typeof(o) == TYPE_DICTIONARY:
+				o["remaining_s"] = 0.0
+		nxt["courier_orders"] = orders
 
 	var thr_res := claim_thr_if_eligible(nxt)
 	nxt = thr_res["save"]

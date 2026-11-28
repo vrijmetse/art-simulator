@@ -217,6 +217,7 @@ static func get_street_config(tier_id: String) -> Dictionary:
 					{"id": "mbak_dewi", "label_id": "Mbak Dewi", "label_en": "Mbak Dewi", "model_path": "res://assets/models/char_dewi.glb", "pos": Vector3(-2.6, 0.0, 1.60), "rot_y": 0.45, "anim": "Idle"},
 					{"id": "pak_agus", "label_id": "Pak Agus", "label_en": "Pak Agus", "model_path": "res://assets/models/char_agus.glb", "pos": Vector3(4.2, 0.0, 1.45), "rot_y": -0.75, "anim": "Idle"},
 					{"id": "pak_rt", "label_id": "Pak RT", "label_en": "Pak RT", "model_path": "res://assets/models/char_pak_rt.glb", "pos": Vector3(2.1, 0.0, 1.75), "rot_y": -0.45, "anim": "Idle"},
+					{"id": "anak_sekolah", "label_id": "Anak Sekolah", "label_en": "Student", "model_path": "res://assets/models/char_pelajar.glb", "pos": Vector3(-3.6, 0.0, 1.65), "rot_y": 0.40, "anim": "Idle"},
 				],
 			}
 

@@ -337,6 +337,23 @@ def build_majikan_living():
     import_kenney_glb("CoffeeMachine", "kitchenCoffeeMachine.glb", (1.58, 2.18, 0.90), rot_z=0.0, scale=1.65)
     import_kenney_glb("Toaster", "toaster.glb", (1.92, 2.18, 0.90), rot_z=0.15, scale=1.65)
     import_kenney_glb("TrashCan", "trashcan.glb", (2.82, 1.55, 0.0), rot_z=0.0, scale=1.85)
+    # Iconic Indonesian green 3kg LPG gas canister ("Gas Melon") + Wall Calendar + Spice Jars
+    mat_lpg_green = make_solid_mat("LpgMelonGreen", (0.18, 0.56, 0.26), 0.36)
+    bpy.ops.mesh.primitive_cylinder_add(vertices=16, radius=0.145, depth=0.34, location=(2.92, 2.08, 0.19))
+    lpg = bpy.context.active_object
+    lpg.name = "LPG3kg"
+    bpy.ops.object.shade_smooth()
+    lpg.data.materials.append(mat_lpg_green)
+    bpy.ops.mesh.primitive_torus_add(major_radius=0.08, minor_radius=0.016, major_segments=14, minor_segments=8, location=(2.92, 2.08, 0.38))
+    bpy.context.active_object.data.materials.append(mat_lpg_green)
+    add_beveled_box("WallCalendar", (0.34, 0.02, 0.46), (0.38, 2.48, 1.84), mat_ceramic_w, 0.005)
+    add_beveled_box("WallCalendarHdr", (0.34, 0.024, 0.11), (0.38, 2.475, 2.02), mat_coral, 0.004)
+    for sj in range(3):
+        bpy.ops.mesh.primitive_cylinder_add(vertices=10, radius=0.032, depth=0.10, location=(1.22 + sj * 0.09, 2.16, 0.95))
+        jar = bpy.context.active_object
+        jar.name = f"SpiceJar_{sj}"
+        bpy.ops.object.shade_smooth()
+        jar.data.materials.append(mat_coral if sj % 2 == 0 else mat_aqua_blue)
 
     # Indonesian Signature Details (HD):
     # 1. Spun Rice Cooker (Magic Com) on Kitchen Cabinet

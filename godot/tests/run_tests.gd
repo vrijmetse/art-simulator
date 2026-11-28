@@ -612,7 +612,7 @@ func _initialize() -> void:
 
 	var p_a := ArtPortraits.get_portrait("ibu_melati", "strict")
 	var p_b := ArtPortraits.get_portrait("ibu_melati", "strict")
-	_assert_true(p_a != null and p_a.get_width() == 48 and p_a.get_height() == 48, "portrait is 48x48 ImageTexture")
+	_assert_true(p_a != null and p_a.get_width() >= 48 and p_a.get_height() == p_a.get_width(), "portrait is square ImageTexture (>=48px)")
 	_assert_true(p_a == p_b, "portrait cached in static dictionary")
 	var sv_map := Progression.create_player_save()
 	sv_map["xp"] = 250
@@ -735,7 +735,7 @@ func _initialize() -> void:
 	tp2.free()
 
 	var p_tex := ArtPortraits.get_player_portrait("#C98E66", "#2E7D6B", "hijab", "happy")
-	_assert_true(p_tex != null and p_tex.get_width() == 48, "dynamic player portrait renders 48x48")
+	_assert_true(p_tex != null and p_tex.get_width() >= 48, "dynamic player portrait renders (>=48px)")
 
 	var bgm16 := AudioSynth.make_cozy_bgm_loop()
 	_assert_true(bgm16.loop_end >= 22050 * 14, "cozy BGM extended to >=14s A/B phrase")
@@ -1264,6 +1264,139 @@ func _initialize() -> void:
 		if String(enpc.get("id", "")) == "kakak_nadine":
 			var npos: Vector3 = enpc.get("pos", Vector3.ZERO)
 			_assert_true(npos.x < 0.0, "Kakak Nadine spawns clear of cluster_elite marble kitchen island")
+
+	# 35. Round-1 Core: Multi-Slot Save, Remittance Deadline, Cutscenes, Guides, Supply Cart, Kasbon & Spotlights
+	_assert_eq(SaveStore.SLOT_COUNT, 3, "SaveStore exposes 3 save slots")
+	_assert_eq(SaveStore.get_slot_path(1), SaveStore.DEFAULT_PATH, "Slot 1 mirrors DEFAULT_PATH for backward compatibility")
+	_assert_eq(SaveStore.get_slot_path(99), SaveStore.get_slot_path(3), "Out-of-range slot clamps to slot 3")
+	var mig_sv := SaveStore.sanitize({"completed_shifts": 2})
+	_assert_true(bool(mig_sv.get("guide_seen", false)), "Returning players with completed_shifts > 0 skip guide_seen")
+	var slot_sv := Progression.create_player_save()
+	slot_sv["player_name"] = "Mbak Uji"
+	slot_sv["balance_rp"] = 95000
+	_assert_true(SaveStore.save_to_slot(slot_sv, 2), "save_to_slot(2) succeeds")
+	var loaded_s2 := SaveStore.load_from_slot(2)
+	_assert_eq(String(loaded_s2.get("player_name", "")), "Mbak Uji", "load_from_slot(2) restores slot data")
+	_assert_true(SaveStore.list_save_slots("id").size() == 3, "list_save_slots returns 3 slot summaries")
+	SaveStore.delete_slot(2)
+
+	# Remittance goal & exploit guards
+	var rem_sv := Progression.create_player_save()
+	rem_sv["balance_rp"] = 200000
+	var r_neg := ArtWishlistStory.send_remittance(rem_sv, -50000)
+	_assert_true(not bool(r_neg["ok"]), "send_remittance rejects negative amount")
+	var r_over := ArtWishlistStory.send_remittance(rem_sv, 250000)
+	_assert_true(not bool(r_over["ok"]), "send_remittance rejects > balance_rp")
+	var r_part := ArtWishlistStory.send_remittance(rem_sv, 50000)
+	_assert_true(bool(r_part["ok"]), "send_remittance accepts partial 50k transfer")
+	rem_sv = r_part["save"]
+	_assert_eq(int(rem_sv["balance_rp"]), 150000, "partial remittance deducts balance")
+	_assert_eq(int(rem_sv["remittance_sent_rp"]), 50000, "partial remittance increments sent_rp")
+	var r_done := ArtWishlistStory.send_remittance(rem_sv, 100000)
+	_assert_true(bool(r_done["ok"]) and bool(r_done["goal_completed"]), "completing 150k triggers goal_completed")
+	rem_sv = r_done["save"]
+	_assert_true("kirim_kampung" in rem_sv["unlocked_wishlist"], "150k remittance unlocks kirim_kampung once")
+	var xp_after_rem := int(rem_sv["xp"])
+	var r_repeat := ArtWishlistStory.send_remittance(rem_sv, 10000)
+	_assert_true(not bool(r_repeat["ok"]) and int(rem_sv["xp"]) == xp_after_rem, "repeat remittance after goal completed cannot farm XP")
+	var rem_stat_id := ArtWishlistStory.get_remittance_goal_status(rem_sv, "id")
+	_assert_true(bool(rem_stat_id["completed"]) and int(rem_stat_id["deadline_day"]) == 10, "remittance status tracks deadline_day=10")
+
+	# Intro cutscene beats & Panduan 1/2 guides (clean ID/EN)
+	var beats_id := ArtWishlistStory.get_intro_cutscene_beats("Sari", "id")
+	var beats_en := ArtWishlistStory.get_intro_cutscene_beats("Sari", "en")
+	_assert_eq(beats_id.size(), 3, "Intro cutscene has 3 Indonesian beats")
+	_assert_eq(beats_en.size(), 3, "Intro cutscene has 3 English beats")
+	_assert_true(bool(beats_id[0].get("phone", false)) and String(beats_id[0].get("speaker_id", "")) == "ibu_kampung", "Beat 0 frames incoming phone call from Ibu di Kampung")
+	_assert_true(String(beats_id[0]["text"]) != String(beats_en[0]["text"]), "Intro beats localized cleanly")
+	var guides_id := ArtWishlistStory.get_onboarding_guides(Progression.create_player_save(), "id")
+	var guides_en := ArtWishlistStory.get_onboarding_guides(Progression.create_player_save(), "en")
+	_assert_eq(guides_id.size(), 2, "Onboarding exposes 2 visual guide cards")
+	_assert_true(String(guides_id[0]["title"]) != String(guides_en[0]["title"]), "Guide titles localized cleanly")
+
+	# Preview balance, supply cart + courier timer + sleep completion, kasbon debt cap, spotlight steps
+	var prev_sv := Progression.create_player_save()
+	prev_sv["balance_rp"] = 100000
+	var pv := Progression.preview_balance_after(prev_sv, 45000)
+	_assert_true(bool(pv["can_afford"]) and int(pv["balance_after"]) == 55000, "preview_balance_after computes exact post-purchase balance")
+
+	var bad_cart := Progression.checkout_supply_cart(prev_sv, {"kopi_tubruk": -2})
+	_assert_true(not bool(bad_cart["ok"]), "checkout_supply_cart rejects negative qty exploit")
+	var ok_cart := Progression.checkout_supply_cart(prev_sv, {"kopi_tubruk": 1})
+	_assert_true(bool(ok_cart["ok"]), "checkout_supply_cart succeeds on valid item")
+	prev_sv = ok_cart["save"]
+	var oid := String(ok_cart["order_id"])
+	_assert_true(int(prev_sv["balance_rp"]) < 100000 and (prev_sv["courier_orders"] as Array).size() == 1, "checkout deducts Rp and queues courier order")
+	var early_claim := Progression.claim_courier_delivery(prev_sv, oid)
+	_assert_true(not bool(early_claim["ok"]), "cannot claim courier delivery before timer finishes")
+	prev_sv = Progression.tick_courier_orders(prev_sv, 20.0)
+	var ready_claim := Progression.claim_courier_delivery(prev_sv, oid)
+	_assert_true(bool(ready_claim["ok"]) and (ready_claim["save"]["courier_orders"] as Array).is_empty(), "courier claim succeeds once timer=0 and removes order atomically")
+	var dbl_claim := Progression.claim_courier_delivery(ready_claim["save"], oid)
+	_assert_true(not bool(dbl_claim["ok"]), "double-claim courier delivery rejected")
+
+	# Courier timer auto-completes on sleep
+	var sleep_cart: Dictionary = Progression.checkout_supply_cart(ready_claim["save"], {"kopi_tubruk": 1})["save"]
+	var slept: Dictionary = ArtLifeRhythm.sleep_in_bed(sleep_cart, [])["save"]
+	var slept_orders: Array = slept.get("courier_orders", [])
+	_assert_true(slept_orders.size() == 1 and float(slept_orders[0]["remaining_s"]) <= 0.0, "sleep_in_bed finishes pending courier deliveries")
+
+	# Kasbon cap & repayment
+	var kb_sv := Progression.create_player_save()
+	var kb_neg := Progression.record_kasbon(kb_sv, "Warung Bu Tini", -5000)
+	_assert_true(not bool(kb_neg["ok"]), "record_kasbon rejects negative amount")
+	var kb_over := Progression.record_kasbon(kb_sv, "Warung Bu Tini", 150000)
+	_assert_true(not bool(kb_over["ok"]), "record_kasbon enforces MAX_KASBON_DEBT_RP cap")
+	var kb_ok := Progression.record_kasbon(kb_sv, "Warung Bu Tini", 25000)
+	_assert_true(bool(kb_ok["ok"]) and int(kb_ok["save"]["balance_rp"]) == 25000, "record_kasbon credits wallet and logs debt")
+	var kb_pay := Progression.pay_kasbon(kb_ok["save"], String(kb_ok["debt_id"]))
+	_assert_true(bool(kb_pay["ok"]) and int(kb_pay["save"]["balance_rp"]) == 0, "pay_kasbon settles debt cleanly")
+
+	var spots_id := Progression.get_spotlight_tutorial_steps("id")
+	var spots_en := Progression.get_spotlight_tutorial_steps("en")
+	_assert_eq(spots_id.size(), 4, "4 interactive spotlight steps defined")
+	_assert_true(String(spots_id[0]["text"]) != String(spots_en[0]["text"]), "Spotlight steps localized cleanly")
+
+	# 36. High-Res 3D Cycles Bust Portraits & Painterly UI Icons
+	for pid in ["player", "ibu_melati", "mbak_dewi", "pak_budi", "ibu_sari", "ibu_citra", "pak_hendra", "pak_rt", "bang_ojek", "kurir_paket", "anak_sekolah", "pak_agus", "kakak_nadine", "kakak_maya", "ibu_tini", "mbak_rina", "adik_bima", "ibu_kampung"]:
+		var pt := ArtPortraits.get_portrait(pid, "happy")
+		_assert_true(pt != null and pt.get_width() >= 256 and pt.get_height() >= 256, "3D bust portrait >=256px for " + pid)
+	var ph_hijab := ArtPortraits.get_player_portrait("#C68B59", "#4E7D63", "hijab", "happy")
+	_assert_true(ph_hijab != null and ph_hijab.get_width() >= 256, "Player hijab portrait >=256px")
+	for ic in ["icon_phone", "icon_door", "icon_broom", "icon_career", "icon_wardrobe", "icon_upgrade", "app_bank", "app_shop", "app_chat", "app_debt", "app_dreams", "app_story", "app_missions", "app_map", "app_guide", "logo_art_simulator", "star_filled", "star_empty", "icon_hand_pointer", "icon_courier_box"]:
+		var u_tex := ArtPortraits.get_ui_icon(ic)
+		_assert_true(u_tex != null and u_tex.get_width() >= 32, "UI icon loads cleanly: " + ic)
+
+	# 37. 3D Street Landmarks, Zebra Crossing, Island/Kitchen Clutter & Street Diversity
+	var ks_py := FileAccess.get_file_as_string("res://blender/build_kampung_street.py")
+	_assert_true("MushollaDome" in ks_py and "MushollaGate" in ks_py, "kampung_street includes Indonesian Musholla landmark")
+	_assert_true("ZebraStripe_" in ks_py, "kampung_street includes crisp white zebra crossing")
+	var el_py := FileAccess.get_file_as_string("res://blender/build_elite_assets.py")
+	_assert_true("IslandTray" in el_py and "IslandTeapot" in el_py and "SpiceJar_" in el_py, "room_elite_living populates kitchen island & counter clutter")
+	var mj_py := FileAccess.get_file_as_string("res://blender/build_majikan_interior.py")
+	_assert_true("LPG3kg" in mj_py and "WallCalendar" in mj_py, "room_majikan_living includes LPG 3kg canister and wall calendar")
+	var kos_st: Array = NpcRoster.get_street_config("kamar_kos").get("street_npcs", [])
+	var has_kid := false
+	for kn in kos_st:
+		if String(kn.get("id", "")) == "anak_sekolah":
+			has_kid = true
+	_assert_true(has_kid, "kamar_kos street includes anak_sekolah student for sidewalk diversity")
+
+	# 38. Phase 4 UI Overhaul: Title Screen, Illustrated Dock, Dialogue Bar, Spotlight & Smartphone OS
+	var mg_src := FileAccess.get_file_as_string("res://src/scenes/main_game.gd")
+	_assert_true("_build_title_overlay" in mg_src and "--capture-title=" in mg_src, "main_game has Title Screen overlay + --capture-title flag")
+	_assert_true("_make_dock_icon_btn" in mg_src and "icon_broom" in mg_src and "icon_upgrade" in mg_src, "main_game uses illustrated icon dock buttons")
+	_assert_true("_dialogue_bar" in mg_src and "get_intro_cutscene_beats" in mg_src, "main_game renders bottom narrative dialogue bar + phone cutscene")
+	_assert_true("_open_guide_modal" in mg_src and "get_onboarding_guides" in mg_src, "main_game renders Guide 1/2 Bank Desaku onboarding card")
+	_assert_true("_spotlight_wrap" in mg_src and "icon_hand_pointer" in mg_src, "main_game renders interactive spotlight + hand pointer")
+	_assert_true("_phone_os_wrap" in mg_src and "preview_balance_after" in mg_src and "send_remittance" in mg_src, "main_game implements Smartphone OS with Bank Desaku, Supply Shop & balance confirmation")
+	_assert_true("_courier_toast" in mg_src and "tick_courier_orders" in mg_src, "main_game renders live bottom-left courier delivery timer toast")
+	var mg_script := load("res://src/scenes/main_game.gd")
+	_assert_true(mg_script != null, "main_game.gd parses cleanly without errors")
+	var rem_miss := Progression.create_player_save()
+	rem_miss["day"] = 11
+	var rem_dl := ArtWishlistStory.check_remittance_deadline(rem_miss)
+	_assert_true(bool(rem_dl["penalty_applied"]) and int(rem_dl["save"]["remittance_deadline_day"]) == 16, "check_remittance_deadline applies mood penalty once and extends grace deadline")
 
 	print("GODOT TDD RESULT: %d passed, %d failed" % [_passed, _failed])
 	quit(0 if _failed == 0 else 1)

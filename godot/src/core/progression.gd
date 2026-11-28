@@ -173,6 +173,11 @@ static func create_player_save() -> Dictionary:
 		"prayed_today": [],
 		"thr_claimed_cycle": -1,
 		"takjil_claimed_day": 0,
+		"remittance_sent_rp": 0,
+		"remittance_deadline_day": 10,
+		"courier_orders": [],
+		"debt_book": [],
+		"guide_seen": false,
 		"daily_log": [],
 	}
 
@@ -377,3 +382,225 @@ static func settle_shift(save: Dictionary, shift: Dictionary, call_state: Dictio
 		"save": nxt_save,
 		"shift": nxt_shift,
 	}
+
+const SUPPLY_SHOP_ITEMS := {
+	"kopi_tubruk": {
+		"id": "kopi_tubruk",
+		"cost_rp": 12000,
+		"energy_gain": 22,
+		"mood_gain": 8,
+		"label_id": "Kopi Tubruk Hangat",
+		"label_en": "Hot Village Coffee",
+		"desc_id": "+22 Energi, +8% Semangat saat paket tiba.",
+		"desc_en": "+22 Energy, +8% Mood on delivery.",
+	},
+	"vitamin_energi": {
+		"id": "vitamin_energi",
+		"cost_rp": 22000,
+		"energy_gain": 40,
+		"mood_gain": 12,
+		"label_id": "Jamu & Vitamin Stamina",
+		"label_en": "Herbal Stamina Pack",
+		"desc_id": "+40 Energi, +12% Semangat untuk shift padat.",
+		"desc_en": "+40 Energy, +12% Mood for busy shifts.",
+	},
+	"detergen_wangi": {
+		"id": "detergen_wangi",
+		"cost_rp": 18000,
+		"energy_gain": 10,
+		"mood_gain": 15,
+		"label_id": "Pewangi & Detergen Premium",
+		"label_en": "Floral Laundry Kit",
+		"desc_id": "+15% Semangat & +10 Energi setelah kerja.",
+		"desc_en": "+15% Mood & +10 Energy after chores.",
+	},
+	"paket_sembako": {
+		"id": "paket_sembako",
+		"cost_rp": 35000,
+		"energy_gain": 55,
+		"mood_gain": 20,
+		"label_id": "Paket Makan & Lauk Kos",
+		"label_en": "Meal & Pantry Box",
+		"desc_id": "+55 Energi & +20% Semangat penuh nutrisi.",
+		"desc_en": "+55 Energy & +20% Mood full meal pack.",
+	},
+}
+
+const MAX_KASBON_DEBT_RP := 100000
+
+static func preview_balance_after(save: Dictionary, cost_rp: int) -> Dictionary:
+	var bal := int(save.get("balance_rp", 0))
+	var cost := maxi(0, cost_rp)
+	return {
+		"can_afford": bal >= cost,
+		"balance_before": bal,
+		"cost_rp": cost,
+		"balance_after": bal - cost,
+	}
+
+static func checkout_supply_cart(save: Dictionary, cart: Dictionary) -> Dictionary:
+	if cart.is_empty():
+		return {"ok": false, "reason": "empty_cart", "save": save}
+	var total_cost := 0
+	var items_summary: Array = []
+	var total_qty := 0
+	for raw_k in cart.keys():
+		var item_id := String(raw_k)
+		if not SUPPLY_SHOP_ITEMS.has(item_id):
+			return {"ok": false, "reason": "unknown_item", "save": save}
+		var raw_q: Variant = cart[raw_k]
+		if typeof(raw_q) != TYPE_INT and typeof(raw_q) != TYPE_FLOAT:
+			return {"ok": false, "reason": "invalid_qty", "save": save}
+		var qty := int(raw_q)
+		if qty <= 0 or qty > 20:
+			return {"ok": false, "reason": "invalid_qty", "save": save}
+		var item: Dictionary = SUPPLY_SHOP_ITEMS[item_id]
+		total_cost += int(item["cost_rp"]) * qty
+		total_qty += qty
+		items_summary.append({"id": item_id, "qty": qty})
+	if total_qty <= 0 or total_cost <= 0:
+		return {"ok": false, "reason": "empty_cart", "save": save}
+	var bal := int(save.get("balance_rp", 0))
+	if bal < total_cost:
+		return {"ok": false, "reason": "insufficient_funds", "save": save}
+	var nxt := save.duplicate(true)
+	nxt["balance_rp"] = bal - total_cost
+	var orders: Array = nxt.get("courier_orders", []).duplicate(true)
+	var first_id := String(items_summary[0]["id"])
+	var first_item: Dictionary = SUPPLY_SHOP_ITEMS[first_id]
+	var oid := "ord_%d_%d" % [int(nxt.get("day", 1)), orders.size() + 1 + int(nxt.get("game_minutes", 360))]
+	orders.append({
+		"id": oid,
+		"items": items_summary,
+		"remaining_s": 16.0,
+		"total_cost_rp": total_cost,
+		"label_id": String(first_item["label_id"]) if items_summary.size() == 1 else ("Paket Belanja (%d item)" % total_qty),
+		"label_en": String(first_item["label_en"]) if items_summary.size() == 1 else ("Supply Pack (%d items)" % total_qty),
+	})
+	nxt["courier_orders"] = orders
+	return {"ok": true, "order_id": oid, "total_cost_rp": total_cost, "save": nxt}
+
+static func tick_courier_orders(save: Dictionary, dt: float) -> Dictionary:
+	var orders: Array = save.get("courier_orders", [])
+	if orders.is_empty():
+		return save
+	var nxt := save.duplicate(true)
+	var nxt_orders: Array = nxt.get("courier_orders", [])
+	for o in nxt_orders:
+		if typeof(o) == TYPE_DICTIONARY:
+			o["remaining_s"] = maxf(0.0, float(o.get("remaining_s", 0.0)) - maxf(0.0, dt))
+	nxt["courier_orders"] = nxt_orders
+	return nxt
+
+static func claim_courier_delivery(save: Dictionary, order_id: String) -> Dictionary:
+	var orders: Array = save.get("courier_orders", [])
+	var idx := -1
+	for i in range(orders.size()):
+		if typeof(orders[i]) == TYPE_DICTIONARY and String(orders[i].get("id", "")) == order_id:
+			idx = i
+			break
+	if idx < 0:
+		return {"ok": false, "reason": "order_not_found", "save": save}
+	var ord: Dictionary = orders[idx]
+	if float(ord.get("remaining_s", 0.0)) > 0.01:
+		return {"ok": false, "reason": "in_transit", "save": save}
+	var nxt := save.duplicate(true)
+	var nxt_orders: Array = nxt.get("courier_orders", []).duplicate(true)
+	nxt_orders.remove_at(idx)
+	nxt["courier_orders"] = nxt_orders
+	var e_gain := 0
+	var m_gain := 0
+	for entry in ord.get("items", []):
+		if typeof(entry) == TYPE_DICTIONARY:
+			var it_id := String(entry.get("id", ""))
+			var qty := maxi(1, int(entry.get("qty", 1)))
+			if SUPPLY_SHOP_ITEMS.has(it_id):
+				e_gain += int(SUPPLY_SHOP_ITEMS[it_id]["energy_gain"]) * qty
+				m_gain += int(SUPPLY_SHOP_ITEMS[it_id]["mood_gain"]) * qty
+	var max_e := get_max_energy(nxt)
+	nxt["energy"] = clampi(int(nxt.get("energy", max_e)) + e_gain, 0, max_e)
+	nxt["mood"] = clampi(int(nxt.get("mood", 65)) + m_gain, 0, 100)
+	return {"ok": true, "energy_gain": e_gain, "mood_gain": m_gain, "save": nxt}
+
+static func get_unpaid_kasbon_total(save: Dictionary) -> int:
+	var tot := 0
+	for row in save.get("debt_book", []):
+		if typeof(row) == TYPE_DICTIONARY and not bool(row.get("paid", false)):
+			tot += maxi(0, int(row.get("amount_rp", 0)))
+	return tot
+
+static func record_kasbon(save: Dictionary, who: String, amount_rp: int) -> Dictionary:
+	if amount_rp <= 0:
+		return {"ok": false, "reason": "invalid_amount", "save": save}
+	var cur_unpaid := get_unpaid_kasbon_total(save)
+	if cur_unpaid + amount_rp > MAX_KASBON_DEBT_RP:
+		return {"ok": false, "reason": "debt_cap_exceeded", "save": save}
+	var clean_who := who.strip_edges().left(32)
+	if clean_who.is_empty():
+		clean_who = "Warung Bu Tini"
+	var nxt := save.duplicate(true)
+	var book: Array = nxt.get("debt_book", []).duplicate(true)
+	var did := "kb_%d_%d" % [int(nxt.get("day", 1)), book.size() + 1]
+	book.append({
+		"id": did,
+		"who": clean_who,
+		"amount_rp": amount_rp,
+		"day": int(nxt.get("day", 1)),
+		"paid": false,
+	})
+	nxt["debt_book"] = book
+	nxt["balance_rp"] = int(nxt.get("balance_rp", 0)) + amount_rp
+	return {"ok": true, "debt_id": did, "save": nxt}
+
+static func pay_kasbon(save: Dictionary, debt_id: String) -> Dictionary:
+	var book: Array = save.get("debt_book", [])
+	var idx := -1
+	for i in range(book.size()):
+		if typeof(book[i]) == TYPE_DICTIONARY and String(book[i].get("id", "")) == debt_id:
+			idx = i
+			break
+	if idx < 0:
+		return {"ok": false, "reason": "not_found", "save": save}
+	var row: Dictionary = book[idx]
+	if bool(row.get("paid", false)):
+		return {"ok": false, "reason": "already_paid", "save": save}
+	var amt := maxi(0, int(row.get("amount_rp", 0)))
+	var bal := int(save.get("balance_rp", 0))
+	if bal < amt:
+		return {"ok": false, "reason": "insufficient_funds", "save": save}
+	var nxt := save.duplicate(true)
+	var nxt_book: Array = nxt.get("debt_book", []).duplicate(true)
+	nxt_book[idx]["paid"] = true
+	nxt["debt_book"] = nxt_book
+	nxt["balance_rp"] = bal - amt
+	nxt["xp"] = int(nxt.get("xp", 0)) + 8
+	return {"ok": true, "amount_rp": amt, "save": nxt}
+
+static func get_spotlight_tutorial_steps(locale: String = "id") -> Array:
+	var en := (locale == "en")
+	return [
+		{
+			"step": 0,
+			"target": "shift",
+			"title": "Start Shift" if en else "Mulai Shift",
+			"text": "Tap Start Shift (or step outside) to go to your employer's house and earn Rp." if en else "Ketuk Mulai Shift (atau keluar kamar) untuk bantu rumah majikan dan dapat gaji Rp.",
+		},
+		{
+			"step": 1,
+			"target": "tasks",
+			"title": "Tasks & Progress" if en else "Daftar Tugas",
+			"text": "This is your Task List: tap to expand chores, rewards, and tips while working." if en else "Ini daftar Tugasmu: ketuk untuk melihat rincian pekerjaan dan bonus hadiahnya.",
+		},
+		{
+			"step": 2,
+			"target": "phone",
+			"title": "Sari's Phone (HP)" if en else "HP Sari",
+			"text": "Open your Phone for Bank Desaku transfers, Supply Shop, and Messages." if en else "Buka HP untuk kirim uang di Bank Desaku, belanja perlengkapan, dan cek pesan.",
+		},
+		{
+			"step": 3,
+			"target": "upgrade",
+			"title": "Upgrade Room" if en else "Upgrade Kamar",
+			"text": "Upgrade your kos room to boost max Energy, Mood, and daily tips!" if en else "Upgrade kamar kos untuk menambah Energi maksimal, Semangat, dan tip harian!",
+		},
+	]

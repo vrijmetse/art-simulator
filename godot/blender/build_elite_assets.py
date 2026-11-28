@@ -319,12 +319,42 @@ def build_elite_living():
     import_kenney_glb("KitchenStove", "kitchenStove.glb", (3.25, -1.25, 0.0), rot_z=-math.pi * 0.5, target_height=0.92)
     import_kenney_glb("CoffeeMachine", "kitchenCoffeeMachine.glb", (3.22, -0.35, 0.92), rot_z=-math.pi * 0.5, scale=1.70)
 
-    # Kitchen Island + HD Galon Dispenser & Layered Plant
+    # Kitchen Island + Micro-Clutter (Tray, Teapot + Mugs, Fruit Bowl, Pendant Lamps, Spice Jars) + HD Galon & Plant
     add_beveled_box("IslandBase", (1.10, 2.20, 0.88), (1.45, -0.35, 0.44), mat_wood, 0.02)
     add_beveled_box("IslandTop", (1.22, 2.32, 0.06), (1.45, -0.35, 0.91), mat_marble_top, 0.015)
+    add_beveled_box("IslandTray", (0.48, 0.62, 0.03), (1.42, -0.45, 0.955), mat_wood, 0.01)
+    mat_teapot_g = make_solid_mat("IslandGoldBrass", (0.86, 0.68, 0.28), 0.24, 0.80)
     mat_ceramic_w = make_solid_mat("EliteDispenserWhite", (0.94, 0.94, 0.92), 0.30)
     mat_coral = make_solid_mat("EliteCoral", (0.84, 0.22, 0.18), 0.34)
     mat_aqua = make_solid_mat("EliteAqua", (0.18, 0.56, 0.88), 0.20)
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=16, ring_count=10, radius=0.09, location=(1.42, -0.35, 1.04))
+    tp = bpy.context.active_object
+    tp.name = "IslandTeapot"
+    tp.scale = (1.0, 1.0, 0.85)
+    bpy.ops.object.shade_smooth()
+    tp.data.materials.append(mat_ceramic_w)
+    for mi, my_off in enumerate((-0.58, -0.68)):
+        bpy.ops.mesh.primitive_cylinder_add(vertices=12, radius=0.04, depth=0.08, location=(1.36 + mi * 0.12, my_off, 1.01))
+        mug = bpy.context.active_object
+        mug.name = f"IslandMug_{mi}"
+        bpy.ops.object.shade_smooth()
+        mug.data.materials.append(mat_coral if mi == 0 else mat_aqua)
+    add_beveled_box("IslandCutBoard", (0.34, 0.24, 0.024), (1.44, 0.32, 0.952), mat_wood, 0.008)
+    for li, ly in enumerate((-0.75, 0.15)):
+        bpy.ops.mesh.primitive_cylinder_add(vertices=10, radius=0.012, depth=0.80, location=(1.45, ly, 2.65))
+        bpy.context.active_object.data.materials.append(mat_dark)
+        bpy.ops.mesh.primitive_cone_add(vertices=16, radius1=0.18, radius2=0.06, depth=0.14, location=(1.45, ly, 2.22))
+        lsh = bpy.context.active_object
+        lsh.name = f"IslandLamp_{li}"
+        bpy.ops.object.shade_smooth()
+        lsh.data.materials.append(mat_teapot_g)
+    for sj in range(4):
+        bpy.ops.mesh.primitive_cylinder_add(vertices=10, radius=0.036, depth=0.11, location=(3.22, -0.78 + sj * 0.10, 0.975))
+        jar = bpy.context.active_object
+        jar.name = f"SpiceJar_{sj}"
+        bpy.ops.object.shade_smooth()
+        jar.data.materials.append(mat_coral if sj % 2 == 0 else mat_teapot_g)
+    add_beveled_box("WallCalendar", (0.02, 0.38, 0.52), (3.58, 0.85, 1.72), mat_ceramic_w, 0.006)
     add_beveled_box("EliteDispenserStand", (0.36, 0.36, 0.48), (3.25, -2.05, 0.24), mat_wood, 0.015)
     add_galon_dispenser_hd(3.25, -2.05, 0.48, mat_ceramic_w, mat_dark, mat_coral, mat_aqua, prefix="Galon")
     mat_pot = make_solid_mat("ElitePot", (0.68, 0.30, 0.18), 0.72)

@@ -8,6 +8,13 @@ const WishlistStory := preload("res://src/core/wishlist_story.gd")
 const Retention := preload("res://src/core/retention.gd")
 
 const DEFAULT_PATH := "user://save_v1.json"
+const SLOT_COUNT := 3
+
+static func get_slot_path(slot: int) -> String:
+	var s := clampi(slot, 1, SLOT_COUNT)
+	if s == 1:
+		return DEFAULT_PATH
+	return "user://save_slot_%d.json" % s
 
 static func _safe_int(val: Variant, fallback: int, min_val: int = 0) -> int:
 	var t := typeof(val)
@@ -174,6 +181,49 @@ static func sanitize(raw: Variant) -> Dictionary:
 	clean["prayed_today"] = clean_prayed
 	clean["thr_claimed_cycle"] = _safe_int(d.get("thr_claimed_cycle", -1), -1, -1)
 	clean["takjil_claimed_day"] = _safe_int(d.get("takjil_claimed_day", 0), 0, 0)
+	clean["remittance_sent_rp"] = _safe_int(d.get("remittance_sent_rp", 0), 0, 0)
+	clean["remittance_deadline_day"] = _safe_int(d.get("remittance_deadline_day", 10), 10, 1)
+	var clean_orders: Array = []
+	var raw_orders: Variant = d.get("courier_orders", [])
+	if typeof(raw_orders) == TYPE_ARRAY:
+		for raw_o in raw_orders:
+			if typeof(raw_o) == TYPE_DICTIONARY:
+				var od: Dictionary = raw_o
+				var oid := String(od.get("id", "")).left(32)
+				if oid.is_empty():
+					continue
+				clean_orders.append({
+					"id": oid,
+					"items": od.get("items", []).duplicate(true) if typeof(od.get("items", null)) == TYPE_ARRAY else [],
+					"remaining_s": maxf(0.0, float(od.get("remaining_s", 0.0))),
+					"total_cost_rp": _safe_int(od.get("total_cost_rp", 0), 0, 0),
+					"label_id": String(od.get("label_id", "Paket")).left(48),
+					"label_en": String(od.get("label_en", "Package")).left(48),
+				})
+	clean["courier_orders"] = clean_orders
+	var clean_debts: Array = []
+	var raw_debts: Variant = d.get("debt_book", [])
+	if typeof(raw_debts) == TYPE_ARRAY:
+		for raw_db in raw_debts:
+			if typeof(raw_db) == TYPE_DICTIONARY:
+				var db: Dictionary = raw_db
+				var did := String(db.get("id", "")).left(32)
+				if did.is_empty():
+					continue
+				clean_debts.append({
+					"id": did,
+					"who": String(db.get("who", "Warung Bu Tini")).left(32),
+					"amount_rp": _safe_int(db.get("amount_rp", 0), 0, 0),
+					"day": _safe_int(db.get("day", 1), 1, 1),
+					"paid": bool(db.get("paid", false)),
+				})
+	clean["debt_book"] = clean_debts
+	if d.has("guide_seen"):
+		clean["guide_seen"] = bool(d.get("guide_seen", false))
+	elif int(clean["completed_shifts"]) > 0:
+		clean["guide_seen"] = true
+	else:
+		clean["guide_seen"] = false
 
 	clean["daily_log"] = SettingsStore.sanitize_daily_log(d.get("daily_log", []))
 
@@ -209,3 +259,41 @@ static func load_from_path(path: String = DEFAULT_PATH) -> Dictionary:
 	var text := f.get_as_text()
 	f.close()
 	return deserialize(text)
+
+static func save_to_slot(save: Dictionary, slot: int) -> bool:
+	return save_to_path(save, get_slot_path(slot))
+
+static func load_from_slot(slot: int) -> Dictionary:
+	return load_from_path(get_slot_path(slot))
+
+static func delete_slot(slot: int) -> bool:
+	var p := get_slot_path(slot)
+	if not FileAccess.file_exists(p):
+		return false
+	return DirAccess.remove_absolute(ProjectSettings.globalize_path(p)) == OK
+
+static func list_save_slots(locale: String = "id") -> Array:
+	var out: Array = []
+	for s in range(1, SLOT_COUNT + 1):
+		var p := get_slot_path(s)
+		var exists := FileAccess.file_exists(p)
+		if exists:
+			var sv := load_from_path(p)
+			var lv := Progression.level_from_xp(int(sv.get("xp", 0)))
+			out.append({
+				"slot": s,
+				"exists": true,
+				"player_name": String(sv.get("player_name", "Mbak Sari")),
+				"day": int(sv.get("day", 1)),
+				"level": lv,
+				"balance_rp": int(sv.get("balance_rp", 0)),
+				"active_tier_id": String(sv.get("active_tier_id", "kamar_kos")),
+				"onboarding_done": bool(sv.get("onboarding_done", false)),
+			})
+		else:
+			out.append({
+				"slot": s,
+				"exists": false,
+				"label": ("Empty Slot %d" % s) if locale == "en" else ("Slot Kosong %d" % s),
+			})
+	return out

@@ -612,8 +612,10 @@ def build_scene():
     mat_tire = make_solid_mat("RubberTire", (0.06, 0.06, 0.07), 0.78)
     mat_bin_body = make_solid_mat("BinBody", (0.20, 0.22, 0.25), 0.55)
     mat_bin_green = make_solid_mat("BinGreen", (0.16, 0.48, 0.24), 0.42)
-    mat_white = make_solid_mat("KanstinWhite", (0.76, 0.74, 0.70), 0.78)
-    mat_black = make_solid_mat("KanstinBlack", (0.36, 0.38, 0.42), 0.78)
+    mat_white = make_solid_mat("KanstinWhite", (0.88, 0.87, 0.84), 0.72)
+    mat_black = make_solid_mat("KanstinBlack", (0.14, 0.15, 0.18), 0.72)
+    mat_musholla_green = make_solid_mat("MushollaGreen", (0.14, 0.48, 0.28), 0.56)
+    mat_musholla_gold = make_solid_mat("MushollaGold", (0.88, 0.70, 0.22), 0.26, 0.75)
 
     add_box("Ground_Lawn", (28.0, 18.0, 0.12), (0.0, 5.0, -0.14), mat_grass, 0.0)
     add_box("Sidewalk_Paving", (22.0, 2.65, 0.12), (0.0, -0.95, -0.04), mat_tile, 0.015)
@@ -622,6 +624,11 @@ def build_scene():
 
     for dx in range(-10, 11, 2):
         add_box(f"RoadDash_{dx}", (0.85, 0.12, 0.01), (float(dx), -5.45, -0.004), mat_white, 0.002)
+
+    # Indonesian crisp white Zebra Crossing across the street near the village gate
+    for zi in range(6):
+        zx = -0.35 + zi * 0.52
+        add_box(f"ZebraStripe_{zi}", (0.30, 2.40, 0.012), (zx, -4.15, -0.003), mat_white, 0.004)
 
     # Roadside drainage grates (got beton) along the curb
     for gx in (-6.8, -3.4, 0.0, 3.4, 6.8):
@@ -640,7 +647,28 @@ def build_scene():
     add_indonesian_house_36_72(0, -3.75, mat_wall_cream, mat_roof_terra, mat_wood, mat_tile, mat_iron, mat_glass, mat_ac, mat_lamp, mat_trim, mat_brass, mat_cushion, mat_tank, mat_stone)
     add_indonesian_house_36_72(1, 0.0, mat_wall_warm, mat_roof_sage, mat_wood, mat_tile, mat_iron, mat_glass, mat_ac, mat_lamp, mat_trim, mat_brass, mat_cushion, mat_tank, mat_stone)
     add_indonesian_house_36_72(2, 3.75, mat_wall_mint, mat_roof_terra, mat_wood, mat_tile, mat_iron, mat_glass, mat_ac, mat_lamp, mat_trim, mat_brass, mat_cushion, mat_tank, mat_stone)
-    add_indonesian_house_36_72(3, 7.60, mat_wall_cream, mat_roof_sage, mat_wood, mat_tile, mat_iron, mat_glass, mat_ac, mat_lamp, mat_trim, mat_brass, mat_cushion, mat_tank, mat_stone)
+
+    # Right-edge neighborhood Musholla / Masjid landmark (cream walls + green trim + dome + gold finial)
+    mx, my = 7.45, 2.40
+    add_box("MushollaBody", (3.20, 3.40, 2.75), (mx, my, 1.375), mat_wall_cream, 0.025)
+    add_box("MushollaTrimTop", (3.36, 3.56, 0.16), (mx, my, 2.78), mat_musholla_green, 0.02)
+    add_box("MushollaGate", (2.80, 0.22, 1.45), (mx, 0.25, 0.725), mat_wall_cream, 0.02)
+    add_box("MushollaGateTrim", (2.86, 0.26, 0.12), (mx, 0.25, 1.48), mat_musholla_green, 0.015)
+    add_box("MushollaArchL", (0.28, 0.28, 2.15), (mx - 0.65, 0.25, 1.075), mat_musholla_green, 0.015)
+    add_box("MushollaArchR", (0.28, 0.28, 2.15), (mx + 0.65, 0.25, 1.075), mat_musholla_green, 0.015)
+    add_box("MushollaArchTop", (1.60, 0.30, 0.32), (mx, 0.25, 2.18), mat_musholla_green, 0.02)
+    add_box("MushollaLantern", (0.20, 0.18, 0.24), (mx - 0.95, 0.05, 1.55), mat_lamp, 0.02)
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=20, ring_count=12, radius=1.05, location=(mx, my, 3.15))
+    dome = bpy.context.active_object
+    dome.name = "MushollaDome"
+    dome.scale = (1.0, 1.0, 0.92)
+    bpy.ops.object.shade_smooth()
+    dome.data.materials.append(mat_musholla_green)
+    bpy.ops.mesh.primitive_cylinder_add(vertices=10, radius=0.04, depth=0.45, location=(mx, my, 4.25))
+    fin = bpy.context.active_object
+    fin.name = "MushollaFinial"
+    bpy.ops.object.shade_smooth()
+    fin.data.materials.append(mat_musholla_gold)
 
     # Extended perimeter garden walls so zero bare green grass void shows at left/right edges
     for side_label, wx in (("L", -9.6), ("R", 9.6)):

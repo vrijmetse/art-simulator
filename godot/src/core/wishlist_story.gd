@@ -254,3 +254,160 @@ const MILESTONE_QUOTES := {
 static func get_tier_milestone_quote(tier_id: String, locale: String = "id") -> String:
 	var entry: Dictionary = MILESTONE_QUOTES.get(tier_id, MILESTONE_QUOTES["kamar_kos"])
 	return String(entry.get("en" if locale == "en" else "id", ""))
+
+static func get_remittance_goal_status(save: Dictionary, locale: String = "id") -> Dictionary:
+	var item: Dictionary = WISHLIST_ITEMS["kirim_kampung"]
+	var target_rp := int(item["cost_rp"])
+	var unlocked: Array = save.get("unlocked_wishlist", [])
+	var done_flag := "kirim_kampung" in unlocked
+	var sent_rp := target_rp if done_flag else clampi(int(save.get("remittance_sent_rp", 0)), 0, target_rp)
+	var deadline := maxi(1, int(save.get("remittance_deadline_day", 10)))
+	var cur_day := maxi(1, int(save.get("day", 1)))
+	var days_left := maxi(0, deadline - cur_day)
+	var completed := done_flag or sent_rp >= target_rp
+	return {
+		"target_rp": target_rp,
+		"sent_rp": sent_rp,
+		"remaining_rp": maxi(0, target_rp - sent_rp),
+		"deadline_day": deadline,
+		"days_left": days_left,
+		"completed": completed,
+		"title": String(item["label_en"] if locale == "en" else item["label_id"]),
+	}
+
+static func send_remittance(save: Dictionary, amount_rp: int) -> Dictionary:
+	if amount_rp <= 0:
+		return {"ok": false, "reason": "invalid_amount", "save": save}
+	var unlocked: Array = save.get("unlocked_wishlist", [])
+	if "kirim_kampung" in unlocked:
+		return {"ok": false, "reason": "already_completed", "save": save}
+	var item: Dictionary = WISHLIST_ITEMS["kirim_kampung"]
+	var target_rp := int(item["cost_rp"])
+	var prev_sent := clampi(int(save.get("remittance_sent_rp", 0)), 0, target_rp)
+	var needed := maxi(0, target_rp - prev_sent)
+	if needed <= 0:
+		return {"ok": false, "reason": "already_completed", "save": save}
+	var bal := int(save.get("balance_rp", 0))
+	if bal < amount_rp:
+		return {"ok": false, "reason": "insufficient_funds", "save": save}
+	var send_amt := mini(amount_rp, needed)
+	var nxt := save.duplicate(true)
+	nxt["balance_rp"] = bal - send_amt
+	var new_sent := prev_sent + send_amt
+	nxt["remittance_sent_rp"] = new_sent
+	var goal_completed := new_sent >= target_rp
+	if goal_completed:
+		var nxt_unlocked: Array = nxt.get("unlocked_wishlist", []).duplicate()
+		if not ("kirim_kampung" in nxt_unlocked):
+			nxt_unlocked.append("kirim_kampung")
+			nxt["xp"] = int(nxt.get("xp", 0)) + int(item["xp_bonus"])
+			nxt["mood"] = clampi(int(nxt.get("mood", 65)) + int(item["mood_bonus"]), 0, 100)
+		nxt["unlocked_wishlist"] = nxt_unlocked
+	return {"ok": true, "sent_rp": send_amt, "goal_completed": goal_completed, "save": nxt}
+
+static func check_remittance_deadline(save: Dictionary) -> Dictionary:
+	var st := get_remittance_goal_status(save, "id")
+	if bool(st["completed"]):
+		return {"penalty_applied": false, "save": save}
+	var cur_day := maxi(1, int(save.get("day", 1)))
+	var deadline := maxi(1, int(save.get("remittance_deadline_day", 10)))
+	if cur_day > deadline and not bool(save.get("remittance_penalty_done", false)):
+		var nxt := save.duplicate(true)
+		nxt["remittance_penalty_done"] = true
+		nxt["remittance_deadline_day"] = cur_day + 5
+		nxt["mood"] = clampi(int(nxt.get("mood", 65)) - 15, 10, 100)
+		return {"penalty_applied": true, "save": nxt}
+	return {"penalty_applied": false, "save": save}
+
+static func get_intro_cutscene_beats(player_name: String, locale: String = "id") -> Array:
+	var nm := "Mbak Sari" if player_name.strip_edges().is_empty() else player_name.strip_edges()
+	if locale == "en":
+		return [
+			{
+				"phone": true,
+				"speaker_id": "ibu_kampung",
+				"speaker": "Mom in the Village (on the phone)",
+				"text": "%s, your little sister just passed school admission! We need Rp150.000 before Day 10 for her uniform and registration." % nm,
+			},
+			{
+				"phone": false,
+				"speaker_id": "player",
+				"speaker": nm,
+				"text": "Don't worry, Mom! I'll work hard helping households here in the city and send the money through Bank Desaku on time.",
+			},
+			{
+				"phone": false,
+				"speaker_id": "ibu_melati",
+				"speaker": "Ibu Melati (Kos Landlady)",
+				"text": "Welcome to your kos room, %s! Check in on neighbors, finish household shifts, and pay your weekly rent every 7 days." % nm,
+			},
+		]
+	return [
+		{
+			"phone": true,
+			"speaker_id": "ibu_kampung",
+			"speaker": "Ibu di Kampung (Telepon)",
+			"text": "Nak %s, adikmu baru lulus masuk sekolah! Ibu butuh bantuan Rp150.000 sebelum Hari ke-10 buat daftar ulang dan seragam." % nm,
+		},
+		{
+			"phone": false,
+			"speaker_id": "player",
+			"speaker": nm,
+			"text": "Tenang, Bu! Aku akan rajin kerja bantu rumah majikan di kota dan kirim uang lewat Bank Desaku sebelum batas waktunya.",
+		},
+		{
+			"phone": false,
+			"speaker_id": "ibu_melati",
+			"speaker": "Ibu Melati (Ibu Kos)",
+			"text": "Selamat datang di kamar kos, %s! Sapa tetangga di gang, selesaikan shift kerja, dan jaga semangatmu ya." % nm,
+		},
+	]
+
+static func get_onboarding_guides(save: Dictionary, locale: String = "id") -> Array:
+	var st := get_remittance_goal_status(save, locale)
+	var bal := int(save.get("balance_rp", 0))
+	if locale == "en":
+		return [
+			{
+				"id": "guide_bank",
+				"step_label": "Guide 1 / 2",
+				"title": "Send Remittance Goal via Bank Desaku",
+				"card_header": "Bank Desaku · Savings Account",
+				"card_balance": "Rp%d" % bal,
+				"goal_title": "Village School Support (Deadline: Day %d)" % int(st["deadline_day"]),
+				"goal_progress": "Sent Rp%d of Rp%d" % [int(st["sent_rp"]), int(st["target_rp"])],
+				"body": "Work household shifts in the neighborhood to earn Rp, then open HP -> Bank Desaku to send money home before Day 10!",
+			},
+			{
+				"id": "guide_loop",
+				"step_label": "Guide 2 / 2",
+				"title": "Daily Rhythm, Upgrades & Supply Shop",
+				"card_header": "ART Daily Routine",
+				"card_balance": "Energy 100% · Mood Ready",
+				"goal_title": "Higher Trust = Bigger Contract Pay",
+				"goal_progress": "Unlock Kampungs, Tipe 36, Tipe 45 & Elite Cluster",
+				"body": "Answer your employer's calls quickly, upgrade your kos room for bonus Energy, and sleep in bed when Energy runs low.",
+			},
+		]
+	return [
+		{
+			"id": "guide_bank",
+			"step_label": "Panduan 1 / 2",
+			"title": "Target Kiriman Kampung via Bank Desaku",
+			"card_header": "Bank Desaku · Tabungan ART",
+			"card_balance": "Rp%d" % bal,
+			"goal_title": "Biaya Sekolah Adik (Batas: Hari %d)" % int(st["deadline_day"]),
+			"goal_progress": "Terkirim Rp%d dari Rp%d" % [int(st["sent_rp"]), int(st["target_rp"])],
+			"body": "Kumpulkan gaji dari shift rumah majikan, lalu buka HP -> Bank Desaku untuk kirim uang ke kampung sebelum Hari ke-10!",
+		},
+		{
+			"id": "guide_loop",
+			"step_label": "Panduan 2 / 2",
+			"title": "Ritme Kerja, Upgrade Kamar & Belanja",
+			"card_header": "Rutinitas Harian ART",
+			"card_balance": "Energi 100% · Semangat Siap",
+			"goal_title": "Kepercayaan Naik = Gaji Kontrak Lebih Besar",
+			"goal_progress": "Buka Gang Kampung, Tipe 36, Tipe 45 & Cluster Elite",
+			"body": "Jawab panggilan majikan tepat waktu, upgrade kamar kos agar Energi bertambah, dan tidur di kasur saat lelah.",
+		},
+	]
