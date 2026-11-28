@@ -25,6 +25,8 @@ const HouseholdClues := preload("res://src/core/household_clues.gd")
 const HouseholdSchedules := preload("res://src/core/household_schedules.gd")
 const HouseholdDilemmas := preload("res://src/core/household_dilemmas.gd")
 const CulturalNotes := preload("res://src/core/cultural_notes.gd")
+const KosDecor := preload("res://src/core/kos_decor.gd")
+const AgencyOps := preload("res://src/core/agency_ops.gd")
 const PlayerControllerScene := preload("res://src/scenes/player_controller.gd")
 const ChoreHotspotScene := preload("res://src/scenes/chore_hotspot.gd")
 
@@ -101,6 +103,9 @@ var _jemuran_node: Node3D = null
 var _shift_clue: Dictionary = {}
 var _clue_node: Node3D = null
 var _dilemma_triggered_shift := false
+var _photo_mode := false
+var _btn_photo: Button
+var _btn_photo_exit: Button
 var _bgm_player: AudioStreamPlayer
 var _rain_player: AudioStreamPlayer
 var _step_player: AudioStreamPlayer
@@ -525,7 +530,7 @@ func _get_player_portrait_tex(mood: String = "neutral") -> Texture2D:
 	)
 
 func _show_toast(msg: String, speaker_id: String = "", mood: String = "happy") -> void:
-	if _toast_lbl == null or _toast_panel == null:
+	if _photo_mode or _toast_lbl == null or _toast_panel == null:
 		return
 	if _call_banner != null and _call_banner.visible:
 		_toast_panel.visible = false
@@ -869,6 +874,7 @@ func _enter_home_mode() -> void:
 	_spawn_portal("sleep_bed", Vector3(-0.95, 0.0, -0.85), Color(0.45, 0.74, 0.96), "Tidur di Kasur", "Sleep to Recharge")
 	if bool(_save.get("prayer_reminders", true)):
 		_spawn_portal("pray_mat", Vector3(0.65, 0.0, 0.95) if is_small_art else Vector3(1.20, 0.0, 0.95), Color(0.32, 0.84, 0.62), "Sholat / Doa", "Pray")
+	KosDecor.spawn_decor_nodes(stage_root, _save)
 	_refresh_atmosphere()
 	_refresh_hud()
 
@@ -1605,7 +1611,7 @@ func _process(delta: float) -> void:
 				n_lbl3d.visible = (not hide_labels) and sn_node.position.distance_to(player.position) <= 3.2
 
 	var show_key := _show_keyboard_hints()
-	if ui_cover or modal_cover or (_dialogue_bar != null and _dialogue_bar.visible) or (_phone_os_wrap != null and _phone_os_wrap.visible):
+	if _photo_mode or ui_cover or modal_cover or (_dialogue_bar != null and _dialogue_bar.visible) or (_phone_os_wrap != null and _phone_os_wrap.visible):
 		if _world_prompt != null:
 			_world_prompt.visible = false
 	elif not _in_shift:
@@ -1658,7 +1664,7 @@ func _process(delta: float) -> void:
 		if c is ChoreHotspotScene:
 			c.set_highlighted(c == near)
 	if _world_prompt != null:
-		if ui_cover or modal_cover or (_dialogue_bar != null and _dialogue_bar.visible) or (_phone_os_wrap != null and _phone_os_wrap.visible):
+		if _photo_mode or ui_cover or modal_cover or (_dialogue_bar != null and _dialogue_bar.visible) or (_phone_os_wrap != null and _phone_os_wrap.visible):
 			_world_prompt.visible = false
 		elif _near_jemuran() and _active_chore_id == "" and not cam.is_position_behind(_jemuran_node.global_position):
 			var j_sec := int(ceil(float(_jemuran_state.get("remaining_s", 0.0))))
@@ -1816,6 +1822,10 @@ func _process(delta: float) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey or event is InputEventMouseButton or event is InputEventScreenTouch:
 		_unlock_audio()
+	if _photo_mode:
+		if event is InputEventKey and event.pressed and event.keycode in [KEY_ESCAPE, KEY_E, KEY_SPACE]:
+			_set_photo_mode(false)
+		return
 	if _is_sleeping or (_onboarding_wrap != null and _onboarding_wrap.visible) or (_modal_backdrop != null and _modal_backdrop.visible):
 		return
 	if event is InputEventKey and event.pressed and event.keycode in [KEY_E, KEY_SPACE]:
@@ -1984,6 +1994,35 @@ func _refresh_hud() -> void:
 	var show_joy := Atmosphere.should_show_virtual_joystick(vp, DisplayServer.is_touchscreen_available(), OS.has_feature("mobile"))
 	var pad_l := float(_safe_margins.get("left", 0.0))
 	var pad_b := float(_safe_margins.get("bottom", 0.0))
+	if _photo_mode:
+		if _npcs_root != null:
+			_npcs_root.visible = not ob_active
+		if hotspots_root != null:
+			hotspots_root.visible = false
+		if _tl_card != null:
+			_tl_card.visible = false
+		if _tr_vbox != null:
+			_tr_vbox.visible = false
+		if _br_vbox != null:
+			_br_vbox.visible = false
+		if _joy_base != null:
+			_joy_base.visible = false
+		if _hp_bottom_left != null:
+			_hp_bottom_left.visible = false
+		if _toast_panel != null:
+			_toast_panel.visible = false
+		if _world_prompt != null:
+			_world_prompt.visible = false
+		if _call_banner != null:
+			_call_banner.visible = false
+		if _courier_toast != null:
+			_courier_toast.visible = false
+		if _btn_photo_exit != null:
+			_btn_photo_exit.text = _t("✕ Keluar Foto", "✕ Exit Photo")
+			_btn_photo_exit.visible = true
+		return
+	if _btn_photo_exit != null:
+		_btn_photo_exit.visible = false
 	if _npcs_root != null:
 		_npcs_root.visible = not ob_active
 	if hotspots_root != null:
@@ -2234,6 +2273,10 @@ func _show_modal() -> void:
 		_fit_modal_scroll_height()
 	if _modal_backdrop != null:
 		_modal_backdrop.visible = true
+	if _photo_mode:
+		_photo_mode = false
+		if _btn_photo_exit != null:
+			_btn_photo_exit.visible = false
 	_set_hud_focus_enabled(false)
 	_refresh_courier_toast()
 	call_deferred("_fit_modal_scroll_height")
@@ -2843,6 +2886,40 @@ func _open_wishlist_modal() -> void:
 					_refresh_hud()
 			)
 			_modal_list.add_child(ibtn)
+		_add_modal_section(_t("AGENSI ART MANDIRI (KELOLA TIM)", "ART AGENCY ENDGAME (HIRE STAFF)"))
+		var hired_ag: Array = _save.get("hired_agency_arts", [])
+		for raw_rid in AgencyOps.ROOKIE_POOL.keys():
+			var rid := String(raw_rid)
+			var rk: Dictionary = AgencyOps.ROOKIE_POOL[rid]
+			var rk_hired := rid in hired_ag
+			var rcost := int(rk["cost_rp"])
+			var can_hire := (not rk_hired) and bal_now_w >= rcost
+			var rtitle := String(rk["label_en"] if _loc() == "en" else rk["label_id"])
+			var rdesc := String(rk["desc_en"] if _loc() == "en" else rk["desc_id"])
+			var rbtn := Button.new()
+			var rstatus := _t("✓ Aktif (+%s/hari)" % I18n.format_balance(int(rk["daily_income_rp"]), "id"), "✓ Hired (+%s/day)" % I18n.format_balance(int(rk["daily_income_rp"]), "en")) if rk_hired else I18n.format_balance(rcost, _loc())
+			rbtn.text = "%s — %s\n%s" % [rtitle, rstatus, rdesc]
+			rbtn.disabled = rk_hired or not can_hire
+			if can_hire:
+				_style_btn(rbtn, Color(0.16, 0.38, 0.52), Color(0.98, 0.84, 0.34))
+			rbtn.pressed.connect(func():
+				var hres := AgencyOps.hire_rookie(_save, rid)
+				if bool(hres["ok"]):
+					_save = hres["save"]
+					_save = Settings.append_daily_log(_save, {
+						"day": int(_save.get("day", 1)),
+						"kind": "agency",
+						"title_id": "Rekrut %s" % String(rk["label_id"]),
+						"title_en": "Hired %s" % String(rk["label_en"]),
+						"delta_rp": -rcost,
+					})
+					SaveStore.save_to_slot(_save, _active_slot)
+					_play_sfx(_wav_fanfare)
+					_show_toast(_t("Rekrut baru bergabung: %s!" % rtitle, "New agency staff hired: %s!" % rtitle), "player", "happy")
+					call_deferred("_open_wishlist_modal")
+					_refresh_hud()
+			)
+			_modal_list.add_child(rbtn)
 	_show_modal()
 
 func _open_wardrobe_modal() -> void:
@@ -2959,6 +3036,89 @@ func _open_kos_modal() -> void:
 			)
 		)
 		_modal_list.add_child(btn)
+	_add_modal_section(_t("DEKORASI KAMAR KOS (SANDBOX)", "KOS DECORATING SANDBOX"))
+	var dec_owned: Array = _save.get("unlocked_decor", [])
+	var dec_layout: Dictionary = _save.get("kos_decor_layout", {})
+	for raw_did in KosDecor.DECOR_ITEMS.keys():
+		var did := String(raw_did)
+		var di: Dictionary = KosDecor.DECOR_ITEMS[did]
+		var dlbl := String(di["label_en"] if _loc() == "en" else di["label_id"])
+		var dcost := int(di["cost_rp"])
+		var d_is_owned := did in dec_owned
+		if d_is_owned:
+			var d_entry: Dictionary = dec_layout.get(did, {"slot": int(di["default_slot"]), "rot_deg": 0})
+			var d_card := PanelContainer.new()
+			d_card.add_theme_stylebox_override("panel", _make_box(Color(0.11, 0.16, 0.24), Color(0.96, 0.78, 0.26, 0.65), 10, 10, 8))
+			var d_v := VBoxContainer.new()
+			d_v.add_theme_constant_override("separation", 6)
+			var d_info := Label.new()
+			d_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			d_info.text = "✓ %s (%s %d · %d°)" % [dlbl, _t("Spot", "Spot"), int(d_entry.get("slot", 0)) + 1, int(d_entry.get("rot_deg", 0))]
+			d_info.add_theme_color_override("font_color", Color(0.84, 0.96, 0.88))
+			var d_row := HBoxContainer.new()
+			d_row.add_theme_constant_override("separation", 8)
+			var b_mv := Button.new()
+			b_mv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			b_mv.custom_minimum_size = Vector2(110, 44)
+			b_mv.text = _t("Geser Posisi", "Move Spot")
+			_style_btn(b_mv, Color(0.18, 0.34, 0.48), Color(0.96, 0.78, 0.26))
+			b_mv.pressed.connect(func():
+				var mr := KosDecor.move_decor_next_slot(_save, did)
+				if bool(mr["ok"]):
+					_save = mr["save"]
+					SaveStore.save_to_slot(_save, _active_slot)
+					if _world_mode == "home" and stage_root.get_child_count() > 0:
+						KosDecor.spawn_decor_nodes(stage_root, _save)
+					_play_sfx(_wav_click)
+					call_deferred("_open_kos_modal")
+			)
+			var b_rt := Button.new()
+			b_rt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			b_rt.custom_minimum_size = Vector2(110, 44)
+			b_rt.text = _t("Putar 45°", "Rotate 45°")
+			_style_btn(b_rt, Color(0.24, 0.30, 0.44), Color(0.96, 0.78, 0.26))
+			b_rt.pressed.connect(func():
+				var rr := KosDecor.rotate_decor(_save, did)
+				if bool(rr["ok"]):
+					_save = rr["save"]
+					SaveStore.save_to_slot(_save, _active_slot)
+					if _world_mode == "home" and stage_root.get_child_count() > 0:
+						KosDecor.spawn_decor_nodes(stage_root, _save)
+					_play_sfx(_wav_click)
+					call_deferred("_open_kos_modal")
+			)
+			d_row.add_child(b_mv)
+			d_row.add_child(b_rt)
+			d_v.add_child(d_info)
+			d_v.add_child(d_row)
+			d_card.add_child(d_v)
+			_modal_list.add_child(d_card)
+		else:
+			var can_buy_d := int(_save.get("balance_rp", 0)) >= dcost
+			var dbtn := Button.new()
+			dbtn.text = "%s — %s" % [dlbl, I18n.format_price(dcost, _loc())]
+			dbtn.disabled = not can_buy_d
+			if can_buy_d:
+				_style_btn(dbtn, Color(0.20, 0.44, 0.34), Color(0.98, 0.84, 0.34))
+			dbtn.pressed.connect(func():
+				var bres := KosDecor.buy_decor(_save, did)
+				if bool(bres["ok"]):
+					_save = bres["save"]
+					_save = Settings.append_daily_log(_save, {
+						"day": int(_save.get("day", 1)),
+						"kind": "decor",
+						"title_id": "Dekorasi %s" % String(di["label_id"]),
+						"title_en": "Decor %s" % String(di["label_en"]),
+						"delta_rp": -dcost,
+					})
+					SaveStore.save_to_slot(_save, _active_slot)
+					if _world_mode == "home" and stage_root.get_child_count() > 0:
+						KosDecor.spawn_decor_nodes(stage_root, _save)
+					_play_sfx(_wav_coin)
+					call_deferred("_open_kos_modal")
+					_refresh_hud()
+			)
+			_modal_list.add_child(dbtn)
 	_show_modal()
 
 func _open_summary_modal(res: Dictionary) -> void:
@@ -3596,6 +3756,28 @@ func _build_hud() -> void:
 	top_r_row.add_child(_btn_map)
 	top_r_row.add_child(_btn_settings)
 	_tr_vbox.add_child(top_r_row)
+
+	var photo_row := HBoxContainer.new()
+	photo_row.alignment = BoxContainer.ALIGNMENT_END
+	_btn_photo = Button.new()
+	_btn_photo.custom_minimum_size = Vector2(48, 44)
+	_btn_photo.text = "📷"
+	_style_btn(_btn_photo, Color(0.10, 0.13, 0.18, 0.82), Color(0.95, 0.78, 0.26, 0.75))
+	_btn_photo.pressed.connect(func(): _set_photo_mode(true))
+	photo_row.add_child(_btn_photo)
+	_tr_vbox.add_child(photo_row)
+
+	_btn_photo_exit = Button.new()
+	_btn_photo_exit.visible = false
+	_btn_photo_exit.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	_btn_photo_exit.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_btn_photo_exit.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_btn_photo_exit.offset_right = -18
+	_btn_photo_exit.offset_bottom = -18
+	_btn_photo_exit.custom_minimum_size = Vector2(130, 44)
+	_style_btn(_btn_photo_exit, Color(0.08, 0.11, 0.16, 0.86), Color(0.98, 0.84, 0.34))
+	_btn_photo_exit.pressed.connect(func(): _set_photo_mode(false))
+	hud.add_child(_btn_photo_exit)
 
 	_tasks_card = PanelContainer.new()
 	_tasks_card.add_theme_stylebox_override("panel", _make_box(Color(0.08, 0.10, 0.14, 0.86), Color(0.95, 0.78, 0.26, 0.75), 12, 10, 6))
@@ -4547,6 +4729,9 @@ func _build_courier_toast() -> void:
 func _refresh_courier_toast() -> void:
 	if _courier_toast == null:
 		return
+	if _photo_mode:
+		_courier_toast.visible = false
+		return
 	var ui_cover := (_title_wrap != null and _title_wrap.visible) or (_onboarding_wrap != null and _onboarding_wrap.visible) or (_dialogue_bar != null and _dialogue_bar.visible) or (_modal_backdrop != null and _modal_backdrop.visible) or (_phone_os_wrap != null and _phone_os_wrap.visible)
 	var orders: Array = _save.get("courier_orders", [])
 	if ui_cover or orders.is_empty():
@@ -4564,6 +4749,12 @@ func _refresh_courier_toast() -> void:
 		_courier_lbl.text = _t("Kurir mengantar... %d dtk" % int(ceilf(rem)), "Courier arriving... %ds" % int(ceilf(rem)))
 		_courier_bar.value = clampf((16.0 - rem) / 16.0 * 100.0, 0.0, 100.0)
 		_courier_claim_btn.visible = false
+
+func _set_photo_mode(enabled: bool) -> void:
+	_photo_mode = enabled
+	_refresh_hud()
+	if not enabled:
+		_show_toast(_t("📸 Mode Foto ditutup — siap lanjut!", "📸 Photo Mode closed!"))
 
 func _open_confirm_purchase_modal(item_label: String, cost_rp: int, on_confirm: Callable) -> void:
 	var pv := Progression.preview_balance_after(_save, cost_rp)

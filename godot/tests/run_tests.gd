@@ -1874,5 +1874,56 @@ func _initialize() -> void:
 		_assert_true(cn_id.size() >= 8 and cn_en.size() >= 8, "Cultural Notes exposes >=8 entries in ID and EN")
 		_assert_true(String(cn_id[0]["title"]) != String(cn_en[0]["title"]) or String(cn_id[0]["body"]) != String(cn_en[0]["body"]), "Cultural Notes cleanly localized ID/EN")
 
+	# 48. Global Hit Phase 3: Kos Decorating Sandbox, Cozy Photo Mode & Agency Endgame
+	_assert_true(ResourceLoader.exists("res://src/core/kos_decor.gd"), "kos_decor.gd module exists")
+	if ResourceLoader.exists("res://src/core/kos_decor.gd"):
+		var KD := load("res://src/core/kos_decor.gd")
+		var kd_sv := Progression.create_player_save()
+		_assert_true(kd_sv.has("unlocked_decor") and kd_sv.has("kos_decor_layout"), "Save initializes Kos decor fields")
+		var slots: Array = KD.get_slot_positions() if KD.has_method("get_slot_positions") else KD.call("get_slots")
+		_assert_eq(slots.size(), 4, "KosDecor defines 4 curated placement slots")
+		var home_portals := [Vector2(0.45, 1.15), Vector2(0.08, 1.15), Vector2(-0.95, -0.85), Vector2(1.20, 0.95), Vector2(0.65, 0.95), Vector2(0.0, 0.35)]
+		for sp in slots:
+			var sv_p: Vector3 = sp
+			_assert_true(sv_p.x >= -2.0 and sv_p.x <= 2.0 and sv_p.z >= -1.8 and sv_p.z <= 1.7, "Decor slot inside home walk_bounds")
+			for hp in home_portals:
+				_assert_true(Vector2(sv_p.x, sv_p.z).distance_to(hp) >= 0.70, "Decor slot >=0.70m clear of home portals & spawn")
+		kd_sv["balance_rp"] = 500000
+		var b_dec: Dictionary = KD.call("buy_decor", kd_sv, "decor_kucing")
+		_assert_true(bool(b_dec["ok"]) and "decor_kucing" in b_dec["save"].get("unlocked_decor", []), "buy_decor unlocks decor_kucing")
+		var b_dup: Dictionary = KD.call("buy_decor", b_dec["save"], "decor_kucing")
+		_assert_true(not bool(b_dup["ok"]), "buy_decor blocks duplicate purchase")
+		var mv_dec: Dictionary = KD.call("move_decor_next_slot", b_dec["save"], "decor_kucing")
+		var rt_dec: Dictionary = KD.call("rotate_decor", mv_dec["save"], "decor_kucing")
+		var lay_d: Dictionary = rt_dec["save"]["kos_decor_layout"].get("decor_kucing", {})
+		_assert_true(int(lay_d.get("slot", -1)) != int(b_dec["save"]["kos_decor_layout"]["decor_kucing"]["slot"]) and int(lay_d.get("rot_deg", 0)) == 45, "move_decor_next_slot and rotate_decor update layout")
+		var d_holder := Node3D.new()
+		KD.call("spawn_decor_nodes", d_holder, rt_dec["save"])
+		_assert_true(d_holder.find_child("_KosDecorRoot", false, false) != null, "spawn_decor_nodes attaches _KosDecorRoot")
+		d_holder.free()
+		var kd_rt := SaveStore.deserialize(SaveStore.serialize(rt_dec["save"]))
+		_assert_true("decor_kucing" in kd_rt.get("unlocked_decor", []) and int(kd_rt.get("kos_decor_layout", {}).get("decor_kucing", {}).get("rot_deg", 0)) == 45, "SaveStore preserves Kos decor layout")
+
+	_assert_true(ResourceLoader.exists("res://src/core/agency_ops.gd"), "agency_ops.gd module exists")
+	if ResourceLoader.exists("res://src/core/agency_ops.gd"):
+		var AO := load("res://src/core/agency_ops.gd")
+		var ag_sv := Progression.create_player_save()
+		ag_sv["balance_rp"] = 2000000
+		_assert_true(ag_sv.has("hired_agency_arts"), "Save initializes hired_agency_arts")
+		var early_hire: Dictionary = AO.call("hire_rookie", ag_sv, "art_nia")
+		_assert_true(not bool(early_hire["ok"]), "Agency hiring blocked before epilogue unlocked")
+		ag_sv["xp"] = 1600
+		ag_sv["unlocked_wishlist"] = ["kirim_kampung", "hp_baru", "tabung_kontrakan", "motor_matic"]
+		var ok_hire: Dictionary = AO.call("hire_rookie", ag_sv, "art_nia")
+		_assert_true(bool(ok_hire["ok"]) and int(AO.call("get_agency_daily_income", ok_hire["save"])) >= 35000, "Hiring rookie post-epilogue grants >= Rp 35.000 daily income")
+		var dup_hire: Dictionary = AO.call("hire_rookie", ok_hire["save"], "art_nia")
+		_assert_true(not bool(dup_hire["ok"]), "Duplicate rookie hire blocked")
+		var ag_sl := ArtLifeRhythm.sleep_in_bed(ok_hire["save"], [])
+		_assert_true(int(ag_sl.get("passive_income_rp", 0)) >= 35000, "sleep_in_bed includes agency passive income")
+		var ag_rt := SaveStore.deserialize(SaveStore.serialize(ok_hire["save"]))
+		_assert_true("art_nia" in ag_rt.get("hired_agency_arts", []), "SaveStore preserves hired_agency_arts")
+
+	_assert_true("func _set_photo_mode(" in mg_src, "main_game exposes _set_photo_mode")
+
 	print("GODOT TDD RESULT: %d passed, %d failed" % [_passed, _failed])
 	quit(0 if _failed == 0 else 1)

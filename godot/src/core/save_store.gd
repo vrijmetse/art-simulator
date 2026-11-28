@@ -8,6 +8,8 @@ const WishlistStory := preload("res://src/core/wishlist_story.gd")
 const Retention := preload("res://src/core/retention.gd")
 const HouseholdClues := preload("res://src/core/household_clues.gd")
 const HouseholdDilemmas := preload("res://src/core/household_dilemmas.gd")
+const KosDecor := preload("res://src/core/kos_decor.gd")
+const AgencyOps := preload("res://src/core/agency_ops.gd")
 
 const DEFAULT_PATH := "user://save_v1.json"
 const SLOT_COUNT := 3
@@ -138,6 +140,35 @@ static func sanitize(raw: Variant) -> Dictionary:
 			if HouseholdDilemmas.DILEMMAS.has(s_did) and not (s_did in valid_dil):
 				valid_dil.append(s_did)
 	clean["resolved_dilemmas"] = valid_dil
+
+	var valid_dec: Array = []
+	var raw_dec: Variant = d.get("unlocked_decor", [])
+	if typeof(raw_dec) == TYPE_ARRAY:
+		for did in raw_dec:
+			var s_did := String(did)
+			if KosDecor.DECOR_ITEMS.has(s_did) and not (s_did in valid_dec):
+				valid_dec.append(s_did)
+	clean["unlocked_decor"] = valid_dec
+
+	var valid_lay := {}
+	var raw_lay: Variant = d.get("kos_decor_layout", {})
+	if typeof(raw_lay) == TYPE_DICTIONARY:
+		for did in valid_dec:
+			var entry_v: Variant = (raw_lay as Dictionary).get(did, {})
+			if typeof(entry_v) == TYPE_DICTIONARY:
+				var sl := clampi(_safe_int((entry_v as Dictionary).get("slot", 0), 0, 0), 0, KosDecor.SLOTS.size() - 1)
+				var rd := posmod(_safe_int((entry_v as Dictionary).get("rot_deg", 0), 0, 0), 360)
+				valid_lay[did] = {"slot": sl, "rot_deg": rd}
+	clean["kos_decor_layout"] = valid_lay
+
+	var valid_ag: Array = []
+	var raw_ag: Variant = d.get("hired_agency_arts", [])
+	if typeof(raw_ag) == TYPE_ARRAY:
+		for aid in raw_ag:
+			var s_aid := String(aid)
+			if AgencyOps.ROOKIE_POOL.has(s_aid) and not (s_aid in valid_ag):
+				valid_ag.append(s_aid)
+	clean["hired_agency_arts"] = valid_ag
 
 	var valid_ch_ids := {}
 	for tid in WishlistStory.STORY_CHAPTERS.keys():
