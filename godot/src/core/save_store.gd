@@ -272,6 +272,9 @@ static func delete_slot(slot: int) -> bool:
 		return false
 	return DirAccess.remove_absolute(ProjectSettings.globalize_path(p)) == OK
 
+static func should_show_slot_delete(entry: Dictionary) -> bool:
+	return bool(entry.get("exists", false)) and bool(entry.get("onboarding_done", false))
+
 static func list_save_slots(locale: String = "id") -> Array:
 	var out: Array = []
 	for s in range(1, SLOT_COUNT + 1):

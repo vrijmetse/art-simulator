@@ -3,24 +3,25 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dkwd23sk8ohx6"
-path="res://.godot/imported/cluster_elite_street_asphalt_albedo_hd.jpg-9301870a90f1d304406f86416b02bf5e.ctex"
+path.etc2="res://.godot/imported/cluster_elite_street_asphalt_albedo_hd.jpg-9301870a90f1d304406f86416b02bf5e.etc2.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["etc2_astc"],
+"vram_texture": true
 }
 generator_parameters={
-"md5": "ef44cc9a2792cc845fddf2f49a48c1df"
+"md5": "fe56d618765a8f8edfe78e0074e2ad9f"
 }
 
 [deps]
 
 source_file="res://assets/models/cluster_elite_street_asphalt_albedo_hd.jpg"
-dest_files=["res://.godot/imported/cluster_elite_street_asphalt_albedo_hd.jpg-9301870a90f1d304406f86416b02bf5e.ctex"]
+dest_files=["res://.godot/imported/cluster_elite_street_asphalt_albedo_hd.jpg-9301870a90f1d304406f86416b02bf5e.etc2.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
-compress/lossy_quality=0.7
+compress/lossy_quality=0.82
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
@@ -39,5 +40,5 @@ process/premult_alpha=false
 process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
-process/size_limit=0
+process/size_limit=512
 detect_3d/compress_to=1

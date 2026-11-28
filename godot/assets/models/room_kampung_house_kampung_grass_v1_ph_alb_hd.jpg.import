@@ -9,7 +9,7 @@ metadata={
 "vram_texture": true
 }
 generator_parameters={
-"md5": "54a4f80493f2dd885b92bf6755a685ea"
+"md5": "ba72fd172ed934534cbb685cd9e9dd2d"
 }
 
 [deps]
@@ -21,7 +21,7 @@ dest_files=["res://.godot/imported/room_kampung_house_kampung_grass_v1_ph_alb_hd
 
 compress/mode=2
 compress/high_quality=false
-compress/lossy_quality=0.7
+compress/lossy_quality=0.82
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1

@@ -9,7 +9,7 @@ metadata={
 "vram_texture": true
 }
 generator_parameters={
-"md5": "c1c80024079d0d7eec89378feef3652d"
+"md5": "42a77bfb7636e4b84b50d9be3b21ee8b"
 }
 
 [deps]
@@ -21,7 +21,7 @@ dest_files=["res://.godot/imported/cluster_elite_street_elite_lawn_v1_ph_alb_hd.
 
 compress/mode=2
 compress/high_quality=false
-compress/lossy_quality=0.7
+compress/lossy_quality=0.82
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1

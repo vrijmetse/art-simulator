@@ -3,24 +3,25 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://3i2accnmfv0e"
-path="res://.godot/imported/kampung_gang_gang_roof_terra_v15_ph_alb_hd.jpg-77300a47eed9d58d78787080e6557484.ctex"
+path.etc2="res://.godot/imported/kampung_gang_gang_roof_terra_v15_ph_alb_hd.jpg-77300a47eed9d58d78787080e6557484.etc2.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["etc2_astc"],
+"vram_texture": true
 }
 generator_parameters={
-"md5": "88bae0c2e9941a89bc2281bd20e42e23"
+"md5": "067247dad592cb5a4463d07396c5eb06"
 }
 
 [deps]
 
 source_file="res://assets/models/kampung_gang_gang_roof_terra_v15_ph_alb_hd.jpg"
-dest_files=["res://.godot/imported/kampung_gang_gang_roof_terra_v15_ph_alb_hd.jpg-77300a47eed9d58d78787080e6557484.ctex"]
+dest_files=["res://.godot/imported/kampung_gang_gang_roof_terra_v15_ph_alb_hd.jpg-77300a47eed9d58d78787080e6557484.etc2.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
-compress/lossy_quality=0.7
+compress/lossy_quality=0.82
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
@@ -39,5 +40,5 @@ process/premult_alpha=false
 process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
-process/size_limit=0
+process/size_limit=512
 detect_3d/compress_to=1

@@ -943,9 +943,17 @@ def polish_scene_textures_1024():
         if float(np.std(px[:, :3])) < 0.01:
             img.pack()
             continue
-        if w < 1024:
+        if w < 1024 and not any(k in img.name.lower() for k in ("turf", "grass", "genteng", "roof", "batu", "asphalt", "leaves", "bark", "flower", "blanket", "curtain", "lawn")):
             nw = 1024
             nh = max(64, int(round(h * (1024.0 / w))))
+            img.scale(nw, nh)
+            w, h = nw, nh
+            flat = np.empty(w * h * 4, dtype=np.float32)
+            img.pixels.foreach_get(flat)
+            px = flat.reshape(-1, 4)
+        elif w > 512 and any(k in img.name.lower() for k in ("turf", "grass", "genteng", "roof", "batu", "asphalt", "leaves", "bark", "flower", "blanket", "curtain", "lawn")):
+            nw = 512
+            nh = max(64, int(round(h * (512.0 / w))))
             img.scale(nw, nh)
             w, h = nw, nh
             flat = np.empty(w * h * 4, dtype=np.float32)
@@ -964,7 +972,59 @@ def polish_scene_textures_1024():
         seen_imgs.add(new_img.name)
 
 
-def export_room_glb(filepath: str, quality: int = 88):
+RUNTIME_PRESERVE_NODES = {
+    "IndoorAC", "IndoorACVent",
+    "FanBase", "FanPole", "FanMotorCowl", "FanGuardRingFront", "FanGuardRingBack",
+    "FanSpoke_0", "FanSpoke_1", "FanSpoke_2", "FanSpoke_3", "FanHubBadge",
+    "FanBtn_0", "FanBtn_1", "FanBtn_2", "FanBlade_0", "FanBlade_1", "FanBlade_2", "FanBlade_3",
+    "Cylinder_006", "Cylinder_007", "Sphere", "Torus_001",
+    "RiceCookerStand", "MagicComBody", "MagicComLid", "MagicComVent", "MagicComHandle", "MagicComLED",
+    "Cylinder_008", "Cylinder_009",
+    "cover", "pillow",
+}
+
+
+def join_static_meshes_by_material(preserve_names=None):
+    """Merge static Mesh objects sharing exact (materials, uv_layers) signatures to slash mobile draw calls."""
+    keep = set(RUNTIME_PRESERVE_NODES)
+    if preserve_names:
+        keep.update(preserve_names)
+    if bpy.context.mode != 'OBJECT':
+        bpy.ops.object.mode_set(mode='OBJECT')
+    buckets = {}
+    for obj in list(bpy.data.objects):
+        if obj.type != 'MESH' or obj.data is None:
+            continue
+        if obj.name in keep or obj.animation_data is not None or obj.parent is not None or len(obj.children) > 0:
+            continue
+        if len(obj.modifiers) > 0:
+            continue
+        mats = tuple((m.name if m else "") for m in obj.data.materials)
+        uvs = tuple(uv.name for uv in obj.data.uv_layers)
+        buckets.setdefault((mats, uvs), []).append(obj)
+
+    merged_count = 0
+    for (mats, uvs), objs in buckets.items():
+        if len(objs) < 2:
+            continue
+        bpy.ops.object.select_all(action='DESELECT')
+        for o in objs:
+            o.select_set(True)
+        bpy.context.view_layer.objects.active = objs[0]
+        try:
+            bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
+        except Exception:
+            pass
+        bpy.ops.object.join()
+        joined = bpy.context.view_layer.objects.active
+        if joined:
+            joined.name = f"Batch_{mats[0][:24] if mats and mats[0] else 'Mesh'}_{merged_count}"
+            merged_count += 1
+
+
+def export_room_glb(filepath: str, quality: int = 88, merge_static: bool = True, preserve_names=None):
+    if merge_static:
+        join_static_meshes_by_material(preserve_names=preserve_names)
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
     bpy.ops.export_scene.gltf(
         filepath=filepath,

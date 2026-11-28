@@ -3,24 +3,25 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dhfcy3u6ln7hv"
-path="res://.godot/imported/kos_room_fabric_curtain_hd_hd.jpg-9bb98e018ee59c8cada2100a92b5e71d.ctex"
+path.etc2="res://.godot/imported/kos_room_fabric_curtain_hd_hd.jpg-9bb98e018ee59c8cada2100a92b5e71d.etc2.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["etc2_astc"],
+"vram_texture": true
 }
 generator_parameters={
-"md5": "0aeb0f1785c8b9ebe382b3fa05d35ed0"
+"md5": "6217fc6c82514a26208eea646bd15c19"
 }
 
 [deps]
 
 source_file="res://assets/models/kos_room_fabric_curtain_hd_hd.jpg"
-dest_files=["res://.godot/imported/kos_room_fabric_curtain_hd_hd.jpg-9bb98e018ee59c8cada2100a92b5e71d.ctex"]
+dest_files=["res://.godot/imported/kos_room_fabric_curtain_hd_hd.jpg-9bb98e018ee59c8cada2100a92b5e71d.etc2.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
-compress/lossy_quality=0.7
+compress/lossy_quality=0.82
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
@@ -39,5 +40,5 @@ process/premult_alpha=false
 process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
-process/size_limit=0
+process/size_limit=512
 detect_3d/compress_to=1

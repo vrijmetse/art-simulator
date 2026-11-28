@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://b7qxx7pbpvylq"
-path="res://.godot/imported/kos_room_rattan_woven_hd_nrm.jpg-16365bda0c931edef09a09225131387b.ctex"
+path.etc2="res://.godot/imported/kos_room_rattan_woven_hd_nrm.jpg-16365bda0c931edef09a09225131387b.etc2.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["etc2_astc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "6ab45dd59369cb2f7dffaa1c2d288952"
@@ -14,17 +15,17 @@ generator_parameters={
 [deps]
 
 source_file="res://assets/models/kos_room_rattan_woven_hd_nrm.jpg"
-dest_files=["res://.godot/imported/kos_room_rattan_woven_hd_nrm.jpg-16365bda0c931edef09a09225131387b.ctex"]
+dest_files=["res://.godot/imported/kos_room_rattan_woven_hd_nrm.jpg-16365bda0c931edef09a09225131387b.etc2.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
-compress/lossy_quality=0.7
+compress/lossy_quality=0.82
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
-compress/normal_map=0
+compress/normal_map=1
 compress/channel_pack=0
 mipmaps/generate=true
 mipmaps/limit=-1
@@ -39,5 +40,5 @@ process/premult_alpha=false
 process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
-process/size_limit=0
+process/size_limit=512
 detect_3d/compress_to=1

@@ -9,7 +9,7 @@ metadata={
 "vram_texture": true
 }
 generator_parameters={
-"md5": "e732a0d27282e6dc130704b6aeaf4375"
+"md5": "55cc5073eee488118b6e2baa30a9a85f"
 }
 
 [deps]
@@ -21,7 +21,7 @@ dest_files=["res://.godot/imported/kamar_art_small_art_small_grass_v1_ph_alb_hd.
 
 compress/mode=2
 compress/high_quality=false
-compress/lossy_quality=0.7
+compress/lossy_quality=0.82
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1

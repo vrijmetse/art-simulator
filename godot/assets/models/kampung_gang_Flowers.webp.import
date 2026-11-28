@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://b7m0x1ekra4ms"
-path="res://.godot/imported/kampung_gang_Flowers.webp-42f052a257fe87164549079329a3cdd5.ctex"
+path.etc2="res://.godot/imported/kampung_gang_Flowers.webp-42f052a257fe87164549079329a3cdd5.etc2.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["etc2_astc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "11eab764b70d706cbb63d09ccb93ffb2"
@@ -14,13 +15,13 @@ generator_parameters={
 [deps]
 
 source_file="res://assets/models/kampung_gang_Flowers.webp"
-dest_files=["res://.godot/imported/kampung_gang_Flowers.webp-42f052a257fe87164549079329a3cdd5.ctex"]
+dest_files=["res://.godot/imported/kampung_gang_Flowers.webp-42f052a257fe87164549079329a3cdd5.etc2.ctex"]
 
 [params]
 
-compress/mode=1
+compress/mode=2
 compress/high_quality=false
-compress/lossy_quality=0.78
+compress/lossy_quality=0.82
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1

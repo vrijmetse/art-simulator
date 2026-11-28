@@ -3,24 +3,25 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://ca6igngyh3yrc"
-path="res://.godot/imported/kampung_street_roof_rgh.jpg-c6382fd4e36f4d8676dc1fec52b4e75d.ctex"
+path.etc2="res://.godot/imported/kampung_street_roof_rgh.jpg-c6382fd4e36f4d8676dc1fec52b4e75d.etc2.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["etc2_astc"],
+"vram_texture": true
 }
 generator_parameters={
-"md5": "d128da2702fde5557305b41f3907ec1a"
+"md5": "9938397b3944caf80459468c7d79b4c6"
 }
 
 [deps]
 
 source_file="res://assets/models/kampung_street_roof_rgh.jpg"
-dest_files=["res://.godot/imported/kampung_street_roof_rgh.jpg-c6382fd4e36f4d8676dc1fec52b4e75d.ctex"]
+dest_files=["res://.godot/imported/kampung_street_roof_rgh.jpg-c6382fd4e36f4d8676dc1fec52b4e75d.etc2.ctex"]
 
 [params]
 
-compress/mode=1
+compress/mode=2
 compress/high_quality=false
-compress/lossy_quality=0.78
+compress/lossy_quality=0.82
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1

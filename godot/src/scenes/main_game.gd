@@ -130,8 +130,15 @@ var _btn_ward: Button
 var _btn_kos: Button
 var _tl_card: Control
 var _tr_vbox: VBoxContainer
+var _tc_center: CenterContainer
 var _br_vbox: VBoxContainer
 var _stars_row: HBoxContainer
+var _safe_margins: Dictionary = {"left": 0.0, "top": 0.0, "right": 0.0, "bottom": 0.0}
+var _last_prompt_key := ""
+var _last_dock_action_key := ""
+var _dlg_hbox: HBoxContainer
+var _ob_card: PanelContainer
+var _title_card: PanelContainer
 var _dock_labels: Dictionary = {}
 var _dock_icons: Dictionary = {}
 var _dock_badges: Dictionary = {}
@@ -399,16 +406,62 @@ func _notification(what: int) -> void:
 				_open_settings_modal()
 
 func _apply_mobile_safe_area() -> void:
-	if _smoke_mode or DisplayServer.get_name() == "headless":
-		return
-	var safe := DisplayServer.get_display_safe_area()
-	var win := get_viewport().get_visible_rect().size
-	if safe.size.x <= 0 or win.x <= 0:
-		return
-	var scale_x := win.x / maxf(1.0, float(DisplayServer.window_get_size().x))
-	var pad_left := clampf(float(safe.position.x) * scale_x, 0.0, 48.0)
+	var vp := get_viewport().get_visible_rect().size
+	if vp.x <= 1.0 or vp.y <= 1.0:
+		vp = Vector2(1280.0, 720.0)
+	if not _smoke_mode and DisplayServer.get_name() != "headless":
+		var safe := DisplayServer.get_display_safe_area()
+		var win := Vector2(DisplayServer.window_get_size())
+		_safe_margins = Atmosphere.compute_hud_safe_margins(Rect2(safe), win, vp)
+	else:
+		_safe_margins = {"left": 0.0, "top": 0.0, "right": 0.0, "bottom": 0.0}
+	var pad_l := float(_safe_margins.get("left", 0.0))
+	var pad_t := float(_safe_margins.get("top", 0.0))
+	var pad_r := float(_safe_margins.get("right", 0.0))
+	var pad_b := float(_safe_margins.get("bottom", 0.0))
 	if _tl_card != null:
-		_tl_card.position.x = 14.0 + pad_left
+		_tl_card.position = Vector2(14.0 + pad_l, 10.0 + pad_t)
+	if _tr_vbox != null:
+		_tr_vbox.offset_right = -16.0 - pad_r
+		_tr_vbox.offset_top = 10.0 + pad_t
+	if _br_vbox != null:
+		_br_vbox.offset_right = -14.0 - pad_r
+		_br_vbox.offset_bottom = -12.0 - pad_b
+	if _joy_base != null:
+		_joy_base.offset_left = 16.0 + pad_l
+		_joy_base.offset_right = 114.0 + pad_l
+		_joy_base.offset_bottom = -14.0 - pad_b
+		_joy_base.offset_top = -112.0 - pad_b
+	if _tc_center != null:
+		var tl_w := maxf(304.0, _tl_card.size.x if _tl_card != null else 304.0)
+		var tr_w := maxf(396.0, _tr_vbox.size.x if _tr_vbox != null else 396.0)
+		var tc_b := Atmosphere.compute_top_center_bounds(vp.x, tl_w, tr_w, pad_l, pad_r)
+		_tc_center.offset_left = float(tc_b["offset_left"])
+		_tc_center.offset_right = float(tc_b["offset_right"])
+		_tc_center.offset_top = 10.0 + pad_t
+	if _dialogue_bar != null:
+		_dialogue_bar.offset_top = -132.0 - pad_b
+		_dialogue_bar.offset_bottom = 0.0
+	if _title_card != null:
+		_title_card.offset_left = 24.0 + pad_l
+		_title_card.offset_bottom = -20.0 - pad_b
+
+func _set_control_focus_recursive(node: Node, enabled: bool) -> void:
+	if node is Control:
+		var c := node as Control
+		if not enabled:
+			if not c.has_meta("_saved_focus_mode"):
+				c.set_meta("_saved_focus_mode", c.focus_mode)
+			c.focus_mode = Control.FOCUS_NONE
+		elif c.has_meta("_saved_focus_mode"):
+			c.focus_mode = int(c.get_meta("_saved_focus_mode"))
+	for ch in node.get_children():
+		_set_control_focus_recursive(ch, enabled)
+
+func _set_hud_focus_enabled(enabled: bool) -> void:
+	for ctrl in [_tl_card, _tr_vbox, _br_vbox, _hp_bottom_left]:
+		if ctrl != null:
+			_set_control_focus_recursive(ctrl, enabled)
 
 func _t(id_str: String, en_str: String) -> String:
 	return en_str if _loc() == "en" else id_str
@@ -1291,9 +1344,9 @@ func _process(delta: float) -> void:
 
 	# Smooth camera follow (or close-up turntable framing during Onboarding!)
 	if _onboarding_wrap != null and _onboarding_wrap.visible:
-		var ob_cam_target := player.position + Vector3(0.65, 1.42, 2.55)
+		var ob_cam_target := player.position + Vector3(0.65, 1.36, 2.78)
 		cam.position = cam.position.lerp(ob_cam_target, minf(1.0, delta * 6.0))
-		cam.look_at(player.position + Vector3(0.62, 0.92, 0.0), Vector3.UP)
+		cam.look_at(player.position + Vector3(0.62, 0.84, 0.0), Vector3.UP)
 		return
 
 	if _cam_punch > 0.0:
@@ -1322,13 +1375,15 @@ func _process(delta: float) -> void:
 
 	var np := _nearest_portal()
 	var sn := _nearest_street_npc()
-	# Wayfinding Label3D fade: hide during UI overlays/dialogue/phone/spotlight or when _world_prompt announces the portal
-	var hide_labels := ui_cover or (_dialogue_bar != null and _dialogue_bar.visible) or (_phone_os_wrap != null and _phone_os_wrap.visible) or (_spotlight_wrap != null and _spotlight_wrap.visible)
+	var modal_cover := _modal_backdrop != null and _modal_backdrop.visible
+	# Wayfinding Label3D fade: hide during UI overlays/dialogue/phone/spotlight, overlapping player, or when _world_prompt announces the portal
+	var hide_labels := ui_cover or modal_cover or (_dialogue_bar != null and _dialogue_bar.visible) or (_phone_os_wrap != null and _phone_os_wrap.visible) or (_spotlight_wrap != null and _spotlight_wrap.visible)
 	for pnode in _portal_nodes:
 		if is_instance_valid(pnode):
 			var p_lbl3d := pnode.find_child("_Label3D", false, false) as Label3D
 			if p_lbl3d != null:
-				p_lbl3d.visible = (not hide_labels) and pnode != np and pnode.position.distance_to(player.position) <= 3.2
+				var pdist: float = (pnode as Node3D).position.distance_to(player.position)
+				p_lbl3d.visible = (not hide_labels) and pnode != np and pdist >= 0.85 and pdist <= 3.2
 	for s_npc in _street_npcs_data:
 		var sn_node = s_npc.get("node", null)
 		if sn_node != null and is_instance_valid(sn_node):
@@ -1337,31 +1392,45 @@ func _process(delta: float) -> void:
 				n_lbl3d.visible = (not hide_labels) and sn_node.position.distance_to(player.position) <= 3.2
 
 	var show_key := _show_keyboard_hints()
-	if ui_cover or (_dialogue_bar != null and _dialogue_bar.visible) or (_phone_os_wrap != null and _phone_os_wrap.visible):
+	if ui_cover or modal_cover or (_dialogue_bar != null and _dialogue_bar.visible) or (_phone_os_wrap != null and _phone_os_wrap.visible):
 		if _world_prompt != null:
 			_world_prompt.visible = false
 	elif not _in_shift:
 		if _world_prompt != null:
 			if np != null and not cam.is_position_behind(np.global_position):
 				var p_lbl := String(np.get_meta("label_en" if _loc() == "en" else "label_id", ""))
-				_world_prompt.text = Atmosphere.format_action_prompt(p_lbl, _loc(), show_key)
+				var pk := "p:" + p_lbl + ":" + str(show_key)
+				if pk != _last_prompt_key:
+					_last_prompt_key = pk
+					_world_prompt.text = Atmosphere.format_action_prompt(p_lbl, _loc(), show_key)
 				_position_world_prompt(np.global_position + Vector3(0.0, 0.72, 0.0))
 				_world_prompt.visible = true
 				var short_lbl := p_lbl.split(" ")[0] if p_lbl.length() > 8 else p_lbl
-				_set_dock_label("action", short_lbl)
+				if _last_dock_action_key != short_lbl:
+					_last_dock_action_key = short_lbl
+					_set_dock_label("action", short_lbl)
 			elif not sn.is_empty():
 				var npos: Vector3 = sn.get("pos", Vector3.ZERO)
 				if not cam.is_position_behind(npos):
 					var n_lbl := String(sn.get("label_en") if _loc() == "en" else sn.get("label_id"))
-					_world_prompt.text = Atmosphere.format_action_prompt("%s %s" % [_t("Ngobrol:", "Chat:"), n_lbl], _loc(), show_key)
+					var nk := "s:" + n_lbl + ":" + str(show_key)
+					if nk != _last_prompt_key:
+						_last_prompt_key = nk
+						_world_prompt.text = Atmosphere.format_action_prompt("%s %s" % [_t("Ngobrol:", "Chat:"), n_lbl], _loc(), show_key)
 					_position_world_prompt(npos + Vector3(0.0, 1.55, 0.0))
 					_world_prompt.visible = true
-					_set_dock_label("action", _t("Ngobrol", "Chat"))
+					var chat_lbl := _t("Ngobrol", "Chat")
+					if _last_dock_action_key != chat_lbl:
+						_last_dock_action_key = chat_lbl
+						_set_dock_label("action", chat_lbl)
 				else:
 					_world_prompt.visible = false
 			else:
 				_world_prompt.visible = false
-				_set_dock_label("action", _t("Masuk", "Enter") if _world_mode == "street" else _t("Keluar", "Outside"))
+				var idle_lbl := _t("Masuk", "Enter") if _world_mode == "street" else _t("Keluar", "Outside")
+				if _last_dock_action_key != idle_lbl:
+					_last_dock_action_key = idle_lbl
+					_set_dock_label("action", idle_lbl)
 		return
 
 	_shift_elapsed_s += delta
@@ -1376,32 +1445,50 @@ func _process(delta: float) -> void:
 		if c is ChoreHotspotScene:
 			c.set_highlighted(c == near)
 	if _world_prompt != null:
-		if ui_cover or (_dialogue_bar != null and _dialogue_bar.visible) or (_phone_os_wrap != null and _phone_os_wrap.visible):
+		if ui_cover or modal_cover or (_dialogue_bar != null and _dialogue_bar.visible) or (_phone_os_wrap != null and _phone_os_wrap.visible):
 			_world_prompt.visible = false
 		elif near != null and _active_chore_id == "" and not cam.is_position_behind(near.global_position):
 			var w_lbl: String = near.label_en if _loc() == "en" else near.label_id
-			_world_prompt.text = Atmosphere.format_action_prompt(w_lbl, _loc(), show_key)
+			var wk := "c:" + w_lbl + ":" + str(show_key)
+			if wk != _last_prompt_key:
+				_last_prompt_key = wk
+				_world_prompt.text = Atmosphere.format_action_prompt(w_lbl, _loc(), show_key)
 			_position_world_prompt(near.global_position + Vector3(0.0, 0.65, 0.0))
 			_world_prompt.visible = true
-			_set_dock_label("action", _t("Kerjakan", "Chore"))
+			var ch_lbl := _t("Kerjakan", "Chore")
+			if _last_dock_action_key != ch_lbl:
+				_last_dock_action_key = ch_lbl
+				_set_dock_label("action", ch_lbl)
 		elif _active_chore_id == "":
 			var sn_sh := _nearest_shift_npc()
 			if not sn_sh.is_empty():
 				var sh_pos: Vector3 = sn_sh.get("pos", Vector3.ZERO)
 				if not cam.is_position_behind(sh_pos):
 					var sh_lbl := String(sn_sh.get("label_en") if _loc() == "en" else sn_sh.get("label_id"))
-					_world_prompt.text = Atmosphere.format_action_prompt("%s %s" % [_t("Sapa:", "Greet:"), sh_lbl], _loc(), show_key)
+					var shk := "sh:" + sh_lbl + ":" + str(show_key)
+					if shk != _last_prompt_key:
+						_last_prompt_key = shk
+						_world_prompt.text = Atmosphere.format_action_prompt("%s %s" % [_t("Sapa:", "Greet:"), sh_lbl], _loc(), show_key)
 					_position_world_prompt(sh_pos + Vector3(0.0, 1.55, 0.0))
 					_world_prompt.visible = true
-					_set_dock_label("action", _t("Sapa", "Greet"))
+					var gr_lbl := _t("Sapa", "Greet")
+					if _last_dock_action_key != gr_lbl:
+						_last_dock_action_key = gr_lbl
+						_set_dock_label("action", gr_lbl)
 				else:
 					_world_prompt.visible = false
 			else:
 				_world_prompt.visible = false
-				_set_dock_label("action", _t("Kerjakan", "Chore"))
+				var ch_idle := _t("Kerjakan", "Chore")
+				if _last_dock_action_key != ch_idle:
+					_last_dock_action_key = ch_idle
+					_set_dock_label("action", ch_idle)
 		else:
 			_world_prompt.visible = false
-			_set_dock_label("action", _t("Cepat! %d/%d" % [_chore_boosts_used, ChoreEngine.MAX_TAP_BOOSTS_PER_CHORE], "Fast! %d/%d" % [_chore_boosts_used, ChoreEngine.MAX_TAP_BOOSTS_PER_CHORE]))
+			var fast_lbl := _t("Cepat! %d/%d" % [_chore_boosts_used, ChoreEngine.MAX_TAP_BOOSTS_PER_CHORE], "Fast! %d/%d" % [_chore_boosts_used, ChoreEngine.MAX_TAP_BOOSTS_PER_CHORE])
+			if _last_dock_action_key != fast_lbl:
+				_last_dock_action_key = fast_lbl
+				_set_dock_label("action", fast_lbl)
 
 	# Active chore progress
 	if _active_chore_id != "":
@@ -1410,7 +1497,7 @@ func _process(delta: float) -> void:
 		_bar_chore.max_value = _chore_duration
 		_bar_chore.value = _chore_progress
 		var cfg: Dictionary = ChoreEngine.CHORES[_active_chore_id]
-		var tap_hint := (_t("  [Tekan E = Cepat!]", "  [Press E = Boost!]") if show_key else _t("  [Ketuk Aksi = Cepat!]", "  [Tap Action = Boost!]")) if _chore_boosts_used < ChoreEngine.MAX_TAP_BOOSTS_PER_CHORE else "  ⚡"
+		var tap_hint := (_t("  [Tekan E = Cepat!]", "  [Press E = Boost!]") if show_key else _t("  [Ketuk \"Cepat!\" = Boost!]", "  [Tap \"Fast!\" = Boost!]")) if _chore_boosts_used < ChoreEngine.MAX_TAP_BOOSTS_PER_CHORE else "  ⚡"
 		_lbl_chore_prog.text = "%s%s" % [String(cfg["label_en"] if _loc() == "en" else cfg["label_id"]), tap_hint]
 		if _chore_progress >= _chore_duration:
 			_chore_bar_wrap.visible = false
@@ -1571,9 +1658,7 @@ func _position_world_prompt(world_pos: Vector3) -> void:
 	var scr := cam.unproject_position(world_pos)
 	var vp := get_viewport().get_visible_rect().size
 	var sz := _world_prompt.get_combined_minimum_size().max(_world_prompt.size)
-	var px := clampf(scr.x - sz.x * 0.5, 8.0, maxf(8.0, vp.x - sz.x - 8.0))
-	var py := clampf(scr.y - sz.y - 18.0, 78.0, maxf(78.0, vp.y - sz.y - 96.0))
-	_world_prompt.position = Vector2(px, py)
+	_world_prompt.position = Atmosphere.clamp_world_prompt_pos(scr, sz, vp, _safe_margins)
 
 func _format_meta_clock() -> String:
 	return LifeRhythm.format_clock(int(_save.get("game_minutes", 360))).replace(":", ".")
@@ -1596,9 +1681,16 @@ func _refresh_hud() -> void:
 	var ob_active := _onboarding_wrap != null and _onboarding_wrap.visible
 	var dlg_active := _dialogue_bar != null and _dialogue_bar.visible
 	var phone_os_active := _phone_os_wrap != null and _phone_os_wrap.visible
+	var modal_active := _modal_backdrop != null and _modal_backdrop.visible
 	var ui_cover := title_active or ob_active
+	var overlay_cover := ui_cover or dlg_active or phone_os_active or modal_active
 	var vp := _effective_window_size()
+	var canvas_sz := get_viewport().get_visible_rect().size
+	if canvas_sz.x <= 1.0:
+		canvas_sz = Vector2(1280.0, 720.0)
 	var show_joy := Atmosphere.should_show_virtual_joystick(vp, DisplayServer.is_touchscreen_available(), OS.has_feature("mobile"))
+	var pad_l := float(_safe_margins.get("left", 0.0))
+	var pad_b := float(_safe_margins.get("bottom", 0.0))
 	if _npcs_root != null:
 		_npcs_root.visible = not ob_active
 	if hotspots_root != null:
@@ -1613,14 +1705,33 @@ func _refresh_hud() -> void:
 		_joy_base.visible = show_joy and (not ui_cover) and (not dlg_active) and (not phone_os_active)
 	if _hp_bottom_left != null:
 		_hp_bottom_left.visible = (not ui_cover) and (not dlg_active) and (not phone_os_active)
-		if show_joy:
-			_hp_bottom_left.offset_top = -202
-			_hp_bottom_left.offset_bottom = -124
+		if show_joy and canvas_sz.x >= 920.0:
+			_hp_bottom_left.offset_left = 122.0 + pad_l
+			_hp_bottom_left.offset_right = 192.0 + pad_l
+			_hp_bottom_left.offset_top = -90.0 - pad_b
+			_hp_bottom_left.offset_bottom = -12.0 - pad_b
+		elif show_joy:
+			_hp_bottom_left.offset_left = 14.0 + pad_l
+			_hp_bottom_left.offset_right = 84.0 + pad_l
+			_hp_bottom_left.offset_top = -196.0 - pad_b
+			_hp_bottom_left.offset_bottom = -118.0 - pad_b
 		else:
-			_hp_bottom_left.offset_top = -94
-			_hp_bottom_left.offset_bottom = -16
+			_hp_bottom_left.offset_left = 14.0 + pad_l
+			_hp_bottom_left.offset_right = 84.0 + pad_l
+			_hp_bottom_left.offset_top = -90.0 - pad_b
+			_hp_bottom_left.offset_bottom = -12.0 - pad_b
 	if _courier_toast != null:
-		_courier_toast.offset_left = 128 if show_joy else 104
+		_courier_toast.offset_left = 14.0 + pad_l
+		if show_joy and canvas_sz.x < 920.0:
+			_courier_toast.offset_bottom = -206.0 - pad_b
+			_courier_toast.offset_top = -274.0 - pad_b
+		elif show_joy:
+			_courier_toast.offset_bottom = -120.0 - pad_b
+			_courier_toast.offset_top = -188.0 - pad_b
+		else:
+			_courier_toast.offset_bottom = -98.0 - pad_b
+			_courier_toast.offset_top = -166.0 - pad_b
+	_set_hud_focus_enabled(not overlay_cover)
 
 	var xp := int(_save.get("xp", 0))
 	var lv := Progression.level_from_xp(xp)
@@ -1687,6 +1798,8 @@ func _refresh_hud() -> void:
 		_tasks_card.visible = true
 
 		_set_dock_label("shift", _t("Selesai", "Finish") if done_n >= tot_n else (_t("Pulang", "Leave") if done_n > 0 else _t("Batal", "Cancel")))
+		if _dock_icons.has("shift"):
+			(_dock_icons["shift"] as TextureRect).texture = Portraits.get_ui_icon("icon_door")
 		_btn_action.visible = true
 		if _dock_icons.has("action"):
 			(_dock_icons["action"] as TextureRect).texture = Portraits.get_ui_icon("icon_broom")
@@ -1709,6 +1822,8 @@ func _refresh_hud() -> void:
 			_bar_mood.value = h_mood
 		_lbl_trust.text = "%s · %s" % [p_name, tier_label]
 		_tasks_card.visible = false
+		if _dock_icons.has("shift"):
+			(_dock_icons["shift"] as TextureRect).texture = Portraits.get_ui_icon("icon_broom")
 		_set_dock_label("shift", _t("Shift", "Shift"))
 		_btn_action.visible = true
 		if _world_mode == "street":
@@ -1797,9 +1912,9 @@ func _fit_modal_scroll_height() -> void:
 	var canvas_sz := get_viewport().get_visible_rect().size
 	if canvas_sz.x <= 1.0 or canvas_sz.y <= 1.0:
 		canvas_sz = Vector2(1280.0, 720.0)
-	var content_h := _modal_list.get_combined_minimum_size().y + 14.0
-	var max_h := minf(510.0, canvas_sz.y - 165.0)
-	_modal_scroll.custom_minimum_size = Vector2(minf(740.0, canvas_sz.x - 144.0), clampf(content_h, 110.0, max_h))
+	var content_h := _modal_list.get_combined_minimum_size().y + 12.0
+	var max_h := minf(500.0, canvas_sz.y - 165.0)
+	_modal_scroll.custom_minimum_size = Vector2(minf(740.0, canvas_sz.x - 144.0), clampf(content_h, 48.0, max_h))
 
 func _show_modal() -> void:
 	if _is_sleeping:
@@ -1809,13 +1924,22 @@ func _show_modal() -> void:
 		canvas_sz = Vector2(1280.0, 720.0)
 	if _modal_card != null:
 		_modal_card.custom_minimum_size = Vector2(minf(780.0, canvas_sz.x - 100.0), 0.0)
-	if _modal_scroll != null:
-		_modal_scroll.custom_minimum_size = Vector2(minf(740.0, canvas_sz.x - 144.0), minf(360.0, canvas_sz.y - 180.0))
 	if _modal_list != null:
 		_auto_style_modal_buttons(_modal_list)
+	if _modal_scroll != null:
+		_fit_modal_scroll_height()
 	if _modal_backdrop != null:
 		_modal_backdrop.visible = true
+	_set_hud_focus_enabled(false)
+	_refresh_courier_toast()
 	call_deferred("_fit_modal_scroll_height")
+	if _btn_modal_close != null and _btn_modal_close.visible:
+		_btn_modal_close.call_deferred("grab_focus")
+	elif _modal_list != null and _modal_list.get_child_count() > 0:
+		for ch in _modal_list.get_children():
+			if ch is Button and not (ch as Button).disabled:
+				(ch as Button).call_deferred("grab_focus")
+				break
 	_refresh_tutorial_banner()
 
 func _refresh_call_banner() -> void:
@@ -1840,8 +1964,10 @@ func _refresh_call_banner() -> void:
 func _clear_modal() -> void:
 	if _btn_modal_close != null:
 		_btn_modal_close.visible = true
-	for c in _modal_list.get_children():
-		c.queue_free()
+	if _modal_list != null:
+		for c in _modal_list.get_children():
+			_modal_list.remove_child(c)
+			c.queue_free()
 
 func _open_career_modal() -> void:
 	_clear_modal()
@@ -1880,11 +2006,16 @@ func _open_career_modal() -> void:
 		var tid := String(t["id"])
 		var unlocked := CareerTiers.can_access_tier(tid, xp_cur_career)
 		var btn := Button.new()
-		var badge := "✓ " if tid == cur_id else ""
+		var badge := "✓ " if tid == cur_id else ("" if unlocked else "🔒 ")
 		var room_tag := _t(" + Kamar ART", " + Live-In Room") if bool(t["live_in_room_provided"]) else ""
 		var h_name := String(t.get("house_type_en", t["house_type"]) if _loc() == "en" else t["house_type"])
-		btn.text = "%s%s (%d XP • %.1fx%s)" % [badge, h_name, int(t["min_xp"]), float(t["pay_multiplier"]), room_tag]
+		var act_tag := _t(" [Aktif]", " [Active]") if tid == cur_id else ""
+		btn.text = "%s%s (%d XP • %.1fx%s)%s" % [badge, h_name, int(t["min_xp"]), float(t["pay_multiplier"]), room_tag, act_tag]
 		btn.disabled = not unlocked
+		if tid == cur_id:
+			_style_btn(btn, Color(0.18, 0.44, 0.36), Color(0.98, 0.84, 0.34))
+		elif unlocked:
+			_style_btn(btn, Color(0.15, 0.20, 0.28), Color(0.95, 0.78, 0.26, 0.85))
 		btn.pressed.connect(func():
 			var res := Progression.select_job_tier(_save, tid)
 			if res["ok"]:
@@ -1977,6 +2108,10 @@ func _open_retention_modal() -> void:
 		_modal_list.add_child(btn_m)
 
 	var unlocked_bd: Array = _save.get("unlocked_badges", [])
+	var bd_card := PanelContainer.new()
+	bd_card.add_theme_stylebox_override("panel", _make_box(Color(0.12, 0.16, 0.22), Color(0.96, 0.78, 0.26, 0.65), 10, 12, 8))
+	var bd_v := VBoxContainer.new()
+	bd_v.add_theme_constant_override("separation", 4)
 	var bd_lbl := Label.new()
 	var bd_names: Array = []
 	for raw_bid in unlocked_bd:
@@ -1984,10 +2119,19 @@ func _open_retention_modal() -> void:
 		if Retention.BADGES.has(bid):
 			bd_names.append(String(Retention.BADGES[bid]["label_en" if _loc() == "en" else "label_id"]))
 	bd_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	bd_lbl.text = "%s (%d/%d): %s" % [_t("Lencana", "Badges"), unlocked_bd.size(), Retention.BADGES.size(), ", ".join(bd_names) if bd_names.size() > 0 else _t("Belum ada", "None yet")]
-	bd_lbl.add_theme_font_size_override("font_size", 11)
+	bd_lbl.text = "🏅 %s (%d/%d): %s" % [_t("Lencana", "Badges"), unlocked_bd.size(), Retention.BADGES.size(), ", ".join(bd_names) if bd_names.size() > 0 else _t("Belum ada", "None yet")]
+	bd_lbl.add_theme_font_size_override("font_size", 12)
 	bd_lbl.add_theme_color_override("font_color", Color(0.98, 0.84, 0.34))
-	_modal_list.add_child(bd_lbl)
+	var bd_bar := ProgressBar.new()
+	bd_bar.custom_minimum_size = Vector2(0, 8)
+	bd_bar.max_value = maxi(1, Retention.BADGES.size())
+	bd_bar.value = unlocked_bd.size()
+	bd_bar.show_percentage = false
+	_style_bar(bd_bar, Color(0.96, 0.78, 0.26), Color(0.08, 0.10, 0.14))
+	bd_v.add_child(bd_lbl)
+	bd_v.add_child(bd_bar)
+	bd_card.add_child(bd_v)
+	_modal_list.add_child(bd_card)
 	_show_modal()
 
 func _perform_sleep_recharge() -> void:
@@ -2104,8 +2248,8 @@ func _open_storybook_modal() -> void:
 		var btn := Button.new()
 		var ok_u := bool(entry["unlocked"])
 		if ok_u:
-			btn.text = "✓ %s" % String(entry["title"])
-			_style_btn(btn, Color(0.16, 0.34, 0.30), Color(0.96, 0.78, 0.26))
+			btn.text = "📖 %s — %s" % [String(entry["title"]), _t("Baca", "Read")]
+			_style_btn(btn, Color(0.16, 0.38, 0.32), Color(0.96, 0.78, 0.26))
 			var ch_dict: Dictionary = entry["chapter"]
 			btn.pressed.connect(func(): _open_chapter_modal(ch_dict))
 		else:
@@ -2176,16 +2320,25 @@ func _open_wishlist_modal() -> void:
 	w_bal.add_theme_color_override("font_color", Color(0.45, 0.94, 0.44))
 	_modal_list.add_child(w_bal)
 	var unlocked: Array = _save.get("unlocked_wishlist", [])
+	var bal_now_w := int(_save.get("balance_rp", 0))
 	for raw_wid in WishlistStory.WISHLIST_ITEMS.keys():
 		var wid := String(raw_wid)
 		var item: Dictionary = WishlistStory.WISHLIST_ITEMS[wid]
 		var is_done := wid in unlocked
+		var cost_w := int(item["cost_rp"])
+		var can_buy_w := (not is_done) and bal_now_w >= cost_w
 		var title := String(item["label_en"] if _loc() == "en" else item["label_id"])
 		var desc := String(item["desc_en"] if _loc() == "en" else item["desc_id"])
+		var w_card := PanelContainer.new()
+		w_card.add_theme_stylebox_override("panel", _make_box(Color(0.14, 0.28, 0.22) if is_done else Color(0.12, 0.16, 0.22), Color(0.96, 0.78, 0.26) if can_buy_w else Color(0.36, 0.40, 0.48), 10, 10, 6))
+		var wv := VBoxContainer.new()
+		wv.add_theme_constant_override("separation", 4)
 		var btn := Button.new()
-		var status := _t("✓ Tercapai", "✓ Achieved") if is_done else ("%s (+%d XP, +%d%% Semangat)" % [I18n.format_balance(int(item["cost_rp"]), _loc()), int(item["xp_bonus"]), int(item["mood_bonus"])])
+		var status := _t("✓ Tercapai", "✓ Achieved") if is_done else (_t("★ Wujudkan · %s (+%d XP)" % [I18n.format_balance(cost_w, _loc()), int(item["xp_bonus"])], "★ Fulfill · %s (+%d XP)" % [I18n.format_balance(cost_w, _loc()), int(item["xp_bonus"])]) if can_buy_w else ("%s (+%d XP, +%d%% %s)" % [I18n.format_balance(cost_w, _loc()), int(item["xp_bonus"]), int(item["mood_bonus"]), _t("Semangat", "Mood")]))
 		btn.text = "%s — %s\n%s" % [title, status, desc]
-		btn.disabled = is_done or int(_save.get("balance_rp", 0)) < int(item["cost_rp"])
+		btn.disabled = is_done or not can_buy_w
+		if can_buy_w:
+			_style_btn(btn, Color(0.20, 0.50, 0.34), Color(0.98, 0.84, 0.34))
 		btn.pressed.connect(func():
 			var res := WishlistStory.buy_wishlist_item(_save, wid)
 			if res["ok"]:
@@ -2195,7 +2348,7 @@ func _open_wishlist_modal() -> void:
 					"kind": "wishlist",
 					"title_id": "Impian: %s" % String(item["label_id"]),
 					"title_en": "Dream: %s" % String(item["label_en"]),
-					"delta_rp": -int(item["cost_rp"]),
+					"delta_rp": -cost_w,
 				})
 				SaveStore.save_to_slot(_save, _active_slot)
 				_play_sfx(_wav_fanfare)
@@ -2207,7 +2360,17 @@ func _open_wishlist_modal() -> void:
 					call_deferred("_open_wishlist_modal")
 				_refresh_hud()
 		)
-		_modal_list.add_child(btn)
+		wv.add_child(btn)
+		if not is_done:
+			var wp := ProgressBar.new()
+			wp.custom_minimum_size = Vector2(0, 6)
+			wp.max_value = maxi(1, cost_w)
+			wp.value = mini(bal_now_w, cost_w)
+			wp.show_percentage = false
+			_style_bar(wp, Color(0.36, 0.88, 0.48) if can_buy_w else Color(0.96, 0.78, 0.26), Color(0.08, 0.10, 0.14))
+			wv.add_child(wp)
+		w_card.add_child(wv)
+		_modal_list.add_child(w_card)
 	_show_modal()
 
 func _open_wardrobe_modal() -> void:
@@ -2216,13 +2379,38 @@ func _open_wardrobe_modal() -> void:
 	var xp := int(_save.get("xp", 0))
 	var cur_oid := String(_save.get("equipped_outfit_id", "starter_kasual"))
 	var cur_col := String(_save.get("outfit_color_hex", "#4E7D63"))
+	var pv_row := HBoxContainer.new()
+	pv_row.add_theme_constant_override("separation", 10)
+	var pv_frame := PanelContainer.new()
+	pv_frame.custom_minimum_size = Vector2(56, 56)
+	pv_frame.add_theme_stylebox_override("panel", _make_box(Color(0.08, 0.12, 0.18), Color(0.96, 0.78, 0.26), 10, 2, 2))
+	var pv_tex := TextureRect.new()
+	pv_tex.texture = _get_player_portrait_tex("happy")
+	pv_tex.custom_minimum_size = Vector2(50, 50)
+	pv_tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	pv_tex.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	pv_frame.add_child(pv_tex)
+	var pv_lbl := Label.new()
+	pv_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	pv_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	var cur_o_lbl := cur_oid
+	for ot in CareerTiers.OUTFIT_TIERS:
+		if String(ot.get("id", "")) == cur_oid:
+			cur_o_lbl = String(ot.get("label_en" if _loc() == "en" else "label_id", cur_oid))
+			break
+	pv_lbl.text = _t("Seragam Aktif: %s • Warna: %s" % [cur_o_lbl, Progression.get_color_label(cur_col, "id")], "Active Uniform: %s • Color: %s" % [cur_o_lbl, Progression.get_color_label(cur_col, "en")])
+	pv_lbl.add_theme_font_size_override("font_size", 12)
+	pv_lbl.add_theme_color_override("font_color", Color(0.95, 0.94, 0.90))
+	pv_row.add_child(pv_frame)
+	pv_row.add_child(pv_lbl)
+	_modal_list.add_child(pv_row)
 	for o in CareerTiers.OUTFIT_TIERS:
 		var oid := String(o["id"])
 		var unlocked := CareerTiers.can_equip_outfit(oid, xp)
 		var lbl := Label.new()
 		var name_txt := String(o["label_en"] if _loc() == "en" else o["label_id"])
 		lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		lbl.text = "%s (%d XP)%s" % [name_txt, int(o["min_xp"]), " ✓" if oid == cur_oid else ""]
+		lbl.text = "%s%s (%d XP)%s" % ["" if unlocked else "🔒 ", name_txt, int(o["min_xp"]), " ✓" if oid == cur_oid else ""]
 		lbl.add_theme_color_override("font_color", Color(0.98, 0.86, 0.38) if unlocked else Color(0.76, 0.78, 0.84))
 		_modal_list.add_child(lbl)
 		var hbox := HBoxContainer.new()
@@ -2230,7 +2418,7 @@ func _open_wardrobe_modal() -> void:
 		for hex in o["customizable_colors"]:
 			var ch := String(hex)
 			var col_val := Color.html(ch)
-			var is_light := col_val.get_luminance() > 0.52
+			var is_light := col_val.get_luminance() > 0.32
 			var b := Button.new()
 			b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			var is_cur_swatch := (oid == cur_oid and ch.to_upper() == cur_col.to_upper())
@@ -2264,11 +2452,17 @@ func _open_kos_modal() -> void:
 		var uid := String(raw_uid)
 		var u: Dictionary = Progression.KOS_UPGRADES[uid]
 		var is_owned: bool = uid in owned
+		var cost_u := int(u["cost_rp"])
+		var can_buy_u := (not is_owned) and int(_save.get("balance_rp", 0)) >= cost_u
 		var btn := Button.new()
 		var lbl := String(u["label_en"] if _loc() == "en" else u["label_id"])
-		var price_txt := _t("Sudah Dimiliki", "Owned") if is_owned else I18n.format_price(int(u["cost_rp"]), _loc())
+		var price_txt := _t("✓ Terpasang", "✓ Installed") if is_owned else (_t("Beli · %s" % I18n.format_price(cost_u, "id"), "Buy · %s" % I18n.format_price(cost_u, "en")) if can_buy_u else I18n.format_price(cost_u, _loc()))
 		btn.text = "%s — %s" % [lbl, price_txt]
-		btn.disabled = is_owned or int(_save.get("balance_rp", 0)) < int(u["cost_rp"])
+		btn.disabled = is_owned or not can_buy_u
+		if is_owned:
+			_style_btn(btn, Color(0.14, 0.28, 0.22), Color(0.42, 0.72, 0.54), Color(0.75, 0.96, 0.82))
+		elif can_buy_u:
+			_style_btn(btn, Color(0.18, 0.42, 0.34), Color(0.98, 0.84, 0.34))
 		btn.pressed.connect(func():
 			_open_confirm_purchase_modal(
 				lbl,
@@ -2476,8 +2670,12 @@ func _open_map_modal() -> void:
 		var is_act := bool(node.get("active", false))
 		var lbl := String(node["label_en"] if _loc() == "en" else node["label_id"])
 		var b := Button.new()
-		b.text = "%s%s (%d XP)%s" % ["★ " if is_act else ("• " if unl else "[%s] " % _t("Terkunci", "Locked")), lbl, int(node["min_xp"]), _t(" [Aktif]", " [Active]") if is_act else ""]
+		b.text = "%s%s (%d XP)%s" % ["📍 " if is_act else ("• " if unl else "🔒 "), lbl, int(node["min_xp"]), _t(" [Lokasi Aktif]", " [Active]") if is_act else ""]
 		b.disabled = (not unl) or _in_shift
+		if is_act:
+			_style_btn(b, Color(0.18, 0.46, 0.36), Color(0.98, 0.86, 0.36))
+		elif unl:
+			_style_btn(b, Color(0.15, 0.20, 0.28), Color(0.45, 0.72, 0.88))
 		b.pressed.connect(func():
 			var res := Progression.select_job_tier(_save, tid)
 			if res["ok"]:
@@ -2525,12 +2723,20 @@ func _open_log_modal() -> void:
 	_modal_list.add_child(btn_back)
 	_show_modal()
 
+func _add_modal_section(title_txt: String) -> void:
+	var sec := Label.new()
+	sec.text = title_txt
+	sec.add_theme_font_size_override("font_size", 11)
+	sec.add_theme_color_override("font_color", Color(0.98, 0.84, 0.34))
+	_modal_list.add_child(sec)
+
 func _open_settings_modal() -> void:
 	if _is_sleeping:
 		return
 	_clear_modal()
 	_reset_confirm = false
 	_modal_title.text = _t("MENU, PENGATURAN & CATATAN", "MENU, SETTINGS & LOG")
+	_add_modal_section(_t("AKUN & PROGRES", "ACCOUNT & PROGRESS"))
 
 	var btn_prof := Button.new()
 	btn_prof.text = _t("Edit Profil & Karakter ART", "Edit ART Profile & Look")
@@ -2577,6 +2783,7 @@ func _open_settings_modal() -> void:
 	btn_ret.pressed.connect(_open_retention_modal)
 	_modal_list.add_child(btn_ret)
 
+	_add_modal_section(_t("AKTIVITAS & IBADAH", "ACTIVITIES & REMINDERS"))
 	var pray_on := bool(_save.get("prayer_reminders", true))
 	if pray_on:
 		var btn_pray_now := Button.new()
@@ -2604,6 +2811,7 @@ func _open_settings_modal() -> void:
 	)
 	_modal_list.add_child(btn_pr_tog)
 
+	_add_modal_section(_t("PENGATURAN SISTEM", "SYSTEM SETTINGS"))
 	var btn_lang := Button.new()
 	btn_lang.text = _t("Bahasa: Indonesia (Ubah ke EN)", "Language: English (Switch to ID)")
 	btn_lang.icon = Portraits.get_ui_icon("app_map")
@@ -2714,10 +2922,12 @@ func _style_btn(btn: Button, bg: Color, border: Color, txt: Color = Color(0.98, 
 	btn.custom_minimum_size.y = maxf(btn.custom_minimum_size.y, 44.0)
 	btn.add_theme_stylebox_override("normal", _make_box(bg, border, 10, 12, 7))
 	btn.add_theme_stylebox_override("hover", _make_box(bg.lightened(0.10), border, 10, 12, 7))
+	btn.add_theme_stylebox_override("focus", _make_box(bg.lightened(0.08), border.lightened(0.12), 10, 12, 7))
 	btn.add_theme_stylebox_override("pressed", _make_box(bg.darkened(0.12), border, 10, 12, 7))
 	btn.add_theme_stylebox_override("disabled", _make_box(Color(0.11, 0.14, 0.20, 0.94), Color(0.36, 0.40, 0.48, 0.80), 10, 12, 7))
 	btn.add_theme_color_override("font_color", txt)
 	btn.add_theme_color_override("font_hover_color", txt)
+	btn.add_theme_color_override("font_focus_color", txt)
 	btn.add_theme_color_override("font_pressed_color", txt)
 	btn.add_theme_color_override("font_disabled_color", Color(0.84, 0.86, 0.90))
 
@@ -2740,9 +2950,9 @@ func _shadow_label(lbl: Label, sz: int, col: Color, outline_sz: int = 5) -> void
 func _make_dock_icon_btn(key: String, icon_name: String, badge_col: Color = Color(0.86, 0.18, 0.16)) -> Dictionary:
 	var wrap := VBoxContainer.new()
 	wrap.alignment = BoxContainer.ALIGNMENT_CENTER
-	wrap.add_theme_constant_override("separation", 2)
+	wrap.add_theme_constant_override("separation", 1)
 	var ic_box := Control.new()
-	ic_box.custom_minimum_size = Vector2(62, 58)
+	ic_box.custom_minimum_size = Vector2(54, 48)
 	var btn := Button.new()
 	btn.set_anchors_preset(Control.PRESET_FULL_RECT)
 	btn.flat = true
@@ -2762,19 +2972,19 @@ func _make_dock_icon_btn(key: String, icon_name: String, badge_col: Color = Colo
 	var badge := Label.new()
 	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	badge.visible = false
-	badge.position = Vector2(40, -2)
-	badge.custom_minimum_size = Vector2(20, 20)
+	badge.position = Vector2(34, -2)
+	badge.custom_minimum_size = Vector2(18, 18)
 	badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	badge.add_theme_stylebox_override("normal", _make_box(badge_col, Color(1, 1, 1), 10, 4, 1))
-	badge.add_theme_font_size_override("font_size", 11)
+	badge.add_theme_stylebox_override("normal", _make_box(badge_col, Color(1, 1, 1), 9, 4, 1))
+	badge.add_theme_font_size_override("font_size", 10)
 	badge.add_theme_color_override("font_color", Color(1, 1, 1))
 	ic_box.add_child(btn)
 	ic_box.add_child(icon_rect)
 	ic_box.add_child(badge)
 	var lbl := Label.new()
 	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	lbl.custom_minimum_size = Vector2(68, 0)
-	_shadow_label(lbl, 12, Color(0.98, 0.97, 0.94), 5)
+	lbl.custom_minimum_size = Vector2(58, 0)
+	_shadow_label(lbl, 11, Color(0.98, 0.97, 0.94), 5)
 	wrap.add_child(ic_box)
 	wrap.add_child(lbl)
 	_dock_labels[key] = lbl
@@ -2892,6 +3102,8 @@ func _build_hud() -> void:
 
 	_btn_map = Button.new()
 	_btn_settings = Button.new()
+	_btn_map.custom_minimum_size = Vector2(64, 44)
+	_btn_settings.custom_minimum_size = Vector2(76, 44)
 	_style_btn(_btn_map, Color(0.10, 0.13, 0.18, 0.82), Color(0.95, 0.78, 0.26, 0.75))
 	_style_btn(_btn_settings, Color(0.10, 0.13, 0.18, 0.82), Color(0.95, 0.78, 0.26, 0.75))
 	_btn_map.pressed.connect(_open_map_modal)
@@ -2928,11 +3140,13 @@ func _build_hud() -> void:
 	_tr_vbox.add_child(_tasks_card)
 	hud.add_child(_tr_vbox)
 
-	# 3. TOP-CENTER OPEN SKY (Urgent Call Banner + Toast)
+	# 3. TOP-CENTER OPEN SKY (Urgent Call Banner + Toast — bounded clear of TL/TR HUD!)
 	var tc_center := CenterContainer.new()
+	_tc_center = tc_center
 	tc_center.set_anchors_preset(Control.PRESET_TOP_WIDE)
-	tc_center.offset_left = 230
-	tc_center.offset_right = -230
+	var tc_b := Atmosphere.compute_top_center_bounds(1280.0, 304.0, 396.0, 0.0, 0.0)
+	tc_center.offset_left = float(tc_b["offset_left"])
+	tc_center.offset_right = float(tc_b["offset_right"])
 	tc_center.offset_top = 10
 	tc_center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var tc_v := VBoxContainer.new()
@@ -2941,26 +3155,29 @@ func _build_hud() -> void:
 
 	_call_banner = PanelContainer.new()
 	_call_banner.visible = false
-	_call_banner.add_theme_stylebox_override("panel", _make_box(Color(0.76, 0.22, 0.18, 0.96), Color(0.98, 0.86, 0.65), 14, 12, 8))
+	_call_banner.add_theme_stylebox_override("panel", _make_box(Color(0.76, 0.22, 0.18, 0.96), Color(0.98, 0.86, 0.65), 14, 10, 7))
 	var call_h := HBoxContainer.new()
-	call_h.add_theme_constant_override("separation", 10)
+	call_h.add_theme_constant_override("separation", 8)
 	_call_portrait = TextureRect.new()
-	_call_portrait.custom_minimum_size = Vector2(48, 48)
+	_call_portrait.custom_minimum_size = Vector2(44, 44)
 	_call_portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_call_portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	call_h.add_child(_call_portrait)
 	var call_text_v := VBoxContainer.new()
 	call_text_v.add_theme_constant_override("separation", 3)
 	_lbl_call_title = Label.new()
-	_lbl_call_title.add_theme_font_size_override("font_size", 13)
+	_lbl_call_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_lbl_call_title.custom_minimum_size = Vector2(180, 0)
+	_lbl_call_title.add_theme_font_size_override("font_size", 12)
 	_lbl_call_title.add_theme_color_override("font_color", light_ink)
 	_bar_call = ProgressBar.new()
-	_bar_call.custom_minimum_size = Vector2(132, 10)
+	_bar_call.custom_minimum_size = Vector2(180, 9)
 	_bar_call.show_percentage = false
 	_style_bar(_bar_call, Color(0.98, 0.80, 0.30), Color(0.32, 0.10, 0.08, 0.7))
 	call_text_v.add_child(_lbl_call_title)
 	call_text_v.add_child(_bar_call)
 	_btn_answer = Button.new()
+	_btn_answer.custom_minimum_size = Vector2(96, 44)
 	_style_btn(_btn_answer, Color(0.18, 0.66, 0.42), Color(0.95, 0.90, 0.72))
 	_btn_answer.pressed.connect(_on_answer_call)
 	call_h.add_child(call_text_v)
@@ -3019,7 +3236,8 @@ func _build_hud() -> void:
 	_lbl_chore_prog = Label.new()
 	_lbl_chore_prog.add_theme_color_override("font_color", light_ink)
 	_bar_chore = ProgressBar.new()
-	_bar_chore.custom_minimum_size = Vector2(260, 16)
+	_bar_chore.custom_minimum_size = Vector2(260, 14)
+	_bar_chore.show_percentage = false
 	_style_bar(_bar_chore, Color(0.24, 0.84, 0.48))
 	ch_v.add_child(_lbl_chore_prog)
 	ch_v.add_child(_bar_chore)
@@ -3085,7 +3303,7 @@ func _build_hud() -> void:
 
 	var dock := HBoxContainer.new()
 	dock.alignment = BoxContainer.ALIGNMENT_END
-	dock.add_theme_constant_override("separation", 8)
+	dock.add_theme_constant_override("separation", 6)
 
 	var d_act := _make_dock_icon_btn("action", "icon_door")
 	_btn_action = d_act["btn"]
@@ -3115,7 +3333,7 @@ func _build_hud() -> void:
 	for dw in [d_act["wrap"], d_shift["wrap"], d_car["wrap"], d_ward["wrap"], d_up["wrap"]]:
 		dock.add_child(dw)
 	var dock_scrim := PanelContainer.new()
-	dock_scrim.add_theme_stylebox_override("panel", _make_box(Color(0.06, 0.08, 0.12, 0.76), Color(0.95, 0.78, 0.26, 0.42), 14, 8, 5))
+	dock_scrim.add_theme_stylebox_override("panel", _make_box(Color(0.06, 0.08, 0.12, 0.76), Color(0.95, 0.78, 0.26, 0.42), 14, 8, 4))
 	dock_scrim.add_child(dock)
 	_br_vbox.add_child(dock_scrim)
 	hud.add_child(_br_vbox)
@@ -3184,46 +3402,66 @@ func _build_onboarding_overlay(card_sb: StyleBoxFlat, gold_pill: StyleBoxFlat, d
 	_onboarding_wrap.visible = false
 
 	var right_card := PanelContainer.new()
+	_ob_card = right_card
 	right_card.set_anchors_preset(Control.PRESET_CENTER_RIGHT)
 	right_card.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	right_card.grow_vertical = Control.GROW_DIRECTION_BOTH
-	right_card.offset_right = -28
-	right_card.offset_left = -450
-	right_card.offset_top = -235
-	right_card.offset_bottom = 235
+	right_card.offset_right = -24
+	right_card.offset_left = -520
+	right_card.offset_top = -310
+	right_card.offset_bottom = 310
 	right_card.add_theme_stylebox_override("panel", card_sb)
 
-	var vb := VBoxContainer.new()
-	vb.add_theme_constant_override("separation", 10)
+	var outer_v := VBoxContainer.new()
+	outer_v.add_theme_constant_override("separation", 8)
 
 	var hdr_row := HBoxContainer.new()
-	hdr_row.add_theme_constant_override("separation", 8)
+	hdr_row.add_theme_constant_override("separation", 6)
+	_ob_btn_back = Button.new()
+	_ob_btn_back.custom_minimum_size = Vector2(76, 44)
+	_style_btn(_ob_btn_back, Color(0.14, 0.16, 0.20), Color(0.55, 0.58, 0.65))
+	_ob_btn_back.pressed.connect(func():
+		if _onboarding_wrap != null:
+			_onboarding_wrap.visible = false
+		_open_title_screen()
+	)
 	var hdr_pill := PanelContainer.new()
 	hdr_pill.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	hdr_pill.add_theme_stylebox_override("panel", gold_pill)
 	_ob_title = Label.new()
 	_ob_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_ob_title.add_theme_font_size_override("font_size", 15)
+	_ob_title.add_theme_font_size_override("font_size", 14)
 	_ob_title.add_theme_color_override("font_color", dark_ink)
 	hdr_pill.add_child(_ob_title)
 	_ob_btn_lang = Button.new()
+	_ob_btn_lang.custom_minimum_size = Vector2(52, 44)
 	_style_btn(_ob_btn_lang, Color(0.14, 0.16, 0.20), Color(0.96, 0.78, 0.26))
 	_ob_btn_lang.pressed.connect(func():
 		_save["locale"] = "en" if _loc() == "id" else "id"
 		SaveStore.save_to_slot(_save, _active_slot)
 		_refresh_hud()
 	)
+	hdr_row.add_child(_ob_btn_back)
 	hdr_row.add_child(hdr_pill)
 	hdr_row.add_child(_ob_btn_lang)
-	vb.add_child(hdr_row)
+	outer_v.add_child(hdr_row)
+
+	var ob_sc := ScrollContainer.new()
+	ob_sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	ob_sc.custom_minimum_size = Vector2(468, 430)
+	ob_sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	var vb := VBoxContainer.new()
+	vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vb.add_theme_constant_override("separation", 8)
 
 	_ob_story = Label.new()
 	_ob_story.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_ob_story.add_theme_font_size_override("font_size", 13)
-	_ob_story.add_theme_color_override("font_color", Color(0.93, 0.93, 0.90))
+	_ob_story.add_theme_color_override("font_color", Color(0.94, 0.94, 0.90))
 	vb.add_child(_ob_story)
 
 	_ob_name_edit = LineEdit.new()
+	_ob_name_edit.custom_minimum_size = Vector2(0, 44)
 	_ob_name_edit.max_length = 24
 	_ob_name_edit.add_theme_stylebox_override("normal", _make_box(Color(0.14, 0.16, 0.20), Color(0.95, 0.78, 0.26, 0.8), 10, 10, 6))
 	_ob_name_edit.add_theme_color_override("font_color", light_ink)
@@ -3232,8 +3470,10 @@ func _build_onboarding_overlay(card_sb: StyleBoxFlat, gold_pill: StyleBoxFlat, d
 	var style_row := HBoxContainer.new()
 	style_row.add_theme_constant_override("separation", 8)
 	_ob_btn_cepol = Button.new()
+	_ob_btn_cepol.custom_minimum_size = Vector2(0, 44)
 	_ob_btn_cepol.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_ob_btn_hijab = Button.new()
+	_ob_btn_hijab.custom_minimum_size = Vector2(0, 44)
 	_ob_btn_hijab.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_ob_btn_cepol.pressed.connect(func():
 		_ob_style = "cepol"
@@ -3263,7 +3503,8 @@ func _build_onboarding_overlay(card_sb: StyleBoxFlat, gold_pill: StyleBoxFlat, d
 		sb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		sb.custom_minimum_size = Vector2(0, 44)
 		var h := String(sk_cfg["hex"])
-		_style_btn(sb, Color.html(h), Color(0.98, 0.94, 0.86), Color(0.10, 0.08, 0.06))
+		var sk_c := Color.html(h)
+		_style_btn(sb, sk_c, Color(0.98, 0.94, 0.86), dark_ink if sk_c.get_luminance() > 0.24 else light_ink)
 		sb.pressed.connect(func():
 			_ob_skin = h
 			_preview_onboarding_character()
@@ -3272,8 +3513,10 @@ func _build_onboarding_overlay(card_sb: StyleBoxFlat, gold_pill: StyleBoxFlat, d
 		_ob_skin_btns.append({"btn": sb, "id": String(sk_cfg["id"]), "en": String(sk_cfg["en"])})
 	vb.add_child(skin_row)
 
-	var col_row := HBoxContainer.new()
-	col_row.add_theme_constant_override("separation", 8)
+	var col_grid := GridContainer.new()
+	col_grid.columns = 2
+	col_grid.add_theme_constant_override("h_separation", 8)
+	col_grid.add_theme_constant_override("v_separation", 8)
 	_ob_col_btns.clear()
 	for c_cfg in [
 		{"hex": "#4E7D63", "id": "Hijau Batik", "en": "Batik Sage"},
@@ -3285,35 +3528,31 @@ func _build_onboarding_overlay(card_sb: StyleBoxFlat, gold_pill: StyleBoxFlat, d
 		cb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		cb.custom_minimum_size = Vector2(0, 44)
 		var ch := String(c_cfg["hex"])
-		_style_btn(cb, Color.html(ch), Color(0.96, 0.88, 0.65))
+		var cval := Color.html(ch)
+		_style_btn(cb, cval, Color(0.96, 0.88, 0.65), dark_ink if cval.get_luminance() > 0.32 else light_ink)
 		cb.pressed.connect(func():
 			_ob_color = ch
 			_preview_onboarding_character()
 		)
-		col_row.add_child(cb)
+		col_grid.add_child(cb)
 		_ob_col_btns.append({"btn": cb, "hex": ch, "id": String(c_cfg["id"]), "en": String(c_cfg["en"])})
-	vb.add_child(col_row)
+	vb.add_child(col_grid)
+	ob_sc.add_child(vb)
+	outer_v.add_child(ob_sc)
 
 	_ob_btn_start = Button.new()
+	_ob_btn_start.custom_minimum_size = Vector2(0, 48)
 	_style_btn(_ob_btn_start, Color(0.96, 0.78, 0.24), Color(0.99, 0.89, 0.48), dark_ink)
 	_ob_btn_start.pressed.connect(_finish_onboarding)
-	vb.add_child(_ob_btn_start)
+	outer_v.add_child(_ob_btn_start)
 
 	_ob_season_lbl = Label.new()
-	_ob_season_lbl.add_theme_font_size_override("font_size", 11)
-	_ob_season_lbl.add_theme_color_override("font_color", Color(0.68, 0.88, 0.98))
-	vb.add_child(_ob_season_lbl)
+	_ob_season_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_ob_season_lbl.add_theme_font_size_override("font_size", 12)
+	_ob_season_lbl.add_theme_color_override("font_color", Color(0.84, 0.94, 1.0))
+	outer_v.add_child(_ob_season_lbl)
 
-	_ob_btn_back = Button.new()
-	_style_btn(_ob_btn_back, Color(0.14, 0.16, 0.20), Color(0.55, 0.58, 0.65))
-	_ob_btn_back.pressed.connect(func():
-		if _onboarding_wrap != null:
-			_onboarding_wrap.visible = false
-		_open_title_screen()
-	)
-	vb.add_child(_ob_btn_back)
-
-	right_card.add_child(vb)
+	right_card.add_child(outer_v)
 	_onboarding_wrap.add_child(right_card)
 	hud.add_child(_onboarding_wrap)
 
@@ -3322,20 +3561,25 @@ func _build_title_overlay(card_sb: StyleBoxFlat, dark_ink: Color, light_ink: Col
 	_title_wrap.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_title_wrap.visible = false
 
+	var title_card := PanelContainer.new()
+	_title_card = title_card
+	title_card.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	title_card.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	title_card.offset_left = 24
+	title_card.offset_bottom = -20
+	title_card.add_theme_stylebox_override("panel", _make_box(Color(0.06, 0.08, 0.12, 0.86), Color(0.96, 0.78, 0.26, 0.85), 16, 16, 14))
 	var left_col := VBoxContainer.new()
-	left_col.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	left_col.position = Vector2(28, 16)
 	left_col.add_theme_constant_override("separation", 10)
 
 	var logo := TextureRect.new()
-	logo.custom_minimum_size = Vector2(316, 130)
+	logo.custom_minimum_size = Vector2(280, 114)
 	logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	logo.texture = Portraits.get_ui_icon("logo_art_simulator")
 	left_col.add_child(logo)
 
 	_title_btn_continue = Button.new()
-	_title_btn_continue.custom_minimum_size = Vector2(240, 44)
+	_title_btn_continue.custom_minimum_size = Vector2(280, 48)
 	_style_btn(_title_btn_continue, Color(0.96, 0.78, 0.24), Color(0.99, 0.89, 0.48), dark_ink)
 	_title_btn_continue.pressed.connect(func():
 		_unlock_audio()
@@ -3353,7 +3597,7 @@ func _build_title_overlay(card_sb: StyleBoxFlat, dark_ink: Color, light_ink: Col
 	)
 
 	_title_btn_new = Button.new()
-	_title_btn_new.custom_minimum_size = Vector2(240, 42)
+	_title_btn_new.custom_minimum_size = Vector2(280, 46)
 	_style_btn(_title_btn_new, Color(0.14, 0.17, 0.23, 0.92), Color(0.95, 0.78, 0.26))
 	_title_btn_new.pressed.connect(func():
 		_unlock_audio()
@@ -3365,18 +3609,19 @@ func _build_title_overlay(card_sb: StyleBoxFlat, dark_ink: Color, light_ink: Col
 	)
 
 	_title_btn_slots = Button.new()
-	_title_btn_slots.custom_minimum_size = Vector2(240, 40)
+	_title_btn_slots.custom_minimum_size = Vector2(280, 44)
 	_style_btn(_title_btn_slots, Color(0.12, 0.14, 0.20, 0.92), Color(0.95, 0.78, 0.26, 0.75))
 	_title_btn_slots.pressed.connect(_open_save_slots_modal)
 
 	_title_btn_settings = Button.new()
-	_title_btn_settings.custom_minimum_size = Vector2(240, 40)
+	_title_btn_settings.custom_minimum_size = Vector2(280, 44)
 	_style_btn(_title_btn_settings, Color(0.12, 0.14, 0.20, 0.92), Color(0.95, 0.78, 0.26, 0.75))
 	_title_btn_settings.pressed.connect(_open_settings_modal)
 
 	for tb in [_title_btn_continue, _title_btn_new, _title_btn_slots, _title_btn_settings]:
 		left_col.add_child(tb)
-	_title_wrap.add_child(left_col)
+	title_card.add_child(left_col)
+	_title_wrap.add_child(title_card)
 
 	var br_info := VBoxContainer.new()
 	br_info.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
@@ -3384,18 +3629,18 @@ func _build_title_overlay(card_sb: StyleBoxFlat, dark_ink: Color, light_ink: Col
 	br_info.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	br_info.offset_right = -24
 	br_info.offset_bottom = -20
-	br_info.add_theme_constant_override("separation", 6)
+	br_info.add_theme_constant_override("separation", 8)
 	var ver_pill := PanelContainer.new()
 	ver_pill.size_flags_horizontal = Control.SIZE_SHRINK_END
-	ver_pill.add_theme_stylebox_override("panel", _make_box(Color(0.08, 0.10, 0.14, 0.88), Color(0.95, 0.78, 0.26, 0.65), 8, 10, 4))
+	ver_pill.add_theme_stylebox_override("panel", _make_box(Color(0.08, 0.10, 0.14, 0.90), Color(0.95, 0.78, 0.26, 0.75), 8, 12, 5))
 	var ver_lbl := Label.new()
-	ver_lbl.text = "Versi 1.5 (HD)"
+	ver_lbl.text = "Versi 1.6 (HD)"
 	ver_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	ver_lbl.add_theme_font_size_override("font_size", 12)
 	ver_lbl.add_theme_color_override("font_color", Color(0.96, 0.94, 0.88))
 	ver_pill.add_child(ver_lbl)
 	_title_btn_news = Button.new()
-	_title_btn_news.custom_minimum_size = Vector2(132, 44)
+	_title_btn_news.custom_minimum_size = Vector2(148, 44)
 	_style_btn(_title_btn_news, Color(0.14, 0.17, 0.24, 0.94), Color(0.95, 0.78, 0.26))
 	_title_btn_news.pressed.connect(_open_whats_new_modal)
 	br_info.add_child(ver_pill)
@@ -3413,6 +3658,12 @@ func _open_title_screen() -> void:
 	_title_btn_continue.visible = has_save
 	_title_btn_continue.text = _t("LANJUTKAN (Hari %d)" % int(_save.get("day", 1)), "CONTINUE (Day %d)" % int(_save.get("day", 1)))
 	_title_btn_new.text = _t("MULAI BARU", "NEW GAME")
+	if has_save:
+		_style_btn(_title_btn_new, Color(0.14, 0.17, 0.23, 0.92), Color(0.95, 0.78, 0.26))
+		_title_btn_continue.call_deferred("grab_focus")
+	else:
+		_style_btn(_title_btn_new, Color(0.96, 0.78, 0.24), Color(0.99, 0.89, 0.48), Color(0.11, 0.09, 0.06))
+		_title_btn_new.call_deferred("grab_focus")
 	_title_btn_slots.text = _t("MUAT SAVE (3 SLOT)", "LOAD SAVE (3 SLOTS)")
 	_title_btn_settings.text = _t("PENGATURAN", "SETTINGS")
 	_title_btn_news.text = _t("Info Terbaru", "What's New")
@@ -3453,7 +3704,7 @@ func _open_save_slots_modal() -> void:
 				_refresh_hud()
 		)
 		row.add_child(btn)
-		if bool(entry.get("exists", false)):
+		if SaveStore.should_show_slot_delete(entry):
 			var del_b := Button.new()
 			var is_arm := _confirm_delete_slot == slot_idx
 			del_b.custom_minimum_size = Vector2(96, 44)
@@ -3802,7 +4053,7 @@ func _build_courier_toast() -> void:
 func _refresh_courier_toast() -> void:
 	if _courier_toast == null:
 		return
-	var ui_cover := (_title_wrap != null and _title_wrap.visible) or (_onboarding_wrap != null and _onboarding_wrap.visible) or (_dialogue_bar != null and _dialogue_bar.visible)
+	var ui_cover := (_title_wrap != null and _title_wrap.visible) or (_onboarding_wrap != null and _onboarding_wrap.visible) or (_dialogue_bar != null and _dialogue_bar.visible) or (_modal_backdrop != null and _modal_backdrop.visible) or (_phone_os_wrap != null and _phone_os_wrap.visible)
 	var orders: Array = _save.get("courier_orders", [])
 	if ui_cover or orders.is_empty():
 		_courier_toast.visible = false
@@ -3824,22 +4075,37 @@ func _open_confirm_purchase_modal(item_label: String, cost_rp: int, on_confirm: 
 	var pv := Progression.preview_balance_after(_save, cost_rp)
 	_clear_modal()
 	_modal_title.text = _t("KONFIRMASI PEMBELIAN", "CONFIRM PURCHASE")
+	var info_card := PanelContainer.new()
+	info_card.add_theme_stylebox_override("panel", _make_box(Color(0.11, 0.15, 0.22), Color(0.96, 0.78, 0.26, 0.70), 12, 14, 10))
+	var iv := VBoxContainer.new()
+	iv.add_theme_constant_override("separation", 6)
+	var item_l := Label.new()
+	item_l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	item_l.text = item_label
+	item_l.add_theme_font_size_override("font_size", 15)
+	item_l.add_theme_color_override("font_color", Color(0.98, 0.86, 0.36))
 	var info := Label.new()
 	info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	info.text = "%s\n%s: %s\n%s: %s" % [
-		item_label,
+	info.text = "%s: %s\n%s: %s" % [
 		_t("Harga", "Amount to pay"), I18n.format_balance(int(pv["cost_rp"]), _loc()),
 		_t("Sisa uang setelah beli", "Money left after buying"), I18n.format_balance(int(pv["balance_after"]), _loc()),
 	]
+	info.add_theme_font_size_override("font_size", 13)
 	info.add_theme_color_override("font_color", Color(0.95, 0.94, 0.90))
-	_modal_list.add_child(info)
+	iv.add_child(item_l)
+	iv.add_child(info)
+	info_card.add_child(iv)
+	_modal_list.add_child(info_card)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
 	var b_no := Button.new()
 	b_no.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	b_no.text = _t("Batal", "Cancel")
 	_style_btn(b_no, Color(0.18, 0.20, 0.24), Color(0.60, 0.62, 0.68))
-	b_no.pressed.connect(func(): _modal_backdrop.visible = false)
+	b_no.pressed.connect(func():
+		_modal_backdrop.visible = false
+		_refresh_hud()
+	)
 	var b_yes := Button.new()
 	b_yes.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	b_yes.text = _t("Ya, Beli", "Yes, Buy")
@@ -3854,6 +4120,9 @@ func _open_confirm_purchase_modal(item_label: String, cost_rp: int, on_confirm: 
 	row.add_child(b_yes)
 	_modal_list.add_child(row)
 	_show_modal()
+	if _btn_modal_close != null:
+		_btn_modal_close.visible = false
+	b_yes.call_deferred("grab_focus")
 
 func _build_phone_os_overlay() -> void:
 	_phone_os_wrap = ColorRect.new()
@@ -3947,9 +4216,12 @@ func _open_phone_os(app_id: String = "home") -> void:
 	_phone_os_wrap.visible = true
 	_render_phone_app()
 	_refresh_hud()
+	if _phone_os_nav_close != null:
+		_phone_os_nav_close.call_deferred("grab_focus")
 
 func _render_phone_app() -> void:
 	for c in _phone_os_body.get_children():
+		_phone_os_body.remove_child(c)
 		c.queue_free()
 	var vp := _effective_window_size()
 	var canvas_sz := get_viewport().get_visible_rect().size
@@ -3965,19 +4237,22 @@ func _render_phone_app() -> void:
 	_phone_os_clock.text = "%s · 4G" % LifeRhythm.format_clock(int(_save.get("game_minutes", 360)))
 	_phone_os_bal.text = I18n.format_balance(int(_save.get("balance_rp", 0)), _loc())
 	_phone_os_nav_back.text = _t("Kembali", "Back")
+	_phone_os_nav_back.disabled = (_phone_os_app == "home")
 	_phone_os_nav_home.text = _t("Beranda", "Home")
 	_phone_os_nav_close.text = _t("Tutup HP", "Close")
 
 	if _phone_os_app == "home":
 		var grid := GridContainer.new()
-		grid.columns = 5 if is_land else 3
-		grid.add_theme_constant_override("h_separation", 10)
-		grid.add_theme_constant_override("v_separation", 10)
+		grid.columns = 5 if is_land else 2
+		grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		grid.add_theme_constant_override("h_separation", 12)
+		grid.add_theme_constant_override("v_separation", 14)
 		var apps := [
 			{"id": "bank", "ic": "app_bank", "id_lbl": "Bank Desaku", "en_lbl": "Village Bank"},
 			{"id": "shop", "ic": "app_shop", "id_lbl": "Belanja", "en_lbl": "Supply Shop"},
 			{"id": "chat", "ic": "app_chat", "id_lbl": "Pesan & Telp", "en_lbl": "Messages"},
 			{"id": "debt", "ic": "app_debt", "id_lbl": "Buku Kasbon", "en_lbl": "Debt Book"},
+			{"id": "log", "ic": "app_debt", "id_lbl": "Catatan Harian", "en_lbl": "Daily Log"},
 			{"id": "dreams", "ic": "app_dreams", "id_lbl": "Impian ART", "en_lbl": "Dreams"},
 			{"id": "story", "ic": "app_story", "id_lbl": "Buku Cerita", "en_lbl": "Story Book"},
 			{"id": "missions", "ic": "app_missions", "id_lbl": "Misi Harian", "en_lbl": "Missions"},
@@ -3990,7 +4265,7 @@ func _render_phone_app() -> void:
 			tile.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			tile.alignment = BoxContainer.ALIGNMENT_CENTER
 			var b := Button.new()
-			b.custom_minimum_size = Vector2(78, 76)
+			b.custom_minimum_size = Vector2(92, 92)
 			b.flat = true
 			var ic := TextureRect.new()
 			ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -4015,6 +4290,9 @@ func _render_phone_app() -> void:
 				elif aid == "guide":
 					_phone_os_wrap.visible = false
 					_open_guide_modal(0)
+				elif aid == "log":
+					_phone_os_wrap.visible = false
+					_open_log_modal()
 				else:
 					_open_phone_os(aid)
 			)
@@ -4032,7 +4310,7 @@ func _render_phone_app() -> void:
 		var card := PanelContainer.new()
 		card.add_theme_stylebox_override("panel", _make_box(Color(0.10, 0.28, 0.54), Color(0.95, 0.78, 0.26), 12, 12, 10))
 		var cv := VBoxContainer.new()
-		cv.add_theme_constant_override("separation", 5)
+		cv.add_theme_constant_override("separation", 6)
 		var hdr := Label.new()
 		hdr.text = _t("Bank Desaku · Kirim ke Kampung", "Village Bank · Send Home")
 		hdr.add_theme_color_override("font_color", Color(0.98, 0.86, 0.36))
@@ -4043,8 +4321,15 @@ func _render_phone_app() -> void:
 			"Sent: %s / %s\nDeadline: Day %d (%d days left)" % [I18n.format_balance(int(st["sent_rp"]), "en"), I18n.format_balance(int(st["target_rp"]), "en"), int(st["deadline_day"]), int(st["days_left"])]
 		)
 		stat.add_theme_color_override("font_color", Color(1, 1, 1))
+		var bank_bar := ProgressBar.new()
+		bank_bar.custom_minimum_size = Vector2(0, 10)
+		bank_bar.max_value = maxi(1, int(st["target_rp"]))
+		bank_bar.value = mini(int(st["sent_rp"]), int(st["target_rp"]))
+		bank_bar.show_percentage = false
+		_style_bar(bank_bar, Color(0.36, 0.90, 0.52), Color(0.06, 0.14, 0.28))
 		cv.add_child(hdr)
 		cv.add_child(stat)
+		cv.add_child(bank_bar)
 		card.add_child(cv)
 		_phone_os_body.add_child(card)
 		if bool(st["completed"]):
@@ -4160,10 +4445,23 @@ func _render_phone_app() -> void:
 	elif _phone_os_app == "debt":
 		var debts: Array = _save.get("debt_book", [])
 		var unpaid := Progression.get_unpaid_kasbon_total(_save)
+		var d_card := PanelContainer.new()
+		d_card.add_theme_stylebox_override("panel", _make_box(Color(0.11, 0.16, 0.24), Color(0.95, 0.78, 0.26, 0.70), 12, 12, 10))
+		var dv := VBoxContainer.new()
+		dv.add_theme_constant_override("separation", 5)
 		var d_hdr := Label.new()
-		d_hdr.text = _t("Buku Catatan Kasbon (Maks %s)" % I18n.format_balance(Progression.MAX_KASBON_DEBT_RP, "id"), "Debt Ledger (Cap %s)" % I18n.format_balance(Progression.MAX_KASBON_DEBT_RP, "en"))
+		d_hdr.text = _t("Buku Catatan Kasbon (%s / Maks %s)" % [I18n.format_balance(unpaid, "id"), I18n.format_balance(Progression.MAX_KASBON_DEBT_RP, "id")], "Debt Ledger (%s / Cap %s)" % [I18n.format_balance(unpaid, "en"), I18n.format_balance(Progression.MAX_KASBON_DEBT_RP, "en")])
 		d_hdr.add_theme_color_override("font_color", Color(0.98, 0.84, 0.34))
-		_phone_os_body.add_child(d_hdr)
+		var d_bar := ProgressBar.new()
+		d_bar.custom_minimum_size = Vector2(0, 8)
+		d_bar.max_value = maxi(1, Progression.MAX_KASBON_DEBT_RP)
+		d_bar.value = unpaid
+		d_bar.show_percentage = false
+		_style_bar(d_bar, Color(0.94, 0.56, 0.26), Color(0.07, 0.09, 0.14))
+		dv.add_child(d_hdr)
+		dv.add_child(d_bar)
+		d_card.add_child(dv)
+		_phone_os_body.add_child(d_card)
 		if debts.is_empty():
 			var em := Label.new()
 			em.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -4220,10 +4518,12 @@ func _open_onboarding() -> void:
 		_ob_name_edit.text = String(_save.get("player_name", "Mbak Sari"))
 	if _onboarding_wrap != null:
 		_onboarding_wrap.visible = true
-	cam.position = player.position + Vector3(0.65, 1.42, 2.55)
-	cam.look_at(player.position + Vector3(0.62, 0.92, 0.0), Vector3.UP)
+	cam.position = player.position + Vector3(0.65, 1.36, 2.78)
+	cam.look_at(player.position + Vector3(0.62, 0.84, 0.0), Vector3.UP)
 	_preview_onboarding_character()
 	_refresh_onboarding_texts()
+	if _ob_btn_start != null:
+		_ob_btn_start.call_deferred("grab_focus")
 
 func _preview_onboarding_character() -> void:
 	var mpath := "res://assets/models/char_art_hijab.glb" if _ob_style == "hijab" else "res://assets/models/char_art.glb"
@@ -4250,10 +4550,13 @@ func _refresh_onboarding_texts() -> void:
 		var nm := String(c_entry["en"] if _loc() == "en" else c_entry["id"])
 		var is_sel := (_ob_color == ch)
 		cb.text = ("✓ " + nm) if is_sel else nm
-		_style_btn(cb, Color.html(ch), Color(0.99, 0.90, 0.36) if is_sel else Color(0.32, 0.36, 0.42))
+		var cval_o := Color.html(ch)
+		_style_btn(cb, cval_o, Color(0.99, 0.90, 0.36) if is_sel else Color(0.32, 0.36, 0.42), Color(0.11, 0.09, 0.06) if cval_o.get_luminance() > 0.32 else Color(0.97, 0.96, 0.93))
 	_ob_btn_lang.text = "EN" if _loc() == "id" else "ID"
-	_ob_btn_cepol.text = _t("Mba2 Cepol (Daster)", "Mba2 Bun (Daster)")
-	_ob_btn_hijab.text = _t("Mba2 Hijab (Bergo)", "Mba2 Hijab (Bergo)")
+	_ob_btn_cepol.text = _t("Cepol (Daster)", "Bun (Daster)")
+	_ob_btn_hijab.text = _t("Hijab (Bergo)", "Hijab (Bergo)")
+	if _ob_btn_back != null:
+		_ob_btn_back.text = _t("← Judul", "← Title")
 	_style_btn(_ob_btn_cepol, Color(0.22, 0.56, 0.40) if _ob_style == "cepol" else Color(0.14, 0.16, 0.20), Color(0.96, 0.78, 0.26))
 	_style_btn(_ob_btn_hijab, Color(0.22, 0.56, 0.40) if _ob_style == "hijab" else Color(0.14, 0.16, 0.20), Color(0.96, 0.78, 0.26))
 	_ob_btn_start.text = _t("Mulai Kerja! (Hari 1)", "Start Working! (Day 1)")

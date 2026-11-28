@@ -3,24 +3,25 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://ctpre544jq1wt"
-path="res://.godot/imported/cluster_elite_street_grass_rgh.jpg-75005afbb39d4f3297c86b46d7254fc1.ctex"
+path.etc2="res://.godot/imported/cluster_elite_street_grass_rgh.jpg-75005afbb39d4f3297c86b46d7254fc1.etc2.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["etc2_astc"],
+"vram_texture": true
 }
 generator_parameters={
-"md5": "005349a6ed90d778bad549aba40f78ad"
+"md5": "a5189ed087772e29d94e809c9e5ad526"
 }
 
 [deps]
 
 source_file="res://assets/models/cluster_elite_street_grass_rgh.jpg"
-dest_files=["res://.godot/imported/cluster_elite_street_grass_rgh.jpg-75005afbb39d4f3297c86b46d7254fc1.ctex"]
+dest_files=["res://.godot/imported/cluster_elite_street_grass_rgh.jpg-75005afbb39d4f3297c86b46d7254fc1.etc2.ctex"]
 
 [params]
 
-compress/mode=1
+compress/mode=2
 compress/high_quality=false
-compress/lossy_quality=0.78
+compress/lossy_quality=0.82
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1

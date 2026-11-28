@@ -32,6 +32,40 @@ static func should_show_virtual_joystick(viewport_size: Vector2, is_touch: bool,
 		return true
 	return false
 
+static func compute_hud_safe_margins(safe_rect: Rect2, win_size: Vector2, vp_size: Vector2) -> Dictionary:
+	if safe_rect.size.x <= 0.0 or safe_rect.size.y <= 0.0 or win_size.x <= 0.0 or win_size.y <= 0.0 or vp_size.x <= 0.0 or vp_size.y <= 0.0:
+		return {"left": 0.0, "top": 0.0, "right": 0.0, "bottom": 0.0}
+	var sx := vp_size.x / maxf(1.0, win_size.x)
+	var sy := vp_size.y / maxf(1.0, win_size.y)
+	var pad_left := clampf(safe_rect.position.x * sx, 0.0, 48.0)
+	var pad_top := clampf(safe_rect.position.y * sy, 0.0, 48.0)
+	var pad_right := clampf((win_size.x - safe_rect.end.x) * sx, 0.0, 48.0)
+	var pad_bottom := clampf((win_size.y - safe_rect.end.y) * sy, 0.0, 48.0)
+	return {"left": pad_left, "top": pad_top, "right": pad_right, "bottom": pad_bottom}
+
+static func compute_top_center_bounds(vp_width: float, tl_width: float, tr_width: float, safe_left: float = 0.0, safe_right: float = 0.0) -> Dictionary:
+	var left_bound := 14.0 + safe_left + tl_width + 12.0
+	var right_bound := 16.0 + safe_right + tr_width + 12.0
+	if left_bound + right_bound > vp_width - 180.0:
+		left_bound = clampf(vp_width * 0.25, 160.0, left_bound)
+		right_bound = clampf(vp_width * 0.25, 160.0, right_bound)
+	return {
+		"offset_left": left_bound,
+		"offset_right": -right_bound,
+		"max_banner_w": maxf(180.0, vp_width - left_bound - right_bound),
+	}
+
+static func clamp_world_prompt_pos(scr_pos: Vector2, prompt_size: Vector2, vp_size: Vector2, margins: Dictionary = {}) -> Vector2:
+	var pad_l := float(margins.get("left", 0.0))
+	var pad_t := float(margins.get("top", 0.0))
+	var pad_r := float(margins.get("right", 0.0))
+	var pad_b := float(margins.get("bottom", 0.0))
+	var px := clampf(scr_pos.x - prompt_size.x * 0.5, 10.0 + pad_l, maxf(10.0 + pad_l, vp_size.x - prompt_size.x - 10.0 - pad_r))
+	var top_floor := 118.0 + pad_t if (px < 330.0 + pad_l or px + prompt_size.x > vp_size.x - 390.0 - pad_r) else 74.0 + pad_t
+	var bot_ceil := maxf(top_floor, vp_size.y - prompt_size.y - 96.0 - pad_b)
+	var py := clampf(scr_pos.y - prompt_size.y - 18.0, top_floor, bot_ceil)
+	return Vector2(px, py)
+
 static func should_show_keyboard_hints(viewport_size: Vector2, is_touch: bool, is_mobile_os: bool = false) -> bool:
 	return not should_show_virtual_joystick(viewport_size, is_touch, is_mobile_os)
 

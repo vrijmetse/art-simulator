@@ -9,7 +9,7 @@ metadata={
 "vram_texture": true
 }
 generator_parameters={
-"md5": "cb162fea36889d42de724d52bc2c01b6"
+"md5": "e2e9569215d606c4d7c7c4f097e2295e"
 }
 
 [deps]
@@ -21,7 +21,7 @@ dest_files=["res://.godot/imported/room_elite_living_elite_grass_v1_ph_alb_hd.jp
 
 compress/mode=2
 compress/high_quality=false
-compress/lossy_quality=0.7
+compress/lossy_quality=0.82
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1

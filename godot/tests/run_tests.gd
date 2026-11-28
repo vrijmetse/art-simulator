@@ -1518,5 +1518,74 @@ func _initialize() -> void:
 	_assert_true("_call_banner != null and _call_banner.visible" in mg_src.split("func _show_toast")[1].split("func ")[0], "_show_toast suppresses non-urgent overlap when call banner is active")
 	_assert_true("spk_row.add_child(_dlg_phone_badge)" in mg_src, "dialogue TELP badge renders inline beside speaker name instead of over portrait")
 
+	# 43. Round 6 Asset Optimization, Draw-Call Batching & Full UI/UX Placement Best Practices
+	var m_safe: Dictionary = ArtAtmosphere.compute_hud_safe_margins(Rect2(42, 24, 1196, 672), Vector2(1280, 720), Vector2(1280, 720))
+	_assert_true(int(m_safe.get("left", 0)) == 42 and int(m_safe.get("top", 0)) == 24 and int(m_safe.get("right", 0)) == 42 and int(m_safe.get("bottom", 0)) == 24, "compute_hud_safe_margins computes all 4 inset edges clamped [0,48]")
+
+	var tc_b: Dictionary = ArtAtmosphere.compute_top_center_bounds(1280.0, 296.0, 356.0, 14.0, 16.0)
+	_assert_true(float(tc_b.get("offset_left", 0.0)) >= 316.0 and float(tc_b.get("offset_right", 0.0)) <= -376.0, "compute_top_center_bounds keeps CallBanner/Toast clear of top-left and top-right HUD badges")
+
+	var wp_clamped: Vector2 = ArtAtmosphere.clamp_world_prompt_pos(Vector2(100.0, 20.0), Vector2(180.0, 44.0), Vector2(1280.0, 720.0), {"left": 0.0, "top": 0.0, "right": 0.0, "bottom": 0.0})
+	_assert_true(wp_clamped.y >= 116.0, "clamp_world_prompt_pos keeps world action pill clear below top-left HUD card")
+
+	_assert_true(not ArtSaveStore.should_show_slot_delete({"exists": true, "onboarding_done": false}), "empty slot with exists=true but onboarding_done=false never shows Delete button")
+	_assert_true(ArtSaveStore.should_show_slot_delete({"exists": true, "onboarding_done": true}), "completed save slot shows Delete button")
+
+	# Asset optimization: kos_room preserves ALL HD upgrade/animated nodes + UV2 lightmaps + surface draw-call budgets
+	var r6_kos_ps := load("res://assets/models/kos_room.glb") as PackedScene
+	var r6_kos_inst := r6_kos_ps.instantiate()
+	var kos_missing: Array = []
+	var expected_kos_nodes := [
+		"IndoorAC", "IndoorACVent",
+		"FanBase", "FanPole", "FanMotorCowl", "FanGuardRingFront", "FanGuardRingBack",
+		"FanSpoke_0", "FanSpoke_1", "FanSpoke_2", "FanSpoke_3", "FanHubBadge",
+		"FanBtn_0", "FanBtn_1", "FanBtn_2", "FanBlade_0", "FanBlade_1", "FanBlade_2",
+		"RiceCookerStand", "MagicComBody", "MagicComLid", "MagicComVent", "MagicComLED",
+		"cover", "pillow",
+	]
+	for req_name in expected_kos_nodes:
+		if r6_kos_inst.find_child(req_name, true, false) == null:
+			kos_missing.append(req_name)
+	_assert_true(kos_missing.is_empty(), "kos_room.glb preserves all runtime upgrade/animated nodes after static batching: %s" % str(kos_missing))
+	r6_kos_inst.free()
+
+	var surf_budgets := {
+		"res://assets/models/kampung_street.glb": 80,
+		"res://assets/models/kos_room.glb": 90,
+		"res://assets/models/kampung_gang.glb": 65,
+		"res://assets/models/room_majikan_living.glb": 85,
+	}
+	for gpath in surf_budgets.keys():
+		var gps := load(String(gpath)) as PackedScene
+		var ginst := gps.instantiate()
+		var sc_sum := 0
+		var has_uv2 := false
+		var stack: Array = [ginst]
+		while not stack.is_empty():
+			var cur: Node = stack.pop_back()
+			if cur is MeshInstance3D and (cur as MeshInstance3D).mesh != null:
+				var m: Mesh = (cur as MeshInstance3D).mesh
+				sc_sum += m.get_surface_count()
+				for si in range(m.get_surface_count()):
+					if (m.surface_get_format(si) & Mesh.ARRAY_FORMAT_TEX_UV2) != 0:
+						has_uv2 = true
+			for ch in cur.get_children():
+				stack.append(ch)
+		ginst.free()
+		_assert_true(sc_sum <= int(surf_budgets[gpath]), "%s surface draw calls (%d) within budget <= %d" % [String(gpath).get_file(), sc_sum, int(surf_budgets[gpath])])
+		_assert_true(has_uv2, "%s preserves ARRAY_FORMAT_TEX_UV2 for lightmap rendering" % String(gpath).get_file())
+
+	var turf_imp := FileAccess.get_file_as_string("res://assets/models/kampung_street_kampung_turf_v22_ph_alb_hd.jpg.import")
+	var batu_nrm_imp := FileAccess.get_file_as_string("res://assets/models/kampung_street_batu_alam_v11_nrm.jpg.import")
+	_assert_true("compress/mode=2" in turf_imp, "stage ground texture uses VRAM compression (compress/mode=2)")
+	_assert_true("compress/mode=2" in batu_nrm_imp and "compress/normal_map=1" in batu_nrm_imp, "stage normal map uses VRAM compression + normal_map=1")
+
+	_assert_true("_modal_list.remove_child(c)" in mg_src, "_clear_modal removes children synchronously before queue_free so modal height fits tightly")
+	_assert_true(not ("focus_behavior_recursive" in mg_src) and ("_set_hud_focus_enabled" in mg_src), "main_game uses Godot 4.x recursive focus_mode trapping (no focus_behavior_recursive)")
+	_assert_true("icon_door" in mg_src.split("if _in_shift:")[1].split("else:")[0], "Shift end/cancel dock button uses distinct icon_door instead of duplicate icon_broom")
+	_assert_true("\"log\"" in mg_src.split("if _phone_os_app == \"home\":")[1].split("elif _phone_os_app")[0], "Phone OS home grid has symmetric 10 apps (including Catatan Harian)")
+	_assert_true("\"font_focus_color\"" in mg_src, "_style_btn overrides font_focus_color so focused gold CTAs keep dark-ink contrast")
+	_assert_true(load("res://src/scenes/main_game.gd") != null, "main_game.gd compiles cleanly with zero parse errors")
+
 	print("GODOT TDD RESULT: %d passed, %d failed" % [_passed, _failed])
 	quit(0 if _failed == 0 else 1)

@@ -3,24 +3,25 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://sw7ikf5uqhmj"
-path="res://.godot/imported/room_elite_living_Flowers_hd.png-64328db444d5eb7100490e9c3ad85205.ctex"
+path.etc2="res://.godot/imported/room_elite_living_Flowers_hd.png-64328db444d5eb7100490e9c3ad85205.etc2.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["etc2_astc"],
+"vram_texture": true
 }
 generator_parameters={
-"md5": "b5cf537b1efbca670b49898386876c32"
+"md5": "b7b990bad8b06680fa654ff9a2665377"
 }
 
 [deps]
 
 source_file="res://assets/models/room_elite_living_Flowers_hd.png"
-dest_files=["res://.godot/imported/room_elite_living_Flowers_hd.png-64328db444d5eb7100490e9c3ad85205.ctex"]
+dest_files=["res://.godot/imported/room_elite_living_Flowers_hd.png-64328db444d5eb7100490e9c3ad85205.etc2.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
-compress/lossy_quality=0.7
+compress/lossy_quality=0.82
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
@@ -39,5 +40,5 @@ process/premult_alpha=false
 process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
-process/size_limit=0
+process/size_limit=512
 detect_3d/compress_to=1
