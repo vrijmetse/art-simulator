@@ -1746,7 +1746,7 @@ func _refresh_hud() -> void:
 	_set_dock_label("career", _t("Karier", "Career"))
 	_set_dock_label("wardrobe", _t("Seragam", "Outfits"))
 	_set_dock_label("upgrade", _t("Upgrade", "Upgrade"))
-	_btn_modal_close.text = _t("Mantap!", "Awesome!")
+	_btn_modal_close.text = _t("Tutup", "Close")
 	_refresh_courier_toast()
 	_refresh_tutorial_banner()
 	_refresh_onboarding_texts()
@@ -1761,25 +1761,42 @@ func _auto_style_modal_buttons(node: Node) -> void:
 	for ch in node.get_children():
 		if ch is Button:
 			var b := ch as Button
-			b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			if not b.has_meta("skip_autowrap"):
+				b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			b.custom_minimum_size.y = maxf(b.custom_minimum_size.y, 44.0)
 			if not b.has_theme_stylebox_override("normal") and not b.has_meta("skip_auto_style"):
-				_style_btn(b, Color(0.15, 0.19, 0.27), Color(0.95, 0.78, 0.26, 0.85))
+				var bg_c := Color(0.12, 0.15, 0.22) if b.disabled else Color(0.15, 0.19, 0.27)
+				var bd_c := Color(0.38, 0.42, 0.50, 0.70) if b.disabled else Color(0.95, 0.78, 0.26, 0.85)
+				var fg_c := Color(0.76, 0.78, 0.84) if b.disabled else Color(0.96, 0.95, 0.92)
+				_style_btn(b, bg_c, bd_c, fg_c)
 		elif ch.get_child_count() > 0:
 			_auto_style_modal_buttons(ch)
+
+func _fit_modal_scroll_height() -> void:
+	if _modal_scroll == null or _modal_list == null:
+		return
+	var canvas_sz := get_viewport().get_visible_rect().size
+	if canvas_sz.x <= 1.0 or canvas_sz.y <= 1.0:
+		canvas_sz = Vector2(1280.0, 720.0)
+	var content_h := _modal_list.get_combined_minimum_size().y + 14.0
+	var max_h := minf(510.0, canvas_sz.y - 165.0)
+	_modal_scroll.custom_minimum_size = Vector2(minf(740.0, canvas_sz.x - 144.0), clampf(content_h, 110.0, max_h))
 
 func _show_modal() -> void:
 	if _is_sleeping:
 		return
-	var vs := _effective_window_size()
+	var canvas_sz := get_viewport().get_visible_rect().size
+	if canvas_sz.x <= 1.0 or canvas_sz.y <= 1.0:
+		canvas_sz = Vector2(1280.0, 720.0)
 	if _modal_card != null:
-		_modal_card.custom_minimum_size = Vector2(minf(540.0, vs.x - 32.0), minf(320.0, vs.y - 28.0))
+		_modal_card.custom_minimum_size = Vector2(minf(780.0, canvas_sz.x - 100.0), 0.0)
 	if _modal_scroll != null:
-		_modal_scroll.custom_minimum_size = Vector2(minf(500.0, vs.x - 68.0), minf(240.0, vs.y - 140.0))
+		_modal_scroll.custom_minimum_size = Vector2(minf(740.0, canvas_sz.x - 144.0), minf(360.0, canvas_sz.y - 180.0))
 	if _modal_list != null:
 		_auto_style_modal_buttons(_modal_list)
 	if _modal_backdrop != null:
 		_modal_backdrop.visible = true
+	call_deferred("_fit_modal_scroll_height")
 	_refresh_tutorial_banner()
 
 func _refresh_call_banner() -> void:
@@ -1800,6 +1817,8 @@ func _refresh_call_banner() -> void:
 		_btn_answer.text = _t("Jawab Cepat!", "Answer Now!")
 
 func _clear_modal() -> void:
+	if _btn_modal_close != null:
+		_btn_modal_close.visible = true
 	for c in _modal_list.get_children():
 		c.queue_free()
 
@@ -1891,12 +1910,16 @@ func _open_retention_modal() -> void:
 	var can_claim := String(_save.get("streak_claimed_date", "")) != today_s
 	var btn_streak := Button.new()
 	var rw_lbl := String(rw["label_en"] if _loc() == "en" else rw["label_id"])
+	var rw_prefix := "Day %d: " % streak_day if _loc() == "en" else "Hari %d: " % streak_day
+	if rw_lbl.begins_with(rw_prefix):
+		rw_lbl = rw_lbl.substr(rw_prefix.length())
 	if can_claim:
 		btn_streak.text = _t("★ Klaim Streak Hari %d: %s (+%s, +%d XP)" % [streak_day, rw_lbl, I18n.format_balance(int(rw["rp"]), "id"), int(rw["xp"])], "★ Claim Day %d Streak: %s (+%s, +%d XP)" % [streak_day, rw_lbl, I18n.format_balance(int(rw["rp"]), "en"), int(rw["xp"])])
 		_style_btn(btn_streak, Color(0.22, 0.56, 0.38), Color(0.98, 0.84, 0.34))
 	else:
 		btn_streak.text = _t("✓ Streak Hari %d/7 Sudah Diklaim Hari Ini" % streak_day, "✓ Day %d/7 Streak Claimed Today" % streak_day)
 		btn_streak.disabled = true
+		_style_btn(btn_streak, Color(0.14, 0.22, 0.19), Color(0.42, 0.54, 0.48), Color(0.84, 0.92, 0.86))
 	btn_streak.pressed.connect(func():
 		var cl := Retention.claim_streak_reward(_save, _today_date_str())
 		if cl["ok"]:
@@ -2126,6 +2149,11 @@ func _open_chapter_modal(ch: Dictionary) -> void:
 func _open_wishlist_modal() -> void:
 	_clear_modal()
 	_modal_title.text = _t("IMPIAN ART & TARGET TABUNGAN", "ART DREAMS & MILESTONE GOALS")
+	var w_bal := Label.new()
+	w_bal.text = "%s: %s" % [_t("Saldo Dompet", "Wallet Balance"), I18n.format_balance(int(_save.get("balance_rp", 0)), _loc())]
+	w_bal.add_theme_font_size_override("font_size", 12)
+	w_bal.add_theme_color_override("font_color", Color(0.45, 0.94, 0.44))
+	_modal_list.add_child(w_bal)
 	var unlocked: Array = _save.get("unlocked_wishlist", [])
 	for raw_wid in WishlistStory.WISHLIST_ITEMS.keys():
 		var wid := String(raw_wid)
@@ -2166,6 +2194,7 @@ func _open_wardrobe_modal() -> void:
 	_modal_title.text = _t("Lemari Seragam & Kustomisasi Warna", "Wardrobe & Color Customization")
 	var xp := int(_save.get("xp", 0))
 	var cur_oid := String(_save.get("equipped_outfit_id", "starter_kasual"))
+	var cur_col := String(_save.get("outfit_color_hex", "#4E7D63"))
 	for o in CareerTiers.OUTFIT_TIERS:
 		var oid := String(o["id"])
 		var unlocked := CareerTiers.can_equip_outfit(oid, xp)
@@ -2173,7 +2202,7 @@ func _open_wardrobe_modal() -> void:
 		var name_txt := String(o["label_en"] if _loc() == "en" else o["label_id"])
 		lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		lbl.text = "%s (%d XP)%s" % [name_txt, int(o["min_xp"]), " ✓" if oid == cur_oid else ""]
-		lbl.add_theme_color_override("font_color", Color(0.98, 0.86, 0.38) if unlocked else Color(0.70, 0.72, 0.76))
+		lbl.add_theme_color_override("font_color", Color(0.98, 0.86, 0.38) if unlocked else Color(0.76, 0.78, 0.84))
 		_modal_list.add_child(lbl)
 		var hbox := HBoxContainer.new()
 		hbox.add_theme_constant_override("separation", 6)
@@ -2183,7 +2212,8 @@ func _open_wardrobe_modal() -> void:
 			var is_light := col_val.get_luminance() > 0.52
 			var b := Button.new()
 			b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			b.text = Progression.get_color_label(ch, _loc())
+			var is_cur_swatch := (oid == cur_oid and ch.to_upper() == cur_col.to_upper())
+			b.text = ("✓ " if is_cur_swatch else "") + Progression.get_color_label(ch, _loc())
 			b.disabled = not unlocked
 			_style_btn(b, col_val, Color(0.96, 0.78, 0.26) if unlocked else Color(0.45, 0.45, 0.48), Color(0.10, 0.08, 0.06) if is_light else Color(0.98, 0.97, 0.94))
 			b.pressed.connect(func():
@@ -2203,6 +2233,11 @@ func _open_kos_modal() -> void:
 	_clear_modal()
 	var tier := CareerTiers.get_tier(String(_save.get("active_tier_id", "kamar_kos")))
 	_modal_title.text = Progression.get_room_upgrade_title(tier, _loc())
+	var k_bal := Label.new()
+	k_bal.text = "%s: %s  •  %s: %d" % [_t("Saldo Dompet", "Wallet"), I18n.format_balance(int(_save.get("balance_rp", 0)), _loc()), _t("Maks Energi", "Max Energy"), int(Progression.get_max_energy(_save))]
+	k_bal.add_theme_font_size_override("font_size", 12)
+	k_bal.add_theme_color_override("font_color", Color(0.45, 0.94, 0.44))
+	_modal_list.add_child(k_bal)
 	var owned: Array = _save.get("unlocked_kos_upgrades", [])
 	for raw_uid in Progression.KOS_UPGRADES.keys():
 		var uid := String(raw_uid)
@@ -2289,7 +2324,8 @@ func _open_rent_modal(res: Dictionary = {}, leveled_up_to: int = 0) -> void:
 	hdr_row.add_theme_constant_override("separation", 10)
 	var p_rect := TextureRect.new()
 	p_rect.texture = Portraits.get_portrait("ibu_melati", "strict")
-	p_rect.custom_minimum_size = Vector2(48, 48)
+	p_rect.custom_minimum_size = Vector2(64, 64)
+	p_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	p_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	hdr_row.add_child(p_rect)
 	var quote_lbl := Label.new()
@@ -2477,6 +2513,9 @@ func _open_settings_modal() -> void:
 
 	var btn_prof := Button.new()
 	btn_prof.text = _t("Edit Profil & Karakter ART", "Edit ART Profile & Look")
+	btn_prof.icon = Portraits.get_ui_icon("icon_wardrobe")
+	btn_prof.expand_icon = true
+	btn_prof.add_theme_constant_override("icon_max_width", 24)
 	btn_prof.disabled = _in_shift
 	btn_prof.pressed.connect(func():
 		_modal_backdrop.visible = false
@@ -2487,28 +2526,43 @@ func _open_settings_modal() -> void:
 
 	var btn_log := Button.new()
 	btn_log.text = _t("Catatan Harian ART (%d)" % Settings.get_daily_log(_save).size(), "Daily ART Log (%d)" % Settings.get_daily_log(_save).size())
+	btn_log.icon = Portraits.get_ui_icon("app_debt")
+	btn_log.expand_icon = true
+	btn_log.add_theme_constant_override("icon_max_width", 24)
 	btn_log.pressed.connect(_open_log_modal)
 	_modal_list.add_child(btn_log)
 
 	var btn_wish := Button.new()
 	btn_wish.text = _t("Impian ART (%d/4)" % (_save.get("unlocked_wishlist", []) as Array).size(), "ART Dreams (%d/4)" % (_save.get("unlocked_wishlist", []) as Array).size())
+	btn_wish.icon = Portraits.get_ui_icon("app_dreams")
+	btn_wish.expand_icon = true
+	btn_wish.add_theme_constant_override("icon_max_width", 24)
 	btn_wish.pressed.connect(_open_wishlist_modal)
 	_modal_list.add_child(btn_wish)
 
 	var btn_book := Button.new()
 	btn_book.text = _t("Buku Cerita ART", "ART Story Book")
+	btn_book.icon = Portraits.get_ui_icon("app_story")
+	btn_book.expand_icon = true
+	btn_book.add_theme_constant_override("icon_max_width", 24)
 	btn_book.pressed.connect(_open_storybook_modal)
 	_modal_list.add_child(btn_book)
 
 	var btn_ret := Button.new()
 	btn_ret.text = _t("★ Misi Harian, Streak & Lencana" if Retention.has_unclaimed_daily_reward(_save, _today_date_str()) else "Misi Harian, Streak & Lencana", "★ Daily Missions, Streak & Badges" if Retention.has_unclaimed_daily_reward(_save, _today_date_str()) else "Daily Missions, Streak & Badges")
+	btn_ret.icon = Portraits.get_ui_icon("app_missions")
+	btn_ret.expand_icon = true
+	btn_ret.add_theme_constant_override("icon_max_width", 24)
 	btn_ret.pressed.connect(_open_retention_modal)
 	_modal_list.add_child(btn_ret)
 
 	var pray_on := bool(_save.get("prayer_reminders", true))
 	if pray_on:
 		var btn_pray_now := Button.new()
-		btn_pray_now.text = _t("Sholat / Doa (+12 Mood)" + (" & Buka Puasa" if LifeRhythm.get_season(int(_save.get("day", 1))) == "ramadhan" else ""), "Pray (+12 Mood)" + (" & Break Fast" if LifeRhythm.get_season(int(_save.get("day", 1))) == "ramadhan" else ""))
+		btn_pray_now.text = _t("Sholat / Doa (+12 Semangat)" + (" & Buka Puasa" if LifeRhythm.get_season(int(_save.get("day", 1))) == "ramadhan" else ""), "Pray (+12 Mood)" + (" & Break Fast" if LifeRhythm.get_season(int(_save.get("day", 1))) == "ramadhan" else ""))
+		btn_pray_now.icon = Portraits.get_ui_icon("star_filled")
+		btn_pray_now.expand_icon = true
+		btn_pray_now.add_theme_constant_override("icon_max_width", 24)
 		btn_pray_now.pressed.connect(func():
 			_modal_backdrop.visible = false
 			_trigger_prayer_action()
@@ -2517,6 +2571,9 @@ func _open_settings_modal() -> void:
 
 	var btn_pr_tog := Button.new()
 	btn_pr_tog.text = _t("Pengingat Waktu Sholat: Aktif" if pray_on else "Pengingat Waktu Sholat: Mati", "Prayer Reminders: On" if pray_on else "Prayer Reminders: Off")
+	btn_pr_tog.icon = Portraits.get_ui_icon("app_guide")
+	btn_pr_tog.expand_icon = true
+	btn_pr_tog.add_theme_constant_override("icon_max_width", 24)
 	btn_pr_tog.pressed.connect(func():
 		_save["prayer_reminders"] = not pray_on
 		SaveStore.save_to_slot(_save, _active_slot)
@@ -2528,6 +2585,9 @@ func _open_settings_modal() -> void:
 
 	var btn_lang := Button.new()
 	btn_lang.text = _t("Bahasa: Indonesia (Ubah ke EN)", "Language: English (Switch to ID)")
+	btn_lang.icon = Portraits.get_ui_icon("app_map")
+	btn_lang.expand_icon = true
+	btn_lang.add_theme_constant_override("icon_max_width", 24)
 	btn_lang.pressed.connect(func():
 		_save["locale"] = "en" if _loc() == "id" else "id"
 		SaveStore.save_to_slot(_save, _active_slot)
@@ -2538,6 +2598,9 @@ func _open_settings_modal() -> void:
 
 	var btn_sfx := Button.new()
 	btn_sfx.text = _t("Efek Suara: Mati" if _muted else "Efek Suara: Aktif", "Sound SFX: Off" if _muted else "Sound SFX: On")
+	btn_sfx.icon = Portraits.get_ui_icon("icon_phone")
+	btn_sfx.expand_icon = true
+	btn_sfx.add_theme_constant_override("icon_max_width", 24)
 	btn_sfx.pressed.connect(func():
 		_muted = not _muted
 		_save["muted"] = _muted
@@ -2550,6 +2613,9 @@ func _open_settings_modal() -> void:
 	var bgm_on := bool(_save.get("bgm_enabled", true))
 	var btn_bgm := Button.new()
 	btn_bgm.text = _t("Musik Latar (BGM): Aktif" if bgm_on else "Musik Latar (BGM): Mati", "Background Music: On" if bgm_on else "Background Music: Off")
+	btn_bgm.icon = Portraits.get_ui_icon("app_chat")
+	btn_bgm.expand_icon = true
+	btn_bgm.add_theme_constant_override("icon_max_width", 24)
 	btn_bgm.pressed.connect(func():
 		_save["bgm_enabled"] = not bgm_on
 		SaveStore.save_to_slot(_save, _active_slot)
@@ -2628,10 +2694,11 @@ func _style_btn(btn: Button, bg: Color, border: Color, txt: Color = Color(0.98, 
 	btn.add_theme_stylebox_override("normal", _make_box(bg, border, 10, 12, 7))
 	btn.add_theme_stylebox_override("hover", _make_box(bg.lightened(0.10), border, 10, 12, 7))
 	btn.add_theme_stylebox_override("pressed", _make_box(bg.darkened(0.12), border, 10, 12, 7))
-	btn.add_theme_stylebox_override("disabled", _make_box(Color(0.62, 0.60, 0.56, 0.65), Color(0.45, 0.43, 0.40), 10, 12, 7))
+	btn.add_theme_stylebox_override("disabled", _make_box(Color(0.11, 0.14, 0.20, 0.94), Color(0.36, 0.40, 0.48, 0.80), 10, 12, 7))
 	btn.add_theme_color_override("font_color", txt)
 	btn.add_theme_color_override("font_hover_color", txt)
 	btn.add_theme_color_override("font_pressed_color", txt)
+	btn.add_theme_color_override("font_disabled_color", Color(0.84, 0.86, 0.90))
 
 func _style_bar(bar: ProgressBar, fill_col: Color, bg_col: Color = Color(0.08, 0.08, 0.08, 0.65)) -> void:
 	var bg := StyleBoxFlat.new()
@@ -3119,8 +3186,8 @@ func _build_onboarding_overlay(card_sb: StyleBoxFlat, gold_pill: StyleBoxFlat, d
 
 	_ob_story = Label.new()
 	_ob_story.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_ob_story.add_theme_font_size_override("font_size", 12)
-	_ob_story.add_theme_color_override("font_color", Color(0.88, 0.87, 0.83))
+	_ob_story.add_theme_font_size_override("font_size", 13)
+	_ob_story.add_theme_color_override("font_color", Color(0.93, 0.93, 0.90))
 	vb.add_child(_ob_story)
 
 	_ob_name_edit = LineEdit.new()
@@ -3161,6 +3228,7 @@ func _build_onboarding_overlay(card_sb: StyleBoxFlat, gold_pill: StyleBoxFlat, d
 	]:
 		var sb := Button.new()
 		sb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		sb.custom_minimum_size = Vector2(0, 44)
 		var h := String(sk_cfg["hex"])
 		_style_btn(sb, Color.html(h), Color(0.98, 0.94, 0.86), Color(0.10, 0.08, 0.06))
 		sb.pressed.connect(func():
@@ -3182,7 +3250,7 @@ func _build_onboarding_overlay(card_sb: StyleBoxFlat, gold_pill: StyleBoxFlat, d
 	]:
 		var cb := Button.new()
 		cb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		cb.custom_minimum_size = Vector2(0, 40)
+		cb.custom_minimum_size = Vector2(0, 44)
 		var ch := String(c_cfg["hex"])
 		_style_btn(cb, Color.html(ch), Color(0.96, 0.88, 0.65))
 		cb.pressed.connect(func():
@@ -3223,11 +3291,11 @@ func _build_title_overlay(card_sb: StyleBoxFlat, dark_ink: Color, light_ink: Col
 
 	var left_col := VBoxContainer.new()
 	left_col.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	left_col.position = Vector2(28, 22)
-	left_col.add_theme_constant_override("separation", 12)
+	left_col.position = Vector2(28, 16)
+	left_col.add_theme_constant_override("separation", 10)
 
 	var logo := TextureRect.new()
-	logo.custom_minimum_size = Vector2(350, 146)
+	logo.custom_minimum_size = Vector2(316, 130)
 	logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	logo.texture = Portraits.get_ui_icon("logo_art_simulator")
@@ -3284,14 +3352,20 @@ func _build_title_overlay(card_sb: StyleBoxFlat, dark_ink: Color, light_ink: Col
 	br_info.offset_right = -24
 	br_info.offset_bottom = -20
 	br_info.add_theme_constant_override("separation", 6)
+	var ver_pill := PanelContainer.new()
+	ver_pill.size_flags_horizontal = Control.SIZE_SHRINK_END
+	ver_pill.add_theme_stylebox_override("panel", _make_box(Color(0.08, 0.10, 0.14, 0.88), Color(0.95, 0.78, 0.26, 0.65), 8, 10, 4))
 	var ver_lbl := Label.new()
 	ver_lbl.text = "Versi 1.5 (HD)"
 	ver_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_shadow_label(ver_lbl, 13, light_ink)
+	ver_lbl.add_theme_font_size_override("font_size", 12)
+	ver_lbl.add_theme_color_override("font_color", Color(0.96, 0.94, 0.88))
+	ver_pill.add_child(ver_lbl)
 	_title_btn_news = Button.new()
-	_style_btn(_title_btn_news, Color(0.14, 0.17, 0.24, 0.92), Color(0.95, 0.78, 0.26))
+	_title_btn_news.custom_minimum_size = Vector2(132, 44)
+	_style_btn(_title_btn_news, Color(0.14, 0.17, 0.24, 0.94), Color(0.95, 0.78, 0.26))
 	_title_btn_news.pressed.connect(_open_whats_new_modal)
-	br_info.add_child(ver_lbl)
+	br_info.add_child(ver_pill)
 	br_info.add_child(_title_btn_news)
 	_title_wrap.add_child(br_info)
 	hud.add_child(_title_wrap)
@@ -3349,8 +3423,10 @@ func _open_save_slots_modal() -> void:
 		if bool(entry.get("exists", false)):
 			var del_b := Button.new()
 			var is_arm := _confirm_delete_slot == slot_idx
-			del_b.text = _t("Yakin Hapus?" if is_arm else "Hapus", "Confirm Del?" if is_arm else "Del")
-			_style_btn(del_b, Color(0.76, 0.16, 0.16) if is_arm else Color(0.55, 0.18, 0.18), Color(0.98, 0.80, 0.45) if is_arm else Color(0.95, 0.65, 0.55))
+			del_b.custom_minimum_size = Vector2(96, 44)
+			del_b.set_meta("skip_autowrap", true)
+			del_b.text = _t("Yakin Hapus?" if is_arm else "Hapus", "Confirm Del?" if is_arm else "Delete")
+			_style_btn(del_b, Color(0.76, 0.16, 0.16) if is_arm else Color(0.58, 0.18, 0.18), Color(0.98, 0.80, 0.45) if is_arm else Color(0.95, 0.65, 0.55))
 			del_b.pressed.connect(func():
 				if _confirm_delete_slot != slot_idx:
 					_confirm_delete_slot = slot_idx
@@ -3522,6 +3598,8 @@ func _open_guide_modal(guide_idx: int = 0) -> void:
 	next_b.pressed.connect(func(): _open_guide_modal(guide_idx + 1))
 	_modal_list.add_child(next_b)
 	_show_modal()
+	if _btn_modal_close != null:
+		_btn_modal_close.visible = false
 
 func _build_spotlight_overlay() -> void:
 	_spotlight_wrap = Control.new()
@@ -3784,17 +3862,17 @@ func _build_phone_os_overlay() -> void:
 	_phone_os_nav_back = Button.new()
 	_phone_os_nav_back.custom_minimum_size = Vector2(0, 44)
 	_phone_os_nav_back.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_style_btn(_phone_os_nav_back, Color(0.16, 0.20, 0.28), Color(0.75, 0.78, 0.85))
+	_style_btn(_phone_os_nav_back, Color(0.16, 0.20, 0.28), Color(0.95, 0.78, 0.26, 0.75))
 	_phone_os_nav_back.pressed.connect(func(): _open_phone_os("home"))
 	_phone_os_nav_home = Button.new()
 	_phone_os_nav_home.custom_minimum_size = Vector2(0, 44)
 	_phone_os_nav_home.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_style_btn(_phone_os_nav_home, Color(0.16, 0.20, 0.28), Color(0.75, 0.78, 0.85))
+	_style_btn(_phone_os_nav_home, Color(0.16, 0.20, 0.28), Color(0.95, 0.78, 0.26, 0.75))
 	_phone_os_nav_home.pressed.connect(func(): _open_phone_os("home"))
 	_phone_os_nav_close = Button.new()
 	_phone_os_nav_close.custom_minimum_size = Vector2(0, 44)
 	_phone_os_nav_close.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_style_btn(_phone_os_nav_close, Color(0.64, 0.20, 0.20), Color(0.95, 0.78, 0.26))
+	_style_btn(_phone_os_nav_close, Color(0.64, 0.20, 0.20), Color(0.95, 0.78, 0.26, 0.90))
 	_phone_os_nav_close.pressed.connect(func():
 		_phone_os_wrap.visible = false
 		_refresh_hud()
@@ -3821,13 +3899,16 @@ func _render_phone_app() -> void:
 	for c in _phone_os_body.get_children():
 		c.queue_free()
 	var vp := _effective_window_size()
+	var canvas_sz := get_viewport().get_visible_rect().size
+	if canvas_sz.x <= 1.0 or canvas_sz.y <= 1.0:
+		canvas_sz = Vector2(1280.0, 720.0)
 	var layout_mode := Progression.get_phone_layout_mode(vp)
 	var is_land := layout_mode == "landscape"
 	if _phone_os_bezel != null:
-		_phone_os_bezel.custom_minimum_size = Vector2(640, 384) if is_land else Vector2(360, 480)
+		_phone_os_bezel.custom_minimum_size = Vector2(minf(860.0, canvas_sz.x - 100.0), minf(560.0, canvas_sz.y - 72.0)) if is_land else Vector2(minf(920.0, canvas_sz.x - 100.0), clampf(canvas_sz.y - 200.0, 500.0, 1180.0))
 	var sc := _phone_os_body.get_parent() as ScrollContainer
 	if sc != null:
-		sc.custom_minimum_size = Vector2(596, 260) if is_land else Vector2(332, clampf(vp.y - 165.0, 240.0, 355.0))
+		sc.custom_minimum_size = Vector2(minf(812.0, canvas_sz.x - 148.0), minf(415.0, canvas_sz.y - 215.0)) if is_land else Vector2(minf(872.0, canvas_sz.x - 148.0), clampf(canvas_sz.y - 360.0, 350.0, 960.0))
 	_phone_os_clock.text = "%s · 4G" % LifeRhythm.format_clock(int(_save.get("game_minutes", 360)))
 	_phone_os_bal.text = I18n.format_balance(int(_save.get("balance_rp", 0)), _loc())
 	_phone_os_nav_back.text = _t("Kembali", "Back")
@@ -3856,7 +3937,7 @@ func _render_phone_app() -> void:
 			tile.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			tile.alignment = BoxContainer.ALIGNMENT_CENTER
 			var b := Button.new()
-			b.custom_minimum_size = Vector2(68, 64)
+			b.custom_minimum_size = Vector2(78, 76)
 			b.flat = true
 			var ic := TextureRect.new()
 			ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -3887,8 +3968,8 @@ func _render_phone_app() -> void:
 			var l := Label.new()
 			l.text = String(app["en_lbl"] if _loc() == "en" else app["id_lbl"])
 			l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			l.add_theme_font_size_override("font_size", 11)
-			l.add_theme_color_override("font_color", Color(0.95, 0.94, 0.90))
+			l.add_theme_font_size_override("font_size", 12)
+			l.add_theme_color_override("font_color", Color(0.96, 0.95, 0.92))
 			tile.add_child(b)
 			tile.add_child(l)
 			grid.add_child(tile)
@@ -3972,6 +4053,22 @@ func _render_phone_app() -> void:
 			)
 			_phone_os_body.add_child(row_b)
 	elif _phone_os_app == "chat":
+		var chat_card := PanelContainer.new()
+		chat_card.add_theme_stylebox_override("panel", _make_box(Color(0.11, 0.24, 0.36), Color(0.95, 0.78, 0.26, 0.80), 12, 12, 8))
+		var cv_chat := VBoxContainer.new()
+		cv_chat.add_theme_constant_override("separation", 4)
+		var ch_hdr := Label.new()
+		ch_hdr.text = _t("Pesan & Aktivitas HP", "Messages & Phone Activities")
+		ch_hdr.add_theme_color_override("font_color", Color(0.98, 0.86, 0.36))
+		var ch_sub := Label.new()
+		ch_sub.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		ch_sub.text = _t("Jawab panggilan majikan atau pulihkan semangat di waktu luang.", "Answer employer calls or recharge your mood during free time.")
+		ch_sub.add_theme_font_size_override("font_size", 12)
+		ch_sub.add_theme_color_override("font_color", Color(0.90, 0.92, 0.96))
+		cv_chat.add_child(ch_hdr)
+		cv_chat.add_child(ch_sub)
+		chat_card.add_child(cv_chat)
+		_phone_os_body.add_child(chat_card)
 		if _in_shift and bool(_call_state.get("active_call", false)):
 			var ans := Button.new()
 			ans.text = _t("Jawab Panggilan Majikan!", "Answer Employer Call!")
@@ -3982,7 +4079,7 @@ func _render_phone_app() -> void:
 			)
 			_phone_os_body.add_child(ans)
 		var g_b := Button.new()
-		g_b.text = _t("Main Game Santai (+Mood)", "Play Mini-Game (+Mood)")
+		g_b.text = _t("Main Game Santai (+8 Semangat)", "Play Mini-Game (+8 Mood)")
 		_style_btn(g_b, Color(0.24, 0.44, 0.66), Color(0.95, 0.78, 0.26))
 		g_b.pressed.connect(func():
 			_phone_os_wrap.visible = false
@@ -3994,7 +4091,7 @@ func _render_phone_app() -> void:
 				_refresh_hud()
 		)
 		var bf_b := Button.new()
-		bf_b.text = _t("Telp Keluarga / Pacar (+Mood)", "Call Family / BF (+Mood)")
+		bf_b.text = _t("Telp Keluarga / Pacar (+10 Semangat)", "Call Family / Partner (+10 Mood)")
 		_style_btn(bf_b, Color(0.56, 0.30, 0.46), Color(0.95, 0.78, 0.26))
 		bf_b.pressed.connect(func():
 			_phone_os_wrap.visible = false
@@ -4047,7 +4144,8 @@ func _render_phone_app() -> void:
 					)
 				_phone_os_body.add_child(rb)
 		var borrow_b := Button.new()
-		borrow_b.text = _t("Pinjam Darurat Rp25.000 (Warung Bu Tini)", "Emergency Loan Rp25.000")
+		borrow_b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		borrow_b.text = _t("Pinjam Darurat %s (Warung Bu Tini)" % I18n.format_balance(25000, "id"), "Emergency Loan %s (Warung)" % I18n.format_balance(25000, "en"))
 		borrow_b.disabled = unpaid + 25000 > Progression.MAX_KASBON_DEBT_RP
 		_style_btn(borrow_b, Color(0.46, 0.32, 0.18), Color(0.95, 0.78, 0.26))
 		borrow_b.pressed.connect(func():

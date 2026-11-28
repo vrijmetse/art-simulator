@@ -1448,5 +1448,22 @@ func _initialize() -> void:
 	_assert_true("format_action_prompt" in mg_src and "_world_prompt: Button" in mg_src, "main_game makes _world_prompt a tappable Button using format_action_prompt")
 	_assert_true("_modal_card" in mg_src and "_modal_scroll" in mg_src and "AUTOWRAP_WORD_SMART" in mg_src, "main_game sizes modal responsively and wraps buttons")
 
+	# 41. Round 4 Asset & Modal/Phone OS Polish: Currency Formatting, Canvas Sizing, Save Delete & Clean Icons
+	var r4_save := Progression.create_player_save()
+	r4_save["balance_rp"] = 250000
+	var r4_guides := ArtWishlistStory.get_onboarding_guides(r4_save, "id")
+	_assert_eq(String(r4_guides[0]["card_balance"]), "Rp 250.000", "Guide 1 formats balance with space & thousand dots")
+	_assert_true("Rp 0" in String(r4_guides[0]["goal_progress"]) and "Rp 150.000" in String(r4_guides[0]["goal_progress"]), "Guide 1 progress formats Rp 0 of Rp 150.000")
+	_assert_true(not ("->" in String(r4_guides[0]["body"])), "Guide 1 avoids raw ASCII -> arrow")
+	var r4_guides_en := ArtWishlistStory.get_onboarding_guides(r4_save, "en")
+	_assert_true(not ("->" in String(r4_guides_en[0]["body"])), "Guide 1 EN avoids raw ASCII -> arrow")
+	_assert_true("_btn_modal_close.text = _t(\"Tutup\", \"Close\")" in mg_src, "main_game uses Tutup/Close instead of Mantap! on modal close button")
+	_assert_true("skip_autowrap" in mg_src and "Vector2(96, 44)" in mg_src, "save_slots delete button reserves >=96px width and skips autowrap")
+	_assert_true("canvas_sz := get_viewport().get_visible_rect().size" in mg_src, "main_game sizes modals & Phone OS in canvas_items coordinate space")
+	_assert_true(not ("Rp25.000" in mg_src), "phone_debt uses formatted currency spacing instead of hardcoded Rp25.000")
+	_assert_true(not ("(+Mood)" in mg_src.split("\"Telp Keluarga")[0].substr(max(0, mg_src.find("\"chat\"")))), "phone_chat ID copy uses (+Semangat) without mixed English (+Mood)")
+	_assert_true("font_disabled_color" in mg_src and "_fit_modal_scroll_height" in mg_src, "main_game sets high-contrast font_disabled_color and content-fit modal scroll height")
+	_assert_true("\"Sholat / Doa (+12 Semangat)\"" in mg_src, "settings prayer button uses Indonesian +12 Semangat without mixed Mood")
+
 	print("GODOT TDD RESULT: %d passed, %d failed" % [_passed, _failed])
 	quit(0 if _failed == 0 else 1)

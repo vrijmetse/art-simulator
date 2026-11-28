@@ -131,7 +131,7 @@ def render_all():
     render_out(sc, "icon_door.png")
 
     # 2. icon_broom.png — Wooden broom + blue bucket
-    sc = reset_studio(256, 256, (0.45, -2.75, 0.75), (0.0, 0.0, 0.04), 48.0)
+    sc = reset_studio(256, 256, (0.35, -2.75, 0.72), (-0.02, 0.0, 0.02), 48.0)
     m_stick = mat("Stick", (0.68, 0.46, 0.22), 0.48)
     m_straw = mat("Straw", (0.92, 0.74, 0.32), 0.75)
     m_blue = mat("BucketBlue", (0.18, 0.58, 0.88), 0.30)
@@ -156,16 +156,19 @@ def render_all():
     box((0.18, 0.08, 0.16), (0.0, -0.22, 0.0), (0, 0, 0), m_gold, 0.03)
     render_out(sc, "icon_career.png")
 
-    # 4. icon_wardrobe.png — Wooden hanger + emerald daster + cream apron
-    sc = reset_studio(256, 256, (0.35, -2.75, 0.55), (0.0, 0.0, 0.0), 48.0)
-    m_wood = mat("HangerWood", (0.62, 0.38, 0.18), 0.42)
-    m_teal = mat("DasterTeal", (0.18, 0.62, 0.50), 0.65)
-    m_apron = mat("ApronCream", (0.96, 0.91, 0.80), 0.68)
-    m_gold = mat("HookGold", (0.92, 0.74, 0.24), 0.25, 0.85)
-    box((0.84, 0.08, 0.08), (0.0, 0.0, 0.46), (0, 0, 0), m_wood, 0.03)
-    cyl(0.035, 0.22, (0.0, 0.0, 0.60), (0, 0, 0), m_gold)
-    box((0.76, 0.20, 0.94), (0.0, 0.0, -0.08), (0, 0, 0), m_teal, 0.05)
-    box((0.50, 0.23, 0.62), (0.0, -0.02, -0.18), (0, 0, 0), m_apron, 0.04)
+    # 4. icon_wardrobe.png — Cozy 2-door wooden wardrobe (lemari) with brass handles & emerald accent
+    sc = reset_studio(256, 256, (0.48, -2.80, 0.58), (0.0, 0.0, 0.02), 48.0)
+    m_teak = mat("WardrobeTeak", (0.50, 0.26, 0.12), 0.42)
+    m_door = mat("WardrobeDoor", (0.64, 0.36, 0.17), 0.44)
+    m_gold = mat("BrassKnob", (0.98, 0.78, 0.20), 0.20, 0.88)
+    m_teal = mat("InsideBatik", (0.12, 0.58, 0.46), 0.55)
+    box((1.06, 0.54, 1.32), (0.0, 0.08, 0.0), (0, 0, 0), m_teak, 0.05)
+    box((1.14, 0.58, 0.10), (0.0, 0.06, 0.68), (0, 0, 0), m_teak, 0.03)
+    box((0.46, 0.08, 1.12), (-0.25, -0.22, 0.0), (0, 0, 0), m_door, 0.03)
+    box((0.46, 0.08, 1.12), (0.28, -0.24, 0.0), (0, 0, math.radians(-12)), m_door, 0.03)
+    box((0.30, 0.06, 0.88), (0.20, -0.14, 0.02), (0, 0, 0), m_teal, 0.02)
+    sph(0.055, (-0.08, -0.28, 0.02), (1, 1, 1), m_gold)
+    sph(0.055, (0.10, -0.31, 0.02), (1, 1, 1), m_gold)
     render_out(sc, "icon_wardrobe.png")
 
     # 5. icon_upgrade.png — Cozy cottage + gold up arrow
@@ -208,23 +211,27 @@ def render_all():
     box((0.28, 0.06, 0.20), (0.24, -0.46, 0.14), (0, 0, 0), m_red, 0.01)
     render_out(sc, "icon_courier_box.png")
 
-    # 8. icon_hand_pointer.png — 3D Cartoon pointing hand
-    sc = reset_studio(256, 256, (0.25, -2.55, 0.35), (0.0, 0.0, 0.1), 48.0)
-    m_skin = mat("HandSkin", (0.94, 0.74, 0.58), 0.55)
-    m_cuff = mat("Cuff", (0.96, 0.96, 0.98), 0.60)
-    sph(0.28, (0.0, 0.0, -0.15), (1.0, 0.65, 1.05), m_skin)
-    cyl(0.085, 0.68, (-0.12, -0.02, 0.36), (0, 0, 0), m_skin)
-    sph(0.086, (-0.12, -0.02, 0.70), (1, 1, 1), m_skin)
-    for fi, fx in enumerate((0.03, 0.14, 0.24)):
-        cyl(0.065, 0.22, (fx, -0.04, 0.06), (math.radians(35), 0, 0), m_skin)
-    cyl(0.068, 0.28, (-0.28, -0.04, 0.02), (0, math.radians(-42), 0), m_skin)
-    box((0.46, 0.34, 0.24), (0.0, 0.0, -0.52), (0, 0, 0), m_cuff, 0.05)
+    # 8. icon_hand_pointer.png — Clean cartoon white-gloved tapping hand + gold tap ring
+    sc = reset_studio(256, 256, (0.30, -2.55, 0.42), (0.0, 0.0, 0.04), 48.0)
+    m_glove = mat("GloveWhite", (0.98, 0.96, 0.92), 0.45)
+    m_cuff = mat("CuffBlue", (0.20, 0.54, 0.84), 0.38)
+    m_ring = mat("TapGold", (0.98, 0.78, 0.18), 0.20, 0.65, emit=0.25)
+    sph(0.28, (0.0, 0.0, -0.14), (1.0, 0.68, 0.98), m_glove)
+    cyl(0.085, 0.46, (-0.12, -0.02, 0.24), (0, 0, 0), m_glove)
+    sph(0.086, (-0.12, -0.02, 0.48), (1, 1, 1), m_glove)
+    bpy.ops.mesh.primitive_torus_add(major_radius=0.22, minor_radius=0.032, major_segments=24, minor_segments=10, location=(-0.12, -0.02, 0.50), rotation=(math.radians(78), 0, 0))
+    bpy.context.active_object.data.materials.append(m_ring)
+    for fx in (0.03, 0.14, 0.24):
+        cyl(0.068, 0.20, (fx, -0.06, 0.04), (math.radians(38), 0, 0), m_glove)
+        sph(0.068, (fx, -0.12, 0.11), (1, 1, 1), m_glove)
+    cyl(0.072, 0.26, (-0.27, -0.04, 0.0), (0, math.radians(-42), 0), m_glove)
+    box((0.46, 0.34, 0.22), (0.0, 0.0, -0.46), (0, 0, 0), m_cuff, 0.05)
     render_out(sc, "icon_hand_pointer.png")
 
     # 9. star_filled.png & star_empty.png
-    for sname, srgb, semit in [("star_filled.png", (0.98, 0.80, 0.20), 0.25), ("star_empty.png", (0.28, 0.32, 0.40), 0.0)]:
+    for sname, srgb, smetal, semit in [("star_filled.png", (1.0, 0.72, 0.06), 0.45, 0.18), ("star_empty.png", (0.24, 0.28, 0.36), 0.10, 0.0)]:
         sc = reset_studio(128, 128, (0.0, -2.5, 0.12), (0.0, 0.0, 0.0), 48.0)
-        ms = mat("Star", srgb, 0.25, 0.55 if semit > 0 else 0.1, emit=semit)
+        ms = mat("Star", srgb, 0.20 if semit > 0 else 0.45, smetal, emit=semit)
         for ai in range(5):
             ang = math.radians(ai * 72.0)
             bpy.ops.mesh.primitive_cone_add(vertices=4, radius1=0.30, radius2=0.02, depth=0.68, location=(math.sin(ang) * 0.28, 0.0, math.cos(ang) * 0.28), rotation=(0.0, ang, 0.0))
@@ -261,23 +268,29 @@ def render_all():
             bpy.ops.mesh.primitive_cone_add(vertices=4, radius1=0.52, radius2=0.02, depth=0.26, location=(0, -0.06, 0.32), rotation=(0, 0, math.radians(45)))
             bpy.context.active_object.data.materials.append(m_g)
         elif kind == "shop":
-            m_bag = mat("ShopBag", (0.96, 0.92, 0.82), 0.48)
-            m_veg = mat("ShopVeg", (0.18, 0.72, 0.28), 0.42)
-            m_b = mat("ShopBtl", (0.22, 0.62, 0.90), 0.28)
-            bpy.ops.mesh.primitive_cone_add(vertices=4, radius1=0.38, radius2=0.46, depth=0.62, location=(0, -0.06, -0.10), rotation=(0, 0, math.radians(45)))
-            bg_o = bpy.context.active_object
-            bg_o.scale = (1.15, 0.68, 1.0)
-            bpy.ops.object.shade_smooth()
-            bg_o.data.materials.append(m_bag)
-            cyl(0.08, 0.38, (-0.12, -0.06, 0.26), (0, math.radians(10), 0), m_veg)
-            cyl(0.075, 0.44, (0.12, -0.06, 0.28), (0, math.radians(-8), 0), m_b)
+            m_bag = mat("ShopBag", (0.98, 0.94, 0.84), 0.42)
+            m_handle = mat("BagHandle", (0.72, 0.38, 0.14), 0.35)
+            m_veg = mat("ShopVeg", (0.16, 0.74, 0.30), 0.40)
+            m_b = mat("ShopBtl", (0.18, 0.62, 0.92), 0.24)
+            box((0.76, 0.30, 0.62), (0, -0.08, -0.18), (0, 0, 0), m_bag, 0.06)
+            bpy.ops.mesh.primitive_torus_add(major_radius=0.20, minor_radius=0.046, major_segments=22, minor_segments=10, location=(0, -0.08, 0.23), rotation=(math.pi * 0.5, 0, 0))
+            bpy.context.active_object.data.materials.append(m_handle)
+            sph(0.14, (-0.18, -0.08, 0.20), (1.1, 0.8, 1.3), m_veg)
+            cyl(0.08, 0.30, (0.19, -0.08, 0.22), (0, math.radians(-10), 0), m_b)
         elif kind == "chat":
             sph(0.38, (0, -0.08, 0.06), (1.15, 0.45, 0.88), m_w)
-            bpy.ops.mesh.primitive_cone_add(vertices=4, radius1=0.14, radius2=0.01, depth=0.24, location=(-0.22, -0.08, -0.26), rotation=(0, math.radians(155), 0))
+            bpy.ops.mesh.primitive_cone_add(vertices=4, radius1=0.16, radius2=0.02, depth=0.28, location=(-0.18, -0.08, -0.22), rotation=(0, math.radians(145), 0))
             bpy.context.active_object.data.materials.append(m_w)
         elif kind == "debt":
-            box((0.66, 0.24, 0.84), (0, -0.06, 0.0), (0, 0, 0), m_w, 0.04)
-            box((0.18, 0.26, 0.86), (-0.26, -0.06, 0.0), (0, 0, 0), m_g, 0.03)
+            m_ink = mat("DebtInk", (0.28, 0.32, 0.40), 0.50)
+            m_ring = mat("RingSilver", (0.82, 0.86, 0.92), 0.25, 0.75)
+            box((0.68, 0.18, 0.82), (0.04, -0.05, 0.0), (0, 0, 0), m_w, 0.04)
+            for ry in (-0.28, -0.09, 0.10, 0.29):
+                bpy.ops.mesh.primitive_torus_add(major_radius=0.065, minor_radius=0.022, major_segments=14, minor_segments=6, location=(-0.30, -0.07, ry), rotation=(0, math.pi * 0.5, 0))
+                bpy.context.active_object.data.materials.append(m_ring)
+            for ly in (0.16, 0.02):
+                box((0.40, 0.04, 0.055), (0.06, -0.15, ly), (0, 0, 0), m_ink, 0.01)
+            cyl(0.18, 0.08, (0.10, -0.16, -0.18), (math.pi * 0.5, 0, 0), m_g)
         elif kind == "dreams":
             for ai in range(5):
                 ang = math.radians(ai * 72.0)
@@ -285,9 +298,16 @@ def render_all():
                 bpy.context.active_object.data.materials.append(m_g)
             sph(0.20, (0, -0.08, 0), (1, 0.45, 1), m_g)
         elif kind == "story":
-            box((0.40, 0.14, 0.68), (-0.21, -0.06, 0.0), (0, math.radians(14), 0), m_w, 0.03)
-            box((0.40, 0.14, 0.68), (0.21, -0.06, 0.0), (0, math.radians(-14), 0), m_w, 0.03)
-            box((0.10, 0.12, 0.42), (0.14, -0.14, -0.18), (0, 0, 0), m_g, 0.01)
+            m_cover = mat("BookCover", (0.84, 0.34, 0.18), 0.42)
+            m_ink = mat("BookInk", (0.28, 0.30, 0.38), 0.55)
+            box((0.92, 0.10, 0.66), (0.0, -0.02, 0.02), (0, 0, 0), m_cover, 0.03)
+            box((0.40, 0.12, 0.58), (-0.22, -0.08, 0.03), (0, 0, math.radians(-12)), m_w, 0.02)
+            box((0.40, 0.12, 0.58), (0.22, -0.08, 0.03), (0, 0, math.radians(12)), m_w, 0.02)
+            box((0.05, 0.14, 0.56), (0.0, -0.09, 0.03), (0, 0, 0), m_ink, 0.01)
+            for lx in (-0.22, 0.22):
+                for ly in (0.16, 0.02, -0.12):
+                    box((0.24, 0.03, 0.04), (lx, -0.15, ly), (0, 0, 0), m_ink, 0.008)
+            box((0.12, 0.08, 0.26), (0.16, -0.12, -0.34), (0, 0, 0), m_g, 0.015)
         elif kind == "missions":
             cyl(0.42, 0.12, (0, -0.06, 0.0), (math.pi * 0.5, 0, 0), m_w)
             cyl(0.28, 0.14, (0, -0.07, 0.0), (math.pi * 0.5, 0, 0), m_r)
@@ -323,12 +343,12 @@ def render_all():
     t1.data.bevel_depth = 0.012
     t1.data.materials.append(m_gold)
 
-    box((2.32, 0.24, 0.36), (0.0, 0.04, -0.42), (0, 0, 0), m_teal, 0.06)
+    box((2.50, 0.24, 0.40), (0.0, 0.04, -0.42), (0, 0, 0), m_teal, 0.06)
     bpy.ops.object.text_add(location=(0.0, -0.10, -0.50), rotation=(math.pi * 0.5, 0.0, 0.0))
     t2 = bpy.context.active_object
     t2.data.body = "COZY HOMEKEEPER"
     t2.data.align_x = 'CENTER'
-    t2.data.size = 0.20
+    t2.data.size = 0.22
     t2.data.extrude = 0.035
     t2.data.bevel_depth = 0.007
     t2.data.materials.append(m_cream)

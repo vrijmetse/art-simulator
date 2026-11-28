@@ -2,6 +2,7 @@ class_name ArtWishlistStory
 extends RefCounted
 
 const CareerTiers := preload("res://src/core/career_tiers.gd")
+const I18n := preload("res://src/core/i18n.gd")
 
 const WISHLIST_ITEMS := {
 	"kirim_kampung": {
@@ -368,6 +369,9 @@ static func get_intro_cutscene_beats(player_name: String, locale: String = "id")
 static func get_onboarding_guides(save: Dictionary, locale: String = "id") -> Array:
 	var st := get_remittance_goal_status(save, locale)
 	var bal := int(save.get("balance_rp", 0))
+	var bal_s := I18n.format_balance(bal, locale)
+	var sent_s := I18n.format_balance(int(st["sent_rp"]), locale)
+	var tgt_s := I18n.format_balance(int(st["target_rp"]), locale)
 	if locale == "en":
 		return [
 			{
@@ -375,10 +379,10 @@ static func get_onboarding_guides(save: Dictionary, locale: String = "id") -> Ar
 				"step_label": "Guide 1 / 2",
 				"title": "Send Remittance Goal via Bank Desaku",
 				"card_header": "Bank Desaku · Savings Account",
-				"card_balance": "Rp%d" % bal,
+				"card_balance": bal_s,
 				"goal_title": "Village School Support (Deadline: Day %d)" % int(st["deadline_day"]),
-				"goal_progress": "Sent Rp%d of Rp%d" % [int(st["sent_rp"]), int(st["target_rp"])],
-				"body": "Work household shifts in the neighborhood to earn Rp, then open HP -> Bank Desaku to send money home before Day 10!",
+				"goal_progress": "Sent %s of %s" % [sent_s, tgt_s],
+				"body": "Work household shifts in the neighborhood to earn Rp, then open HP → Bank Desaku to send money home before Day 10!",
 			},
 			{
 				"id": "guide_loop",
@@ -397,10 +401,10 @@ static func get_onboarding_guides(save: Dictionary, locale: String = "id") -> Ar
 			"step_label": "Panduan 1 / 2",
 			"title": "Target Kiriman Kampung via Bank Desaku",
 			"card_header": "Bank Desaku · Tabungan ART",
-			"card_balance": "Rp%d" % bal,
+			"card_balance": bal_s,
 			"goal_title": "Biaya Sekolah Adik (Batas: Hari %d)" % int(st["deadline_day"]),
-			"goal_progress": "Terkirim Rp%d dari Rp%d" % [int(st["sent_rp"]), int(st["target_rp"])],
-			"body": "Kumpulkan gaji dari shift rumah majikan, lalu buka HP -> Bank Desaku untuk kirim uang ke kampung sebelum Hari ke-10!",
+			"goal_progress": "Terkirim %s dari %s" % [sent_s, tgt_s],
+			"body": "Kumpulkan gaji dari shift rumah majikan, lalu buka HP → Bank Desaku untuk kirim uang ke kampung sebelum Hari ke-10!",
 		},
 		{
 			"id": "guide_loop",

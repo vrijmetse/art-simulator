@@ -27,9 +27,9 @@ UNIQUE_MODELS = [
     ("kurir_paket", "char_kurir.glb", None, None, -14.0, None),
     ("anak_sekolah", "char_pelajar.glb", None, None, 10.0, None),
     ("adik_bima", "char_pelajar.glb", (0.78, 0.18, 0.18), None, -16.0, "cap_sd"),
-    ("mbak_dewi", "char_dewi.glb", (0.78, 0.34, 0.18), None, 12.0, "headband"),
+    ("mbak_dewi", "char_dewi.glb", (0.78, 0.34, 0.18), None, 12.0, "pearl"),
     ("kakak_nadine", "char_kakak.glb", (0.82, 0.26, 0.42), None, -14.0, "sunglasses"),
-    ("kakak_maya", "char_art_pro.glb", (0.18, 0.42, 0.78), None, -8.0, "cap_blue"),
+    ("kakak_maya", "char_art_pro.glb", (0.18, 0.42, 0.78), None, -8.0, "glasses"),
     ("mbak_rina", "char_rina.glb", (0.16, 0.46, 0.40), (0.16, 0.48, 0.42), 12.0, "glasses"),
 ]
 
@@ -79,7 +79,14 @@ def _tint_materials(shirt_rgb, hijab_rgb=None):
                 bsdf.inputs["Roughness"].default_value = 0.72
             if "Specular IOR Level" in bsdf.inputs:
                 bsdf.inputs["Specular IOR Level"].default_value = 0.22
-        elif not ("eye" in mn or "iris" in mn):
+        elif "eye" in mn or "iris" in mn:
+            if "iris" in mn:
+                _multiply_tint_bsdf(mat, (0.26, 0.16, 0.10))
+            if "Roughness" in bsdf.inputs:
+                bsdf.inputs["Roughness"].default_value = 0.08
+            if "Specular IOR Level" in bsdf.inputs:
+                bsdf.inputs["Specular IOR Level"].default_value = 0.65
+        else:
             if "Roughness" in bsdf.inputs:
                 bsdf.inputs["Roughness"].default_value = max(0.64, bsdf.inputs["Roughness"].default_value)
             if "Specular IOR Level" in bsdf.inputs:
@@ -107,40 +114,43 @@ def _attach_bust_prop(prop_kind, head_pos: Vector):
     hx, hy, hz = head_pos.x, head_pos.y, head_pos.z
     if prop_kind == "glasses":
         gmat = _make_prop_mat("GoldFrame", (0.86, 0.68, 0.28), 0.25, 0.85)
-        for sx in (-0.036, 0.036):
+        for sx in (-0.038, 0.038):
             bpy.ops.mesh.primitive_torus_add(
-                major_radius=0.022, minor_radius=0.0032,
+                major_radius=0.022, minor_radius=0.0034,
                 major_segments=16, minor_segments=8,
-                location=(hx + sx, hy - 0.105, hz + 0.004),
+                location=(hx + sx, hy - 0.118, hz + 0.005),
                 rotation=(math.pi * 0.5, 0.0, 0.0),
             )
             bpy.context.active_object.data.materials.append(gmat)
-        bpy.ops.mesh.primitive_cylinder_add(vertices=8, radius=0.003, depth=0.028, location=(hx, hy - 0.106, hz + 0.006), rotation=(0.0, math.pi * 0.5, 0.0))
+        bpy.ops.mesh.primitive_cylinder_add(vertices=8, radius=0.003, depth=0.034, location=(hx, hy - 0.120, hz + 0.007), rotation=(0.0, math.pi * 0.5, 0.0))
         bpy.context.active_object.data.materials.append(gmat)
     elif prop_kind == "sunglasses":
-        smat = _make_prop_mat("SunShade", (0.12, 0.10, 0.14), 0.15, 0.1)
+        smat = _make_prop_mat("SunShade", (0.10, 0.09, 0.14), 0.12, 0.25)
+        gmat = _make_prop_mat("SunRim", (0.90, 0.72, 0.28), 0.24, 0.85)
         for sx in (-0.038, 0.038):
-            bpy.ops.mesh.primitive_cylinder_add(vertices=14, radius=0.022, depth=0.008, location=(hx + sx, hy - 0.092, hz + 0.068), rotation=(math.radians(65), 0.0, 0.0))
+            bpy.ops.mesh.primitive_cylinder_add(vertices=16, radius=0.023, depth=0.007, location=(hx + sx, hy - 0.118, hz + 0.006), rotation=(math.pi * 0.5, 0.0, 0.0))
             bpy.context.active_object.data.materials.append(smat)
+        bpy.ops.mesh.primitive_cylinder_add(vertices=8, radius=0.0032, depth=0.034, location=(hx, hy - 0.120, hz + 0.009), rotation=(0.0, math.pi * 0.5, 0.0))
+        bpy.context.active_object.data.materials.append(gmat)
     elif prop_kind == "headband":
-        hmat = _make_prop_mat("SportBand", (0.94, 0.82, 0.28), 0.55, 0.0)
-        bpy.ops.mesh.primitive_torus_add(major_radius=0.095, minor_radius=0.012, major_segments=22, minor_segments=8, location=(hx, hy + 0.01, hz + 0.055), rotation=(math.radians(-22), 0.0, 0.0))
+        hmat = _make_prop_mat("SportBand", (0.94, 0.80, 0.26), 0.45, 0.0)
+        bpy.ops.mesh.primitive_torus_add(major_radius=0.090, minor_radius=0.009, major_segments=24, minor_segments=8, location=(hx, hy + 0.015, hz + 0.056), rotation=(math.radians(-22), 0.0, 0.0))
         bpy.context.active_object.data.materials.append(hmat)
     elif prop_kind == "pearl":
         pmat = _make_prop_mat("PearlBead", (0.98, 0.95, 0.88), 0.20, 0.15)
         for ai in range(7):
             a = -0.75 + ai * 0.25
-            bpy.ops.mesh.primitive_uv_sphere_add(segments=10, ring_count=6, radius=0.009, location=(hx + math.sin(a) * 0.068, hy - math.cos(a) * 0.068, hz - 0.145))
+            bpy.ops.mesh.primitive_uv_sphere_add(segments=10, ring_count=6, radius=0.009, location=(hx + math.sin(a) * 0.070, hy - math.cos(a) * 0.070, hz - 0.145))
             bpy.context.active_object.data.materials.append(pmat)
     elif prop_kind in ("cap_sd", "cap_blue"):
-        cmat = _make_prop_mat("CapMat", (0.78, 0.16, 0.16) if prop_kind == "cap_sd" else (0.16, 0.44, 0.78), 0.62, 0.0)
-        bpy.ops.mesh.primitive_uv_sphere_add(segments=16, ring_count=8, radius=0.108, location=(hx, hy + 0.01, hz + 0.055))
+        cmat = _make_prop_mat("CapMat", (0.78, 0.16, 0.16) if prop_kind == "cap_sd" else (0.16, 0.44, 0.78), 0.58, 0.0)
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=18, ring_count=8, radius=0.112, location=(hx, hy + 0.015, hz + 0.076))
         cap = bpy.context.active_object
-        cap.scale = (1.0, 1.06, 0.65)
+        cap.scale = (1.0, 1.06, 0.62)
         cap.data.materials.append(cmat)
-        bpy.ops.mesh.primitive_cylinder_add(vertices=14, radius=0.088, depth=0.014, location=(hx, hy - 0.08, hz + 0.045), rotation=(math.radians(12), 0.0, 0.0))
+        bpy.ops.mesh.primitive_cylinder_add(vertices=14, radius=0.090, depth=0.014, location=(hx, hy - 0.095, hz + 0.060), rotation=(math.radians(10), 0.0, 0.0))
         brim = bpy.context.active_object
-        brim.scale = (1.0, 0.72, 1.0)
+        brim.scale = (1.0, 0.74, 1.0)
         brim.data.materials.append(cmat)
 
 
@@ -228,19 +238,20 @@ def render_bust(tag: str, glb_name: str, shirt_rgb=None, hijab_rgb=None, yaw_deg
         lobj.rotation_euler = direction.to_track_quat('-Z', 'Y').to_euler()
 
     tgt = (cx, cy, target_z)
-    add_area("KeyLight", (cx + 0.65, cy - 1.15, target_z + 0.42), tgt, 36.0, 1.2, (1.0, 0.94, 0.84))
-    add_area("FillLight", (cx - 0.95, cy - 1.05, target_z + 0.15), tgt, 26.0, 1.5, (0.94, 0.96, 1.0))
-    add_area("RimLight", (cx - 0.35, cy + 0.95, target_z + 0.55), tgt, 34.0, 0.9, (1.0, 0.88, 0.68))
+    add_area("KeyLight", (cx + 0.65, cy - 1.15, target_z + 0.42), tgt, 38.0, 1.3, (1.0, 0.94, 0.84))
+    add_area("FillLight", (cx - 0.95, cy - 1.10, target_z + 0.10), tgt, 30.0, 1.6, (0.94, 0.96, 1.0))
+    add_area("RimLight", (cx - 0.35, cy + 1.10, target_z + 0.72), tgt, 24.0, 1.1, (1.0, 0.88, 0.68))
 
     rad = math.radians(yaw_deg)
-    dist = 0.76
+    dist = 0.92 if tag == "pak_rt" else 0.78
     cam_data = bpy.data.cameras.new("BustCam")
     cam_data.lens = 64.0
     cam_obj = bpy.data.objects.new("BustCam", cam_data)
     bpy.context.collection.objects.link(cam_obj)
-    cam_loc = Vector((cx + math.sin(rad) * dist, cy - math.cos(rad) * dist, target_z + 0.02))
+    aim_z = target_z + (0.040 if tag == "pak_rt" else 0.0)
+    cam_loc = Vector((cx + math.sin(rad) * dist, cy - math.cos(rad) * dist, aim_z + 0.02))
     cam_obj.location = cam_loc
-    cam_obj.rotation_euler = (Vector((cx, cy, target_z)) - cam_loc).to_track_quat('-Z', 'Y').to_euler()
+    cam_obj.rotation_euler = (Vector((cx, cy, aim_z)) - cam_loc).to_track_quat('-Z', 'Y').to_euler()
     scene.camera = cam_obj
     scene.render.filepath = out_path
     bpy.ops.render.render(write_still=True)
